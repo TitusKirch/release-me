@@ -22,7 +22,10 @@ func TestRun(t *testing.T) {
 		{name: "prints the version", args: []string{"version"}, wantCode: 0, wantOut: "dev"},
 		{name: "prints usage on help", args: []string{"help"}, wantCode: 0, wantOut: "Commands:"},
 		{name: "rejects an unknown command", args: []string{"ship"}, wantCode: 2, wantErr: `unknown command "ship"`},
-		{name: "names a command that is not available yet", args: []string{"pr"}, wantCode: 1, wantErr: "pr: not available yet"},
+		{name: "rejects an unknown flag on pr", args: []string{"pr", "--nope"}, wantCode: 2, wantErr: "flag provided but not defined"},
+		{name: "rejects an unknown flag on release", args: []string{"release", "--nope"}, wantCode: 2, wantErr: "flag provided but not defined"},
+		{name: "rejects an unknown flag on run", args: []string{"run", "--nope"}, wantCode: 2, wantErr: "flag provided but not defined"},
+		{name: "rejects an unknown flag on check", args: []string{"check", "--nope"}, wantCode: 2, wantErr: "flag provided but not defined"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
