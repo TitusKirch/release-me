@@ -21,25 +21,38 @@ func discardLogger() *slog.Logger {
 func TestVersionFromTitle(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name   string
-		title  string
-		want   string
-		wantOK bool
+		name                   string
+		title, wantedComponent string
+		want                   string
+		wantOK                 bool
 	}{
-		{name: "reads the version", title: "chore(main): release v1.2.3", want: "1.2.3", wantOK: true},
-		{name: "rejects an unrelated title", title: "feat: add the next command"},
-		{name: "rejects a title without the v prefix", title: "chore(main): release 1.2.3"},
+		{name: "reads the version", title: "chore(main): release v1.2.3", wantedComponent: "main", want: "1.2.3", wantOK: true},
+		{name: "rejects an unrelated title", title: "feat: add the next command", wantedComponent: "main"},
+		{name: "rejects a title without the v prefix", title: "chore(main): release 1.2.3", wantedComponent: "main"},
+		{
+			name: "reads a named component's version", title: "chore(frontend): release v0.4.0",
+			wantedComponent: "frontend", want: "0.4.0", wantOK: true,
+		},
+		{
+			name: "rejects a title naming a different component", title: "chore(backend): release v0.4.0",
+			wantedComponent: "frontend",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, ok := release.VersionFromTitle(tc.title)
+			got, ok := release.VersionFromTitle(tc.title, tc.wantedComponent)
 			if ok != tc.wantOK || got != tc.want {
-				t.Fatalf("VersionFromTitle(%q) = (%q, %v), want (%q, %v)", tc.title, got, ok, tc.want, tc.wantOK)
+				t.Fatalf("VersionFromTitle(%q, %q) = (%q, %v), want (%q, %v)", tc.title, tc.wantedComponent, got, ok, tc.want, tc.wantOK)
 			}
 		})
 	}
 }
+
+// mainComponent is the implicit component a repository without
+// "components" carries, the same shape the tests before components existed
+// exercised.
+var mainComponent = release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v"}
 
 func TestRunTagsReleasesAndSwapsTheLabel(t *testing.T) {
 	t.Parallel()
@@ -56,7 +69,7 @@ func TestRunTagsReleasesAndSwapsTheLabel(t *testing.T) {
 		PRLabels:     map[int][]string{9: {"release: pending"}},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", "release-me/main", "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -91,7 +104,7 @@ func TestRunStillReleasesAndSwapsTheLabelWhenTheTagAlreadyExists(t *testing.T) {
 		PRLabels:     map[int][]string{9: {"release: pending"}},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", "release-me/main", "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -121,7 +134,7 @@ func TestRunToleratesAReleaseThatAlreadyExistsTooWhenTheTagDoes(t *testing.T) {
 		PRLabels:         map[int][]string{9: {"release: pending"}},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", "release-me/main", "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -142,7 +155,7 @@ func TestRunIgnoresAPullRequestWithoutThePendingLabel(t *testing.T) {
 		},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", "release-me/main", "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -160,12 +173,59 @@ func TestRunIgnoresAnUnmergedPullRequest(t *testing.T) {
 		},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", "release-me/main", "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if len(results) != 0 {
 		t.Fatalf("Run() = %+v, want no results", results)
+	}
+}
+
+func TestRunTagsAndNamesTheReleaseForAConfiguredComponent(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{
+		Number: 9, Title: "chore(frontend): release v0.4.0",
+		Body:   "Release v0.4.0\n\n<details>\n<summary>Changelog</summary>\n\n## v0.4.0 (2026-01-02)\n\n### Features\n\n- add the thing\n\n</details>\n",
+		Labels: []string{"release: pending"}, Merged: true,
+	}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/frontend", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending"}},
+	}
+	comp := release.Component{Name: "frontend", Branch: "release-me/frontend", TagPrefix: "frontend/v", Multi: true}
+
+	results, err := release.Run(context.Background(), f, "owner", "repo", comp, "release: pending", "release: tagged", false, discardLogger())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].Tag != "frontend/v0.4.0" {
+		t.Fatalf("Run() = %+v", results)
+	}
+	if len(f.CreatedTags) != 1 || f.CreatedTags[0].Tag != "frontend/v0.4.0" {
+		t.Fatalf("CreatedTags = %+v", f.CreatedTags)
+	}
+	if len(f.CreatedReleases) != 1 || f.CreatedReleases[0].Name != "frontend v0.4.0" {
+		t.Fatalf("CreatedReleases = %+v, want the name %q", f.CreatedReleases, "frontend v0.4.0")
+	}
+}
+
+func TestRunIgnoresAPullRequestTitledForADifferentComponent(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore(backend): release v0.4.0", Labels: []string{"release: pending"}, Merged: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/frontend", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+	}
+	comp := release.Component{Name: "frontend", Branch: "release-me/frontend", TagPrefix: "frontend/v", Multi: true}
+
+	_, err := release.Run(context.Background(), f, "owner", "repo", comp, "release: pending", "release: tagged", false, discardLogger())
+	if err == nil {
+		t.Fatal("Run() error = nil, want an error naming the mismatched title")
 	}
 }
 
@@ -179,7 +239,7 @@ func TestRunDryRunChangesNothing(t *testing.T) {
 		MergeCommits: map[int]string{9: "deadbeef"},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", "release-me/main", "release: pending", "release: tagged", true, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", true, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}

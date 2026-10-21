@@ -11,10 +11,19 @@ import (
 
 func TestTitle(t *testing.T) {
 	t.Parallel()
-	got := releasepr.Title("1.2.3")
-	want := "chore(main): release v1.2.3"
-	if got != want {
-		t.Fatalf("Title() = %q, want %q", got, want)
+	cases := []struct {
+		name, version, want string
+	}{
+		{name: "main", version: "1.2.3", want: "chore(main): release v1.2.3"},
+		{name: "frontend", version: "0.4.0", want: "chore(frontend): release v0.4.0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := releasepr.Title(tc.name, tc.version); got != tc.want {
+				t.Fatalf("Title() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

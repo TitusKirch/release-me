@@ -20,17 +20,31 @@ import (
 )
 
 // titlePattern matches the release pull request title releasepr.Title
-// renders, "chore(main): release vX.Y.Z".
-var titlePattern = regexp.MustCompile(`^chore\(main\): release v(\d+\.\d+\.\d+)$`)
+// renders, "chore(<name>): release vX.Y.Z".
+var titlePattern = regexp.MustCompile(`^chore\(([^)]+)\): release v(\d+\.\d+\.\d+)$`)
 
-// VersionFromTitle extracts "X.Y.Z" from a release pull request title. ok
-// is false when title does not match that shape.
-func VersionFromTitle(title string) (version string, ok bool) {
+// VersionFromTitle extracts "X.Y.Z" from a release pull request title whose
+// component name matches name. ok is false when title does not match that
+// shape, or names a different component.
+func VersionFromTitle(title, name string) (version string, ok bool) {
 	m := titlePattern.FindStringSubmatch(title)
-	if m == nil {
+	if m == nil || m[1] != name {
 		return "", false
 	}
-	return m[1], true
+	return m[2], true
+}
+
+// Component names the release branch, tag prefix and display name release
+// Run tags, releases and swaps the label for, and whether release-me.yaml
+// declares more than one component. Multi false, the implicit "main"
+// component a repository without "components" carries, keeps today's bare
+// tag prefix and release name instead of the generic "<name>/v" prefix and
+// "<name> vX.Y.Z" release name a configured component carries.
+type Component struct {
+	Name      string
+	Branch    string
+	TagPrefix string
+	Multi     bool
 }
 
 // Result is the outcome for one merged release pull request.
@@ -43,14 +57,15 @@ type Result struct {
 }
 
 // Run tags, releases and swaps the label of every merged, pending-labeled
-// pull request on branch. dryRun reports what would happen and calls
-// neither CreateTag, CreateRelease nor SetLabels.
+// pull request on comp's branch, for the component comp names. dryRun
+// reports what would happen and calls neither CreateTag, CreateRelease nor
+// SetLabels.
 func Run(
-	ctx context.Context, f forge.Forge, owner, repoName, branch, pendingLabel, taggedLabel string, dryRun bool, logger *slog.Logger,
+	ctx context.Context, f forge.Forge, owner, repoName string, comp Component, pendingLabel, taggedLabel string, dryRun bool, logger *slog.Logger,
 ) ([]Result, error) {
-	prs, err := f.PullRequests(ctx, owner, repoName, branch, "closed")
+	prs, err := f.PullRequests(ctx, owner, repoName, comp.Branch, "closed")
 	if err != nil {
-		return nil, fmt.Errorf("release: list pull requests on %s: %w", branch, err)
+		return nil, fmt.Errorf("release: component %s: list pull requests on %s: %w", comp.Name, comp.Branch, err)
 	}
 
 	var results []Result
@@ -58,15 +73,19 @@ func Run(
 		if !pr.Merged || !slices.Contains(pr.Labels, pendingLabel) {
 			continue
 		}
-		logger.Debug("release pull request merged", "number", pr.Number, "title", pr.Title)
+		logger.Debug("release pull request merged", "component", comp.Name, "number", pr.Number, "title", pr.Title)
 
-		version, ok := VersionFromTitle(pr.Title)
+		version, ok := VersionFromTitle(pr.Title, comp.Name)
 		if !ok {
-			return nil, fmt.Errorf("release: pull request #%d: title %q does not name a version", pr.Number, pr.Title)
+			return nil, fmt.Errorf("release: component %s: pull request #%d: title %q does not name a version", comp.Name, pr.Number, pr.Title)
 		}
-		tag := "v" + version
+		tag := comp.TagPrefix + version
+		name := tag
+		if comp.Multi {
+			name = fmt.Sprintf("%s v%s", comp.Name, version)
+		}
 
-		result, err := releaseOne(ctx, f, owner, repoName, pr, tag, version, pendingLabel, taggedLabel, dryRun)
+		result, err := releaseOne(ctx, f, owner, repoName, comp.Name, pr, tag, name, version, pendingLabel, taggedLabel, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -76,7 +95,8 @@ func Run(
 }
 
 func releaseOne(
-	ctx context.Context, f forge.Forge, owner, repoName string, pr forge.PullRequest, tag, version, pendingLabel, taggedLabel string, dryRun bool,
+	ctx context.Context, f forge.Forge, owner, repoName, componentName string,
+	pr forge.PullRequest, tag, releaseName, version, pendingLabel, taggedLabel string, dryRun bool,
 ) (Result, error) {
 	if dryRun {
 		return Result{PullRequestNumber: pr.Number, Version: version, Tag: tag, Message: fmt.Sprintf("would tag and release %s", tag)}, nil
@@ -84,13 +104,13 @@ func releaseOne(
 
 	sha, err := f.MergeCommit(ctx, owner, repoName, pr.Number)
 	if err != nil {
-		return Result{}, fmt.Errorf("release: pull request #%d: merge commit: %w", pr.Number, err)
+		return Result{}, fmt.Errorf("release: component %s: pull request #%d: merge commit: %w", componentName, pr.Number, err)
 	}
 
 	alreadyTagged := false
 	if err := f.CreateTag(ctx, owner, repoName, tag, sha); err != nil {
 		if !errors.Is(err, forge.ErrTagExists) {
-			return Result{}, fmt.Errorf("release: pull request #%d: create tag %s: %w", pr.Number, tag, err)
+			return Result{}, fmt.Errorf("release: component %s: pull request #%d: create tag %s: %w", componentName, pr.Number, tag, err)
 		}
 		// The tag exists, so an earlier run got this far before failing or
 		// being interrupted. Carry on: make sure the release exists and
@@ -100,16 +120,16 @@ func releaseOne(
 	}
 
 	body := releasepr.ReleaseBody(pr.Body)
-	if err := f.CreateRelease(ctx, owner, repoName, tag, tag, body); err != nil && !errors.Is(err, forge.ErrReleaseExists) {
-		return Result{}, fmt.Errorf("release: pull request #%d: create release %s: %w", pr.Number, tag, err)
+	if err := f.CreateRelease(ctx, owner, repoName, tag, releaseName, body); err != nil && !errors.Is(err, forge.ErrReleaseExists) {
+		return Result{}, fmt.Errorf("release: component %s: pull request #%d: create release %s: %w", componentName, pr.Number, tag, err)
 	}
 
 	labels, err := f.Labels(ctx, owner, repoName, pr.Number)
 	if err != nil {
-		return Result{}, fmt.Errorf("release: pull request #%d: labels: %w", pr.Number, err)
+		return Result{}, fmt.Errorf("release: component %s: pull request #%d: labels: %w", componentName, pr.Number, err)
 	}
 	if err := f.SetLabels(ctx, owner, repoName, pr.Number, swapLabel(labels, pendingLabel, taggedLabel)); err != nil {
-		return Result{}, fmt.Errorf("release: pull request #%d: set labels: %w", pr.Number, err)
+		return Result{}, fmt.Errorf("release: component %s: pull request #%d: set labels: %w", componentName, pr.Number, err)
 	}
 
 	message := fmt.Sprintf("tagged and released %s", tag)
