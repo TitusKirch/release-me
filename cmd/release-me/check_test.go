@@ -68,7 +68,7 @@ func TestDoCheckReportsEveryMissingItem(t *testing.T) {
 			t.Parallel()
 			f := &forgetest.Fake{RepoLabels: tc.repoLabels}
 
-			got := doCheck(t.Context(), tc.cfg, tc.cfgErr, "GITHUB_TOKEN", tc.token, "owner", "repo", f)
+			got := doCheck(t.Context(), tc.cfg, tc.cfgErr, nil, "GITHUB_TOKEN", tc.token, "owner", "repo", f)
 			if !equalStrings(got, tc.want) {
 				t.Fatalf("doCheck() = %v, want %v", got, tc.want)
 			}
@@ -82,7 +82,7 @@ func TestDoCheckReportsARejectedTokenNotAMissingLabel(t *testing.T) {
 	wrapped := fmt.Errorf("github: list repository labels: %w: 401 Bad credentials", forge.ErrUnauthorized)
 	f := &forgetest.Fake{RepoLabelsErr: wrapped}
 
-	got := doCheck(t.Context(), cfg, nil, "GITHUB_TOKEN", "a-rejected-token", "owner", "repo", f)
+	got := doCheck(t.Context(), cfg, nil, nil, "GITHUB_TOKEN", "a-rejected-token", "owner", "repo", f)
 	if len(got) != 1 || !strings.HasPrefix(got[0], "token:") {
 		t.Fatalf("doCheck() = %v, want a single token line", got)
 	}
@@ -92,9 +92,20 @@ func TestDoCheckDoesNotCheckLabelsWithoutAForge(t *testing.T) {
 	t.Parallel()
 	cfg := config.Config{Labels: config.Labels{Pending: "release: pending", Tagged: "release: tagged"}}
 
-	got := doCheck(t.Context(), cfg, errors.New("boom"), "GITHUB_TOKEN", "a-token", "owner", "repo", nil)
+	got := doCheck(t.Context(), cfg, errors.New("boom"), nil, "GITHUB_TOKEN", "a-token", "owner", "repo", nil)
 	want := []string{"config: boom"}
 	if !equalStrings(got, want) {
 		t.Fatalf("doCheck() = %v, want %v", got, want)
+	}
+}
+
+func TestDoCheckReportsAnUnknownComponentName(t *testing.T) {
+	t.Parallel()
+	cfg := config.Config{Labels: config.Labels{Pending: "release: pending", Tagged: "release: tagged"}}
+	f := &forgetest.Fake{RepoLabels: []string{"release: pending", "release: tagged"}}
+
+	got := doCheck(t.Context(), cfg, nil, fmt.Errorf(`release-me: unknown component "frontend"`), "GITHUB_TOKEN", "a-token", "owner", "repo", f)
+	if len(got) != 1 || !strings.Contains(got[0], `"frontend"`) {
+		t.Fatalf("doCheck() = %v, want a single line naming the unknown component", got)
 	}
 }

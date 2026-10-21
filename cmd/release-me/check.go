@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -18,16 +17,14 @@ import (
 )
 
 // runCheck implements the check command: it validates release-me.yaml, the
-// configured labels and the token environment variable, printing every
-// missing or invalid item.
+// configured component or --component name, the configured labels and the
+// token environment variable, printing every missing or invalid item.
 func runCheck(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("check", flag.ContinueOnError)
-	verbose := fs.Bool("verbose", false, "enable debug logging on stderr")
-	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
+	verbose, component, ok := parseFlags("check", args, stderr)
+	if !ok {
 		return 2
 	}
-	logger := newLogger(stderr, *verbose)
+	logger := newLogger(stderr, verbose)
 
 	ctx := context.Background()
 	cwd, err := os.Getwd()
@@ -67,7 +64,12 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		f = ghForge
 	}
 
-	missing := doCheck(ctx, cfg, cfgErr, tokenEnv, token, owner, repoName, f)
+	var componentErr error
+	if cfgErr == nil {
+		_, componentErr = resolveComponents(cfg, component)
+	}
+
+	missing := doCheck(ctx, cfg, cfgErr, componentErr, tokenEnv, token, owner, repoName, f)
 	for _, m := range missing {
 		fmt.Fprintln(stdout, m)
 	}
@@ -78,15 +80,18 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// doCheck validates config, the configured labels and the token, returning
-// every missing or invalid item. An empty result means every check passed.
-// f is nil when cfgErr is set: the labels cannot be checked against an
-// unparsed configuration.
-func doCheck(ctx context.Context, cfg config.Config, cfgErr error, tokenEnv, token, owner, repoName string, f forge.Forge) []string {
+// doCheck validates config, the --component name, the configured labels
+// and the token, returning every missing or invalid item. An empty result
+// means every check passed. f is nil when cfgErr is set: the labels cannot
+// be checked against an unparsed configuration.
+func doCheck(ctx context.Context, cfg config.Config, cfgErr, componentErr error, tokenEnv, token, owner, repoName string, f forge.Forge) []string {
 	var missing []string
 
 	if cfgErr != nil {
 		missing = append(missing, fmt.Sprintf("config: %v", cfgErr))
+	}
+	if componentErr != nil {
+		missing = append(missing, fmt.Sprintf("config: %v", componentErr))
 	}
 	if token == "" {
 		missing = append(missing, fmt.Sprintf("token: environment variable %s is not set", tokenEnv))

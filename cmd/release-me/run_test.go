@@ -11,7 +11,6 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/forge/forgetest"
-	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 )
 
 // TestRunIsPRThenRelease exercises doPR followed by doRelease the same way
@@ -24,7 +23,7 @@ func TestRunIsPRThenRelease(t *testing.T) {
 	f := newFake()
 	var stdout bytes.Buffer
 
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &stdout); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
 	}
 	if len(f.CreatedPullRequests) != 1 {
@@ -35,14 +34,14 @@ func TestRunIsPRThenRelease(t *testing.T) {
 	// The release pull request merges; the forge reports it closed, merged
 	// and still carrying the pending label.
 	f.ListResponses = []forgetest.ListResponse{
-		{Head: releasepr.Branch, State: "closed", PullRequests: []forge.PullRequest{
+		{Head: mainBranch, State: "closed", PullRequests: []forge.PullRequest{
 			{Number: 1, Title: created.Title, Body: created.Body, Labels: []string{"release: pending"}, Merged: true},
 		}},
 	}
 	f.MergeCommits = map[int]string{1: "deadbeef"}
 	f.PRLabels = map[int][]string{1: {"release: pending"}}
 
-	if err := doRelease(t.Context(), dir, config.Default(), f, discardLogger(), false, &stdout); err != nil {
+	if err := doRelease(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doRelease() error = %v", err)
 	}
 

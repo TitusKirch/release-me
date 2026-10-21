@@ -17,8 +17,12 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/forge/forgetest"
-	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 )
+
+// mainBranch is the release branch of the implicit "main" component a
+// repository without "components" carries, config.Default().Resolve()'s
+// single entry.
+const mainBranch = "release-me/main"
 
 // newPRRepo creates a git repository with a local identity and an "origin"
 // remote whose push URL, through git's pushInsteadOf configuration, is
@@ -41,14 +45,14 @@ func newPRRepo(t *testing.T) (dir, origin string) {
 	return dir, origin
 }
 
-// showBareBranchFile reads path at releasepr.Branch from a bare
+// showBareBranchFile reads path at mainBranch from a bare
 // repository, failing the test when the git invocation fails.
 func showBareBranchFile(t *testing.T, bareDir, path string) string {
 	t.Helper()
-	cmd := exec.CommandContext(t.Context(), "git", "--git-dir", bareDir, "show", releasepr.Branch+":"+path)
+	cmd := exec.CommandContext(t.Context(), "git", "--git-dir", bareDir, "show", mainBranch+":"+path)
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("git show %s:%s: %v", releasepr.Branch, path, err)
+		t.Fatalf("git show %s:%s: %v", mainBranch, path, err)
 	}
 	return string(out)
 }
@@ -60,15 +64,15 @@ func bareRefExists(t *testing.T, bareDir, ref string) bool {
 	return cmd.Run() == nil
 }
 
-// bareBranchSHA resolves releasepr.Branch to its commit SHA in a bare
+// bareBranchSHA resolves mainBranch to its commit SHA in a bare
 // repository, the head SHA a real forge would report for an open pull
 // request.
 func bareBranchSHA(t *testing.T, bareDir string) string {
 	t.Helper()
-	cmd := exec.CommandContext(t.Context(), "git", "--git-dir", bareDir, "rev-parse", releasepr.Branch)
+	cmd := exec.CommandContext(t.Context(), "git", "--git-dir", bareDir, "rev-parse", mainBranch)
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("git rev-parse %s: %v", releasepr.Branch, err)
+		t.Fatalf("git rev-parse %s: %v", mainBranch, err)
 	}
 	return strings.TrimSpace(string(out))
 }
@@ -94,7 +98,7 @@ func TestDoPRCreatesTheReleasePullRequest(t *testing.T) {
 	f := newFake()
 	var stdout bytes.Buffer
 
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &stdout); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
 	}
 
@@ -102,7 +106,7 @@ func TestDoPRCreatesTheReleasePullRequest(t *testing.T) {
 		t.Fatalf("CreatedPullRequests = %+v, want one", f.CreatedPullRequests)
 	}
 	created := f.CreatedPullRequests[0]
-	if created.Base != "main" || created.Head != releasepr.Branch || created.Title != "chore(main): release v0.1.0" {
+	if created.Base != "main" || created.Head != mainBranch || created.Title != "chore(main): release v0.1.0" {
 		t.Fatalf("created = %+v", created)
 	}
 	if want := []string{"release: pending"}; !equalStrings(created.Labels, want) {
@@ -124,20 +128,20 @@ func TestDoPRUpdatesWhenNewEntriesArriveSinceTheLastRun(t *testing.T) {
 
 	f := newFake()
 	var first bytes.Buffer
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &first); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &first); err != nil {
 		t.Fatalf("doPR() first run error = %v", err)
 	}
 	created := f.CreatedPullRequests[0]
 
 	commitEntry(t, dir, "fix: stop a panic")
 	f.ListResponses = []forgetest.ListResponse{
-		{Head: releasepr.Branch, State: "open", PullRequests: []forge.PullRequest{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
 			{Number: 1, Title: created.Title, Body: created.Body, HeadSHA: bareBranchSHA(t, origin)},
 		}},
 	}
 
 	var second bytes.Buffer
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &second); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &second); err != nil {
 		t.Fatalf("doPR() second run error = %v", err)
 	}
 
@@ -163,7 +167,7 @@ func TestDoPRKeepsTheNotesBlockAcrossAnUpdate(t *testing.T) {
 
 	f := newFake()
 	var first bytes.Buffer
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &first); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &first); err != nil {
 		t.Fatalf("doPR() first run error = %v", err)
 	}
 	created := f.CreatedPullRequests[0]
@@ -173,7 +177,7 @@ func TestDoPRKeepsTheNotesBlockAcrossAnUpdate(t *testing.T) {
 		t.Fatalf("could not add a notes block to %q", created.Body)
 	}
 	f.ListResponses = []forgetest.ListResponse{
-		{Head: releasepr.Branch, State: "open", PullRequests: []forge.PullRequest{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
 			{Number: 1, Title: created.Title, Body: withNotes, HeadSHA: bareBranchSHA(t, origin)},
 		}},
 	}
@@ -181,7 +185,7 @@ func TestDoPRKeepsTheNotesBlockAcrossAnUpdate(t *testing.T) {
 	commitEntry(t, dir, "fix: stop a panic")
 
 	var second bytes.Buffer
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &second); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &second); err != nil {
 		t.Fatalf("doPR() second run error = %v", err)
 	}
 
@@ -214,19 +218,19 @@ func TestDoPRChangesNothingWhenAlreadyUpToDate(t *testing.T) {
 
 	f := newFake()
 	var first bytes.Buffer
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &first); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &first); err != nil {
 		t.Fatalf("doPR() first run error = %v", err)
 	}
 	created := f.CreatedPullRequests[0]
 
 	f.ListResponses = []forgetest.ListResponse{
-		{Head: releasepr.Branch, State: "open", PullRequests: []forge.PullRequest{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
 			{Number: 1, Title: created.Title, Body: created.Body},
 		}},
 	}
 
 	var second bytes.Buffer
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &second); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &second); err != nil {
 		t.Fatalf("doPR() second run error = %v", err)
 	}
 
@@ -245,7 +249,7 @@ func TestDoPRDryRunWritesNothing(t *testing.T) {
 	f := newFake()
 	var stdout bytes.Buffer
 
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), true, &stdout); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), true, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
 	}
 
@@ -255,7 +259,7 @@ func TestDoPRDryRunWritesNothing(t *testing.T) {
 	if len(f.CreatedPullRequests) != 0 || len(f.UpdatedPullRequests) != 0 {
 		t.Fatalf("dry run called the forge: created=%+v updated=%+v", f.CreatedPullRequests, f.UpdatedPullRequests)
 	}
-	if bareRefExists(t, origin, "refs/heads/"+releasepr.Branch) {
+	if bareRefExists(t, origin, "refs/heads/"+mainBranch) {
 		t.Fatal("dry run pushed a branch, want none")
 	}
 }
@@ -267,7 +271,7 @@ func TestDoPRPrintsNothingToReleaseWithoutAReleasableChange(t *testing.T) {
 	f := newFake()
 	var stdout bytes.Buffer
 
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &stdout); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
 	}
 	if stdout.String() != "nothing to release\n" {
@@ -288,7 +292,7 @@ func TestDoPRBumpsAConfiguredMarkerFileOnTheReleaseBranch(t *testing.T) {
 	f := newFake()
 	var stdout bytes.Buffer
 
-	if err := doPR(t.Context(), dir, cfg, f, discardLogger(), false, &stdout); err != nil {
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
 	}
 
@@ -306,12 +310,12 @@ func TestDoPRDetectsAFilesConfigChangeEvenWithTheSameTitleAndBody(t *testing.T) 
 
 	f := newFake()
 	var first bytes.Buffer
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &first); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &first); err != nil {
 		t.Fatalf("doPR() first run error = %v", err)
 	}
 	created := f.CreatedPullRequests[0]
 	f.ListResponses = []forgetest.ListResponse{
-		{Head: releasepr.Branch, State: "open", PullRequests: []forge.PullRequest{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
 			{Number: 1, Title: created.Title, Body: created.Body, HeadSHA: bareBranchSHA(t, origin)},
 		}},
 	}
@@ -323,7 +327,7 @@ func TestDoPRDetectsAFilesConfigChangeEvenWithTheSameTitleAndBody(t *testing.T) 
 	cfg.Files = []config.File{{Path: "version.go", Updater: "marker"}}
 
 	var second bytes.Buffer
-	if err := doPR(t.Context(), dir, cfg, f, discardLogger(), false, &second); err != nil {
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &second); err != nil {
 		t.Fatalf("doPR() second run error = %v", err)
 	}
 
@@ -346,7 +350,7 @@ func TestDoPRRendersAnExplicitLineWhenEveryEntryIsHidden(t *testing.T) {
 	f := newFake()
 	var stdout bytes.Buffer
 
-	if err := doPR(t.Context(), dir, cfg, f, discardLogger(), false, &stdout); err != nil {
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
 	}
 
@@ -367,7 +371,7 @@ func TestDoPRUsesTheForgesDefaultBranchAsBase(t *testing.T) {
 	f.DefaultBranchName = "trunk"
 	var stdout bytes.Buffer
 
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &stdout); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
 	}
 	if got := f.CreatedPullRequests[0].Base; got != "trunk" {
@@ -384,7 +388,7 @@ func TestDoPRFallsBackToOriginHEADWhenTheForgeDefaultBranchFails(t *testing.T) {
 	f.DefaultBranchErr = errors.New("boom")
 	var stdout bytes.Buffer
 
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &stdout); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
 	}
 	if got := f.CreatedPullRequests[0].Base; got != "trunk" {
@@ -400,7 +404,7 @@ func TestDoPRFailsCleanlyWhenTheBaseBranchCannotBeResolved(t *testing.T) {
 	f.DefaultBranchErr = errors.New("boom")
 	var stdout bytes.Buffer
 
-	err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &stdout)
+	err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout)
 	if err == nil {
 		t.Fatal("doPR() error = nil, want an error")
 	}
@@ -416,14 +420,14 @@ func TestDoPRRejectsAMissingLabelBeforeWritingAnything(t *testing.T) {
 	f := newFake()
 	f.RepoLabels = []string{"release: pending"} // "release: tagged" is missing
 
-	err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, io.Discard)
+	err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, io.Discard)
 	if err == nil {
 		t.Fatal("doPR() error = nil, want an error")
 	}
 	if !strings.Contains(err.Error(), "release: tagged") {
 		t.Fatalf("error = %v, want it to name the missing label", err)
 	}
-	if bareRefExists(t, origin, "refs/heads/"+releasepr.Branch) {
+	if bareRefExists(t, origin, "refs/heads/"+mainBranch) {
 		t.Fatal("a branch was pushed despite the missing label")
 	}
 }
@@ -434,13 +438,13 @@ func TestDoPRKeepsAHumanAddedLabelOnUpdate(t *testing.T) {
 
 	f := newFake()
 	var first bytes.Buffer
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &first); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &first); err != nil {
 		t.Fatalf("doPR() first run error = %v", err)
 	}
 	created := f.CreatedPullRequests[0]
 	f.PRLabels = map[int][]string{1: {"release: pending", "needs human"}}
 	f.ListResponses = []forgetest.ListResponse{
-		{Head: releasepr.Branch, State: "open", PullRequests: []forge.PullRequest{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
 			{
 				Number: 1, Title: created.Title, Body: created.Body, Labels: []string{"release: pending", "needs human"},
 				HeadSHA: bareBranchSHA(t, origin),
@@ -451,7 +455,7 @@ func TestDoPRKeepsAHumanAddedLabelOnUpdate(t *testing.T) {
 	commitEntry(t, dir, "fix: stop a panic")
 
 	var second bytes.Buffer
-	if err := doPR(t.Context(), dir, config.Default(), f, discardLogger(), false, &second); err != nil {
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &second); err != nil {
 		t.Fatalf("doPR() second run error = %v", err)
 	}
 
