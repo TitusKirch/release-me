@@ -46,6 +46,9 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	}
 	token := os.Getenv(tokenEnv)
 	logger.Debug("read token", "env", tokenEnv, "set", token != "")
+	if cfgErr == nil {
+		logger.Debug("resolved author", "name", resolvedAuthorName(cfg), "email", resolvedAuthorEmail(cfg))
+	}
 
 	var f forge.Forge
 	owner, repoName := "", ""

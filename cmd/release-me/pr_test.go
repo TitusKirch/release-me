@@ -196,6 +196,35 @@ func TestDoPRCommitsTheReleaseBranchWithTheDefaultAuthorWhenNoIdentityExists(t *
 	}
 }
 
+// TestDoPRLetsAnEnvironmentIdentityWinOverTheConfiguredAuthor exercises the
+// precedence rule: GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME
+// and GIT_COMMITTER_EMAIL already set in the process environment win over
+// the configured author, even though no other identity exists.
+func TestDoPRLetsAnEnvironmentIdentityWinOverTheConfiguredAuthor(t *testing.T) {
+	dir, origin := newPRRepoWithoutIdentity(t)
+	commitWithIdentity(t, dir, "feat: add the next command")
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+	t.Setenv("GIT_AUTHOR_NAME", "CI Runner")
+	t.Setenv("GIT_AUTHOR_EMAIL", "ci@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "CI Runner")
+	t.Setenv("GIT_COMMITTER_EMAIL", "ci@example.com")
+
+	f := newFake()
+	var stdout bytes.Buffer
+
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	want := "CI Runner <ci@example.com>"
+	if got := bareBranchAuthor(t, origin); got != want {
+		t.Fatalf("author = %q, want %q", got, want)
+	}
+}
+
 func TestDoPRUpdatesWhenNewEntriesArriveSinceTheLastRun(t *testing.T) {
 	dir, origin := newPRRepo(t)
 	commitEntry(t, dir, "feat: add the next command")
