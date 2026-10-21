@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // Semver is a parsed semantic version, without its "v" tag prefix.
@@ -53,7 +54,7 @@ func (v Semver) IsPreRelease() bool {
 
 // Less reports whether v is lower precedence than other. Pre-release
 // identifiers are not compared; callers that need to order pre-releases
-// against each other should not rely on this method.
+// against each other should use LessPrecedence instead.
 func (v Semver) Less(other Semver) bool {
 	if v.Major != other.Major {
 		return v.Major < other.Major
@@ -64,7 +65,97 @@ func (v Semver) Less(other Semver) bool {
 	return v.Patch < other.Patch
 }
 
-// String renders v as "X.Y.Z", without a "v" prefix.
+// LessPrecedence reports whether v has lower semver precedence than other,
+// following semver.org's precedence rules in full: major, minor and patch
+// compared numerically first; when those are equal, a version carrying a
+// pre-release identifier always sorts below the same major.minor.patch
+// without one; when both carry one, their dot-separated identifiers are
+// compared left to right, a numeric identifier compared numerically and
+// always lower precedence than an alphanumeric one, and the version with
+// fewer identifiers sorting lower when every identifier compared so far is
+// equal.
+func (v Semver) LessPrecedence(other Semver) bool {
+	if v.Major != other.Major {
+		return v.Major < other.Major
+	}
+	if v.Minor != other.Minor {
+		return v.Minor < other.Minor
+	}
+	if v.Patch != other.Patch {
+		return v.Patch < other.Patch
+	}
+	if v.Pre == other.Pre {
+		return false
+	}
+	if v.Pre == "" {
+		return false
+	}
+	if other.Pre == "" {
+		return true
+	}
+	return lessPreReleaseIdentifiers(v.Pre, other.Pre)
+}
+
+// lessPreReleaseIdentifiers compares two dot-separated pre-release
+// identifier strings per semver precedence rule 11.
+func lessPreReleaseIdentifiers(a, b string) bool {
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+	for i := 0; i < len(aParts) && i < len(bParts); i++ {
+		if aParts[i] == bParts[i] {
+			continue
+		}
+		aNum, aIsNum := atoiOK(aParts[i])
+		bNum, bIsNum := atoiOK(bParts[i])
+		switch {
+		case aIsNum && bIsNum:
+			return aNum < bNum
+		case aIsNum:
+			return true
+		case bIsNum:
+			return false
+		default:
+			return aParts[i] < bParts[i]
+		}
+	}
+	return len(aParts) < len(bParts)
+}
+
+func atoiOK(s string) (int, bool) {
+	n, err := strconv.Atoi(s)
+	return n, err == nil
+}
+
+// WithPreRelease returns a copy of v with Pre set to "<preType>.<n>", one
+// pre-release build of v's major.minor.patch, for example "alpha.1".
+func (v Semver) WithPreRelease(preType string, n int) Semver {
+	v.Pre = fmt.Sprintf("%s.%d", preType, n)
+	return v
+}
+
+// PreReleaseType parses v.Pre as the "<type>.<N>" shape WithPreRelease
+// renders, returning the type and the counter. ok is false when v carries
+// no pre-release identifier, or one not in that shape.
+func (v Semver) PreReleaseType() (preType string, n int, ok bool) {
+	if v.Pre == "" {
+		return "", 0, false
+	}
+	preType, numStr, found := strings.Cut(v.Pre, ".")
+	if !found {
+		return "", 0, false
+	}
+	n, err := strconv.Atoi(numStr)
+	if err != nil {
+		return "", 0, false
+	}
+	return preType, n, true
+}
+
+// String renders v as "X.Y.Z", or "X.Y.Z-<pre>" when v carries a
+// pre-release identifier, without a "v" prefix or build metadata.
 func (v Semver) String() string {
-	return fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
+	if v.Pre == "" {
+		return fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
+	}
+	return fmt.Sprintf("%d.%d.%d-%s", v.Major, v.Minor, v.Patch, v.Pre)
 }
