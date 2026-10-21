@@ -1,10 +1,10 @@
 // Copyright 2026 Simon Ostendorf
 // SPDX-License-Identifier: Apache-2.0
 
-// Package forge defines the interface release-me uses to read pull request
-// data from a code hosting platform. internal/forge/github implements it for
-// GitHub; the core packages depend only on this package, never on a concrete
-// implementation.
+// Package forge defines the interface release-me uses to read and write
+// pull requests, labels, tags and releases on a code hosting platform.
+// internal/forge/github implements it for GitHub; the core packages depend
+// only on this package, never on a concrete implementation.
 package forge
 
 import (
@@ -16,21 +16,79 @@ import (
 // number.
 var ErrNotFound = errors.New("pull request not found")
 
-// PullRequest is the subset of pull request data milestone 1 needs.
+// ErrTagExists is returned when CreateTag is asked to create a tag that
+// already exists.
+var ErrTagExists = errors.New("tag already exists")
+
+// ErrReleaseExists is returned when CreateRelease is asked to create a
+// release for a tag that already has one.
+var ErrReleaseExists = errors.New("release already exists")
+
+// ErrUnauthorized is returned when the forge rejects the request's
+// credentials, as opposed to any other failure.
+var ErrUnauthorized = errors.New("unauthorized")
+
+// PullRequest is the subset of pull request data release-me needs.
 type PullRequest struct {
-	Number int
-	Title  string
-	Body   string
-	Labels []string
-	URL    string
+	Number  int
+	Title   string
+	Body    string
+	Labels  []string
+	URL     string
+	Merged  bool
+	HeadSHA string
 }
 
-// Forge reads pull request data from a code hosting platform.
+// Forge reads and writes pull request, label, tag and release data on a
+// code hosting platform.
 //
 // PullRequest may return a partially populated PullRequest alongside
 // ErrNotFound: an implementation that can derive a link from owner, repo and
 // number alone should still set URL, so a caller can show a link even when
 // the pull request itself could not be read.
 type Forge interface {
+	// PullRequest reads one pull request by number.
 	PullRequest(ctx context.Context, owner, repo string, number int) (PullRequest, error)
+
+	// PullRequests lists pull requests with the given head branch and
+	// state, "open" or "closed".
+	PullRequests(ctx context.Context, owner, repo, head, state string) ([]PullRequest, error)
+
+	// CreatePullRequest opens a pull request from head onto base, with the
+	// given title, body and labels.
+	CreatePullRequest(ctx context.Context, owner, repo, base, head, title, body string, labels []string) (PullRequest, error)
+
+	// UpdatePullRequest edits the title and body of an existing pull
+	// request. It never touches labels: a label a human added stays.
+	UpdatePullRequest(ctx context.Context, owner, repo string, number int, title, body string) (PullRequest, error)
+
+	// Labels lists the labels currently set on a pull request.
+	Labels(ctx context.Context, owner, repo string, number int) ([]string, error)
+
+	// AddLabels adds labels to a pull request, alongside whatever it
+	// already carries.
+	AddLabels(ctx context.Context, owner, repo string, number int, labels []string) error
+
+	// SetLabels replaces the full label set of a pull request.
+	SetLabels(ctx context.Context, owner, repo string, number int, labels []string) error
+
+	// RepositoryLabels lists every label defined on the repository.
+	// ErrUnauthorized is returned when the credentials are rejected.
+	RepositoryLabels(ctx context.Context, owner, repo string) ([]string, error)
+
+	// DefaultBranch returns the repository's default branch name.
+	DefaultBranch(ctx context.Context, owner, repo string) (string, error)
+
+	// CreateTag creates a tag reference named tag on the commit sha.
+	// ErrTagExists is returned when the tag already exists.
+	CreateTag(ctx context.Context, owner, repo, tag, sha string) error
+
+	// CreateRelease creates a non-draft, non-prerelease release for tag,
+	// with the given name and body. ErrReleaseExists is returned when a
+	// release for tag already exists.
+	CreateRelease(ctx context.Context, owner, repo, tag, name, body string) error
+
+	// MergeCommit returns the SHA of the commit a merged pull request was
+	// merged as.
+	MergeCommit(ctx context.Context, owner, repo string, number int) (string, error)
 }
