@@ -6,7 +6,9 @@ and are not repeated here.
 ## Layout
 
 - `cmd/release-me/`: the entry point, flags and command dispatch only.
-- `internal/forge/`: the forge interface and the GitHub implementation. GitLab lands next to it.
+- `internal/config/`: loads `release-me.yaml`, unknown keys rejected.
+- `internal/forge/`: the forge interface and the GitHub implementation, with a fake in
+  `internal/forge/forgetest` for tests. GitLab lands next to it.
 - `internal/history/`: first parent walk, tags, components by path.
 - `internal/conventional/`: pull request titles, commit subjects and override blocks.
 - `internal/version/`: bump rules and pre-releases.
