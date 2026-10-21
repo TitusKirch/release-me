@@ -1,5 +1,6 @@
 // Copyright 2026 Simon Ostendorf
 // SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -21,7 +22,7 @@ func TestRun(t *testing.T) {
 		{name: "prints the version", args: []string{"version"}, wantCode: 0, wantOut: "dev"},
 		{name: "prints usage on help", args: []string{"help"}, wantCode: 0, wantOut: "Commands:"},
 		{name: "rejects an unknown command", args: []string{"ship"}, wantCode: 2, wantErr: `unknown command "ship"`},
-		{name: "names a command that is not available yet", args: []string{"next"}, wantCode: 1, wantErr: "next: not available yet"},
+		{name: "names a command that is not available yet", args: []string{"pr"}, wantCode: 1, wantErr: "pr: not available yet"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1,7 +1,7 @@
-// Command release-me releases repositories from their first parent history.
-//
 // Copyright 2026 Simon Ostendorf
 // SPDX-License-Identifier: Apache-2.0
+
+// Command release-me releases repositories from their first parent history.
 package main
 
 import (
@@ -41,7 +41,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "version":
 		fmt.Fprintln(stdout, Version)
 		return 0
-	case "next", "changelog", "pr", "release", "run", "check":
+	case "next":
+		return runNext(args[1:], stdout, stderr)
+	case "changelog":
+		return runChangelog(args[1:], stdout, stderr)
+	case "pr", "release", "run", "check":
 		fmt.Fprintf(stderr, "release-me %s: not available yet\n", args[0])
 		return 1
 	case "help", "-h", "--help":

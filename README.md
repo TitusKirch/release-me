@@ -34,6 +34,13 @@ release-me check       # config, labels and token
 
 Every writing command accepts `--dry-run`.
 
+`next` and `changelog` work today, against a GitHub repository with one component. `pr`,
+`release`, `run` and `check` land in later milestones.
+
+`next` prints the next version and the bump reason, for example `0.2.0 (feat)`. `changelog`
+prints the rendered entries for that version. Both print nothing and exit 0 when there is
+nothing to release. `--verbose` enables debug logging on stderr.
+
 ## Configuration
 
 `release-me.yaml` at the repository root. A repository without `components` is one component.
@@ -52,6 +59,23 @@ components:
         updater: go
         key: Version
 ```
+
+`next` and `changelog` read five keys today:
+
+- `initial-version`: the version when no tag exists yet, default `0.1.0`.
+- `bump-minor-pre-major`: turns a major bump into a minor one below `1.0.0`, default `false`.
+- `hidden-types`: hides entries of these types from the changelog, default `chore`, `docs`,
+  `ci`, `style`, `refactor`, `test`, `build`, `other`. Only `feat`, `fix`, `perf`, `revert` and
+  a breaking change ever render a section; a type outside those five never renders, hidden or
+  not.
+- `fallback-type`: the type assigned to text that does not parse as a conventional commit,
+  default `other`. `feat`, `fix`, `perf` and `revert` are refused, unparseable text never
+  bumps the version.
+- `token-env`: the environment variable holding the GitHub token, default `GITHUB_TOKEN`.
+
+`major-tag` and `components` land with later milestones. An unknown key is an error. The file
+is read from the repository root, found through `git rev-parse --show-toplevel`, whatever
+directory the command runs from.
 
 - A pull request overrides its entries with a fenced block `release-me` in its body, one entry
   per line. An empty block hides the pull request.
