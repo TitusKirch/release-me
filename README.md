@@ -33,25 +33,33 @@ release-me check       # config, labels and token
 ```
 
 Every writing command accepts `--dry-run`: it prints what would change and writes nothing, not
-even a branch. `--verbose` enables debug logging on stderr. Components and the major tag land
-in a later milestone; everything below works today, against a GitHub repository with one
-component.
+even a branch. `--verbose` enables debug logging on stderr. The major tag lands in a later
+milestone; everything below works today, against a GitHub repository.
 
-`next` prints the next version and the bump reason, for example `0.2.0 (feat)`. `changelog`
-prints the rendered entries for that version. Both print nothing and exit 0 when there is
-nothing to release.
+Every command loops over the configured components, in `release-me.yaml`'s order, or the
+single implicit `main` component a repository without `components` carries. `--component
+<name>` limits a command to one. Output lines are prefixed with the component's name, `"<name>:
+<line>"`, only when a command runs more than one component; a run limited to one component, by
+`--component` or because the repository has only one, prints unprefixed lines, the same shape a
+single-component repository always has.
+
+`next` prints the next version and the bump reason per component, for example `0.2.0 (feat)`.
+`changelog` prints the rendered entries for that version. Both print nothing for a component
+with nothing to release.
 
 ### pr
 
-Creates or updates the release pull request: branch `release-me/main` off the repository's
-default branch, with the changelog update and every configured file bumped to the next
-version. The default branch is read from the forge; `git symbolic-ref refs/remotes/origin/HEAD`
-is the fallback when that call fails. The branch itself is still forked from whatever commit is
-checked out, which must be the default branch's tip, same as `next` and `changelog`. The branch
-is written in a temporary checkout, never in your working copy.
+Creates or updates one release pull request per component: branch `release-me/<name>` off the
+repository's default branch, with that component's changelog update and its configured files
+bumped to its next version. The default branch is read from the forge;
+`git symbolic-ref refs/remotes/origin/HEAD` is the fallback when that call fails. The branch
+itself is still forked from whatever commit is checked out, which must be the default branch's
+tip, same as `next` and `changelog`. The branch is written in a temporary checkout, never in
+your working copy.
 
 `pr` checks that the `pending` and `tagged` labels exist before it writes anything, the same
-check `check` runs.
+check `check` runs. The labels are shared across every component; the default branch is
+resolved once and shared too.
 
 Rerunning `pr` is judged on content, not on the rendered pull request body: the changelog
 entries for the version, without the heading's date, and every configured file's bumped
@@ -66,33 +74,35 @@ push: the content that would land on the branch did not change.
 Updating an existing pull request never replaces its labels: a label added by hand stays, and
 the `pending` label is added back if it is ever missing, never set by replacing the full list.
 
-The pull request title is `chore(main): release vX.Y.Z`. Its body starts with
-`Release vX.Y.Z`, then the notes block (below) when one is present, then the full changelog for
-the version inside a collapsed `<details>` section. When every entry is a hidden type, the
-changelog carries one explicit line, `- Version bump without user facing changes.`, instead of
-an empty heading.
+The pull request title is `chore(<name>): release vX.Y.Z`, `chore(main): release vX.Y.Z` for
+the implicit `main` component. Its body starts with `Release vX.Y.Z`, then the notes block
+(below) when one is present, then the full changelog for the version inside a collapsed
+`<details>` section. When every entry is a hidden type, the changelog carries one explicit
+line, `- Version bump without user facing changes.`, instead of an empty heading.
 
 ### release
 
-Tags and releases every merged pull request on the release branch that still carries the
-`pending` label: a tag `vX.Y.Z` on the merge commit, a GitHub release with the pull request's
-notes and changelog, draft and prerelease both false, then the label swapped from `pending` to
-`tagged`. A tag that already exists, left over from an earlier, interrupted run, is not an
-error: the release and the label swap still happen, so the pull request does not stay pending
-forever, and the run reports it as already tagged.
+Tags and releases every merged pull request on a component's release branch that still carries
+the `pending` label: a tag on the merge commit, a GitHub release with the pull request's notes
+and changelog, draft and prerelease both false, then the label swapped from `pending` to
+`tagged`. The implicit `main` component tags `vX.Y.Z` and names the release after the tag,
+today's shape; a configured component tags `<name>/vX.Y.Z` and names the release
+`<name> vX.Y.Z`. A tag that already exists, left over from an earlier, interrupted run, is not
+an error: the release and the label swap still happen, so the pull request does not stay
+pending forever, and the run reports it as already tagged.
 
 ### run
 
-`pr`, then `release`. The CI entry point: one command covers opening or updating the release
-pull request and releasing whatever merged since the last run.
+`pr`, then `release`, for every component. The CI entry point: one command covers opening or
+updating every release pull request and releasing whatever merged since the last run.
 
 ### check
 
-Validates `release-me.yaml`, that the `pending` and `tagged` labels exist on the repository,
-and that the token environment variable is both set and accepted by the forge: a rejected
-token is reported as such, not as a missing label, since the symptom from the forge is the
-same 401 either way. Prints every missing or invalid item and exits 1 when anything is
-missing, 0 otherwise.
+Validates `release-me.yaml`, including an unknown `--component` name, that the `pending` and
+`tagged` labels exist on the repository, and that the token environment variable is both set
+and accepted by the forge: a rejected token is reported as such, not as a missing label, since
+the symptom from the forge is the same 401 either way. Prints every missing or invalid item and
+exits 1 when anything is missing, 0 otherwise.
 
 ### Notes block
 
@@ -166,9 +176,34 @@ files:
   const Version = "0.1.0" // release-me: version
   ```
 
-`major-tag` and `components` land with a later milestone. An unknown key is an error. The file
-is read from the repository root, found through `git rev-parse --show-toplevel`, whatever
-directory the command runs from.
+- `components`: maps a name to a `path` and optional overrides of `initial-version`,
+  `bump-minor-pre-major`, `hidden-types` and `files`. A key left out of a component falls back
+  to the top-level setting above. A repository without `components` is one component named
+  `main` at path `.`, tag prefix `v`, branch `release-me/main`, the shape every example above
+  already is. A configured component gets tag prefix `<name>/v`, branch `release-me/<name>`,
+  changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`:
+
+  ```yaml
+  components:
+    frontend:
+      path: web/frontend
+      initial-version: 0.2.0
+      files:
+        - path: web/frontend/package.json
+    backend:
+      path: services/backend
+      hidden-types: [chore, docs, test]
+  ```
+
+  A first parent entry belongs to every component whose path it touches, through the files a
+  merge commit's branch changed; a pull request touching several components lands in every one
+  of their changelogs. The component at path `.`, explicit or implicit, matches every entry.
+  Two components with overlapping paths, or an unknown name on `--component`, are configuration
+  errors.
+
+`major-tag` lands with a later milestone. An unknown key is an error, inside a component too.
+The file is read from the repository root, found through `git rev-parse --show-toplevel`,
+whatever directory the command runs from.
 
 ## Development
 

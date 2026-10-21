@@ -32,6 +32,19 @@ func runGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// runGitOutput runs git in dir and returns its standard output, failing the
+// test on error.
+func runGitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %s: %v", strings.Join(args, " "), err)
+	}
+	return string(out)
+}
+
 // commitEntry creates an empty commit with subject and, when body is not
 // empty, a blank line followed by body.
 func commitEntry(t *testing.T, dir, subject, body string) {

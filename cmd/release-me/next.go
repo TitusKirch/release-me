@@ -5,37 +5,52 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
+
+	"github.com/ostendorf-cloud/release-me/internal/history"
 )
 
 // runNext implements the next command: it prints the next version and the
-// bump reason, nothing when there is nothing to release.
+// bump reason per component, nothing for a component with nothing to
+// release.
 func runNext(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("next", flag.ContinueOnError)
-	verbose := fs.Bool("verbose", false, "enable debug logging on stderr")
-	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
+	verbose, component, ok := parseFlags("next", args, stderr)
+	if !ok {
 		return 2
 	}
 
 	ctx := context.Background()
-	dir, cfg, f, logger, err := setup(ctx, stderr, *verbose)
+	dir, cfg, f, logger, err := setup(ctx, stderr, verbose)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
 
-	rel, released, err := computeRelease(ctx, dir, cfg, f, logger)
+	components, err := resolveComponents(cfg, component)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	if !released {
-		return 0
-	}
+	multi := len(components) > 1
 
-	fmt.Fprintf(stdout, "%s (%s)\n", rel.version.Version, rel.version.Reason)
+	owner, repoName, err := history.Remote(ctx, dir)
+	if err != nil {
+		fmt.Fprintf(stderr, "release-me: origin remote: %v\n", err)
+		return 1
+	}
+	logger.Debug("resolved repository", "owner", owner, "repo", repoName)
+
+	for _, comp := range components {
+		rel, released, err := computeRelease(ctx, dir, cfg, comp, owner, repoName, f, logger)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		if !released {
+			continue
+		}
+		printLine(stdout, comp.Name, multi, fmt.Sprintf("%s (%s)", rel.version.Version, rel.version.Reason))
+	}
 	return 0
 }

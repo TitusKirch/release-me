@@ -17,12 +17,8 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/version"
 )
 
-// tagPrefix is the version tag prefix for the single component this
-// milestone supports.
-const tagPrefix = "v"
-
 // release is the computed next version and changelog entries for one
-// repository, ready for the next and changelog commands to print.
+// component, ready for the next and changelog commands to print.
 type release struct {
 	version     version.Result
 	entries     []changelog.Entry
@@ -30,20 +26,16 @@ type release struct {
 }
 
 // computeRelease wires history, the forge and the conventional and version
-// packages into one release. released is false when there is nothing to
-// release.
-func computeRelease(ctx context.Context, dir string, cfg config.Config, f forge.Forge, logger *slog.Logger) (release, bool, error) {
-	owner, repoName, err := history.Remote(ctx, dir)
+// packages into one release for comp. released is false when there is
+// nothing to release.
+func computeRelease(
+	ctx context.Context, dir string, cfg config.Config, comp config.ResolvedComponent, owner, repoName string, f forge.Forge, logger *slog.Logger,
+) (release, bool, error) {
+	tag, last, hasTag, err := history.LastTag(ctx, dir, comp.TagPrefix)
 	if err != nil {
-		return release{}, false, fmt.Errorf("release-me: origin remote: %w", err)
+		return release{}, false, fmt.Errorf("release-me: component %s: last tag: %w", comp.Name, err)
 	}
-	logger.Debug("resolved repository", "owner", owner, "repo", repoName)
-
-	tag, last, hasTag, err := history.LastTag(ctx, dir, tagPrefix)
-	if err != nil {
-		return release{}, false, fmt.Errorf("release-me: last tag: %w", err)
-	}
-	logger.Debug("last tag", "tag", tag, "found", hasTag)
+	logger.Debug("last tag", "component", comp.Name, "tag", tag, "found", hasTag)
 
 	since := ""
 	if hasTag {
@@ -51,20 +43,44 @@ func computeRelease(ctx context.Context, dir string, cfg config.Config, f forge.
 	}
 	raw, err := history.Walk(ctx, dir, since)
 	if err != nil {
-		return release{}, false, fmt.Errorf("release-me: history: %w", err)
+		return release{}, false, fmt.Errorf("release-me: component %s: history: %w", comp.Name, err)
 	}
-	logger.Debug("history entries", "count", len(raw))
+	raw, err = filterByComponent(ctx, dir, raw, comp.Path)
+	if err != nil {
+		return release{}, false, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
+	}
+	logger.Debug("history entries", "component", comp.Name, "count", len(raw))
 
 	changes, entries, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType)
 	if err != nil {
-		return release{}, false, err
+		return release{}, false, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
 
-	result, released := version.Next(last, hasTag, changes, cfg.InitialVersion, cfg.BumpMinorPreMajor)
+	result, released := version.Next(last, hasTag, changes, comp.InitialVersion, comp.BumpMinorPreMajor)
 	if !released {
 		return release{}, false, nil
 	}
-	return release{version: result, entries: entries, hiddenTypes: cfg.HiddenTypes}, true, nil
+	return release{version: result, entries: entries, hiddenTypes: comp.HiddenTypes}, true, nil
+}
+
+// filterByComponent keeps only the entries that touch path, through
+// history.Touches and history.Belongs. path "." matches every entry
+// without reading any commit's touched files.
+func filterByComponent(ctx context.Context, dir string, entries []history.Entry, path string) ([]history.Entry, error) {
+	if path == "." {
+		return entries, nil
+	}
+	filtered := make([]history.Entry, 0, len(entries))
+	for _, e := range entries {
+		paths, err := history.Touches(ctx, dir, e.SHA)
+		if err != nil {
+			return nil, fmt.Errorf("commit %s: %w", e.SHA, err)
+		}
+		if history.Belongs(paths, path) {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered, nil
 }
 
 // assembleEntries resolves each history entry's text through the forge when

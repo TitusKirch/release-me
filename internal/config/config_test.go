@@ -160,6 +160,20 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 		{name: "rejects malformed YAML", content: "initial-version: [0.1.0\n"},
 		{name: "rejects a fallback type that bumps the version", content: "fallback-type: feat\n"},
 		{name: "rejects an unknown updater", content: "files:\n  - path: cmd/cli/version.go\n    updater: go\n"},
+		{name: "rejects a component without a path", content: "components:\n  frontend:\n    initial-version: 0.1.0\n"},
+		{name: "rejects an unknown key inside a component", content: "components:\n  frontend:\n    path: frontend\n    major-tag: true\n"},
+		{
+			name:    "rejects two components with the same path",
+			content: "components:\n  frontend:\n    path: app\n  frontend2:\n    path: app\n",
+		},
+		{
+			name:    "rejects a component nested inside another",
+			content: "components:\n  app:\n    path: app\n  web:\n    path: app/web\n",
+		},
+		{
+			name:    "rejects a root component alongside another",
+			content: "components:\n  main:\n    path: .\n  frontend:\n    path: frontend\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -170,5 +184,89 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 				t.Fatal("Load() error = nil, want an error")
 			}
 		})
+	}
+}
+
+func TestLoadReadsComponentsInConfigOrder(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, `components:
+  backend:
+    path: backend
+    hidden-types: [chore]
+  frontend:
+    path: frontend
+    initial-version: 0.2.0
+    bump-minor-pre-major: true
+    files:
+      - path: frontend/package.json
+`)
+
+	got, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(got.Components) != 2 {
+		t.Fatalf("Components = %+v, want two entries in declaration order", got.Components)
+	}
+	if got.Components[0].Name != "backend" || got.Components[1].Name != "frontend" {
+		t.Fatalf("Components order = [%s, %s], want [backend, frontend]", got.Components[0].Name, got.Components[1].Name)
+	}
+	if got.Components[0].Path != "backend" || got.Components[1].Path != "frontend" {
+		t.Fatalf("Components paths = [%s, %s], want [backend, frontend]", got.Components[0].Path, got.Components[1].Path)
+	}
+}
+
+func TestResolveReturnsTheImplicitMainComponentWithoutAComponentsKey(t *testing.T) {
+	t.Parallel()
+	cfg := config.Default()
+
+	got := cfg.Resolve()
+	want := []config.ResolvedComponent{{
+		Name: "main", Path: ".", TagPrefix: "v", Branch: "release-me/main",
+		ChangelogPath: "CHANGELOG.md", Multi: false,
+		InitialVersion: config.DefaultInitialVersion, HiddenTypes: config.DefaultHiddenTypes,
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Resolve() = %+v, want %+v", got, want)
+	}
+}
+
+func TestResolveMergesComponentOverridesWithTheTopLevel(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, `initial-version: 0.5.0
+bump-minor-pre-major: true
+hidden-types: [chore, docs]
+components:
+  backend:
+    path: backend
+  frontend:
+    path: frontend
+    initial-version: 0.2.0
+    bump-minor-pre-major: false
+    hidden-types: [chore]
+    files:
+      - path: frontend/package.json
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got := cfg.Resolve()
+	want := []config.ResolvedComponent{
+		{
+			Name: "backend", Path: "backend", TagPrefix: "backend/v", Branch: "release-me/backend",
+			ChangelogPath: "backend/CHANGELOG.md", Multi: true,
+			InitialVersion: "0.5.0", BumpMinorPreMajor: true, HiddenTypes: []string{"chore", "docs"},
+		},
+		{
+			Name: "frontend", Path: "frontend", TagPrefix: "frontend/v", Branch: "release-me/frontend",
+			ChangelogPath: "frontend/CHANGELOG.md", Multi: true,
+			InitialVersion: "0.2.0", BumpMinorPreMajor: false, HiddenTypes: []string{"chore"},
+			Files: []config.File{{Path: "frontend/package.json", Updater: "marker"}},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Resolve() = %+v, want %+v", got, want)
 	}
 }

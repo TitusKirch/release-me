@@ -9,9 +9,10 @@ import (
 	"io"
 )
 
-// runRun implements the run command, the CI entry point: pr, then release.
+// runRun implements the run command, the CI entry point: pr, then release,
+// for every configured component or the one named with --component.
 func runRun(args []string, stdout, stderr io.Writer) int {
-	verbose, dryRun, ok := parseWriteFlags("run", args, stderr)
+	verbose, dryRun, component, ok := parseWriteFlags("run", args, stderr)
 	if !ok {
 		return 2
 	}
@@ -23,11 +24,11 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	if err := doPR(ctx, dir, cfg, f, logger, dryRun, stdout); err != nil {
+	if err := doPR(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	if err := doRelease(ctx, dir, cfg, f, logger, dryRun, stdout); err != nil {
+	if err := doRelease(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}

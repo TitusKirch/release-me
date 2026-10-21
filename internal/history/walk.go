@@ -12,6 +12,9 @@ import (
 
 // Entry is one first parent commit since the last tag.
 type Entry struct {
+	// SHA is the commit hash, used to resolve the paths it touches for a
+	// component, through Touches.
+	SHA string
 	// PullRequestNumber is the pull request number parsed from a
 	// "Merge pull request #N from ..." subject, or 0 for a direct commit.
 	PullRequestNumber int
@@ -38,7 +41,7 @@ func Walk(ctx context.Context, dir, since string) ([]Entry, error) {
 		rangeArg = since + "..HEAD"
 	}
 
-	out, err := run(ctx, dir, "log", "--first-parent", "--format="+recordSep+"%s"+fieldSep+"%b", rangeArg)
+	out, err := run(ctx, dir, "log", "--first-parent", "--format="+recordSep+"%H"+fieldSep+"%s"+fieldSep+"%b", rangeArg)
 	if err != nil {
 		return nil, err
 	}
@@ -48,10 +51,11 @@ func Walk(ctx context.Context, dir, since string) ([]Entry, error) {
 		if record == "" {
 			continue
 		}
-		subject, body, _ := strings.Cut(record, fieldSep)
+		sha, rest, _ := strings.Cut(record, fieldSep)
+		subject, body, _ := strings.Cut(rest, fieldSep)
 		body = strings.TrimRight(body, "\n")
 
-		entry := Entry{Subject: subject, Body: body}
+		entry := Entry{SHA: sha, Subject: subject, Body: body}
 		if m := mergeSubject.FindStringSubmatch(subject); m != nil {
 			if number, err := strconv.Atoi(m[1]); err == nil {
 				entry.PullRequestNumber = number

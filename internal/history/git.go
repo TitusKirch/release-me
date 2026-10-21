@@ -3,7 +3,8 @@
 
 // Package history reads release-relevant data from a git repository through
 // the git CLI: the repository root, the last version tag, the origin
-// remote, and the first parent commit history since that tag.
+// remote, the first parent commit history since that tag, and the paths a
+// commit touches, so a caller can tell which component it belongs to.
 package history
 
 import (

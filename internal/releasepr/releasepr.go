@@ -13,14 +13,12 @@ import (
 	"time"
 )
 
-// Branch is the name of the release pull request's branch. The single
-// component this milestone supports hardcodes "main" the same way the tag
-// prefix "v" does.
-const Branch = "release-me/main"
-
-// Title renders the release pull request title for version.
-func Title(version string) string {
-	return fmt.Sprintf("chore(main): release v%s", version)
+// Title renders the release pull request title for one component's
+// version: "chore(<name>): release vX.Y.Z". The implicit "main" component
+// a repository without "components" carries renders the same title it
+// always has.
+func Title(name, version string) string {
+	return fmt.Sprintf("chore(%s): release v%s", name, version)
 }
 
 // Body renders the release pull request body: the version line, the

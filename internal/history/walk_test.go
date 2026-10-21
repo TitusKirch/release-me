@@ -6,6 +6,7 @@ package history_test
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/history"
@@ -93,8 +94,8 @@ func TestWalk(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Walk() error = %v", err)
 			}
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("Walk() = %+v, want %+v", got, tc.want)
+			if !reflect.DeepEqual(stripSHA(got), tc.want) {
+				t.Fatalf("Walk() = %+v, want %+v", stripSHA(got), tc.want)
 			}
 		})
 	}
@@ -120,13 +121,47 @@ func TestWalkExcludesCommitsOnAMergedSideBranch(t *testing.T) {
 		{PullRequestNumber: 7, Subject: "Merge pull request #7 from owner/feat-branch"},
 		{Subject: "chore: initial commit"},
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Walk() = %+v, want %+v", got, want)
+	if !reflect.DeepEqual(stripSHA(got), want) {
+		t.Fatalf("Walk() = %+v, want %+v", stripSHA(got), want)
 	}
 
 	for _, e := range got {
 		if e.Subject == "feat: work on the side branch" || e.Subject == "fix: a side branch typo" {
 			t.Fatalf("Walk() includes a side branch commit: %+v", got)
 		}
+	}
+}
+
+// stripSHA returns a copy of entries with SHA zeroed, so a test can compare
+// the rest of each Entry without hardcoding a commit hash that changes on
+// every run.
+func stripSHA(entries []history.Entry) []history.Entry {
+	if entries == nil {
+		return nil
+	}
+	out := make([]history.Entry, len(entries))
+	for i, e := range entries {
+		e.SHA = ""
+		out[i] = e
+	}
+	return out
+}
+
+func TestWalkPopulatesTheCommitSHA(t *testing.T) {
+	t.Parallel()
+	dir := newRepo(t)
+	commitEntry(t, dir, "feat: add a command", "")
+
+	got, err := history.Walk(context.Background(), dir, "")
+	if err != nil {
+		t.Fatalf("Walk() error = %v", err)
+	}
+	if len(got) != 1 || got[0].SHA == "" {
+		t.Fatalf("Walk() = %+v, want one entry with a non-empty SHA", got)
+	}
+
+	head := strings.TrimSpace(runGitOutput(t, dir, "rev-parse", "HEAD"))
+	if got[0].SHA != head {
+		t.Fatalf("SHA = %q, want %q", got[0].SHA, head)
 	}
 }

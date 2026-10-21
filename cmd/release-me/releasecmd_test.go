@@ -11,7 +11,6 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/forge/forgetest"
-	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 )
 
 func TestDoReleaseTagsAndReleasesAMergedPendingPullRequest(t *testing.T) {
@@ -26,14 +25,14 @@ func TestDoReleaseTagsAndReleasesAMergedPendingPullRequest(t *testing.T) {
 	}
 	f := &forgetest.Fake{
 		ListResponses: []forgetest.ListResponse{
-			{Head: releasepr.Branch, State: "closed", PullRequests: []forge.PullRequest{pr}},
+			{Head: mainBranch, State: "closed", PullRequests: []forge.PullRequest{pr}},
 		},
 		MergeCommits: map[int]string{9: "deadbeef"},
 		PRLabels:     map[int][]string{9: {"release: pending"}},
 	}
 	var stdout bytes.Buffer
 
-	if err := doRelease(t.Context(), dir, config.Default(), f, discardLogger(), false, &stdout); err != nil {
+	if err := doRelease(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doRelease() error = %v", err)
 	}
 
@@ -58,7 +57,7 @@ func TestDoReleaseStillFinishesAnAlreadyTaggedPullRequest(t *testing.T) {
 	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v0.1.0", Labels: []string{"release: pending"}, Merged: true}
 	f := &forgetest.Fake{
 		ListResponses: []forgetest.ListResponse{
-			{Head: releasepr.Branch, State: "closed", PullRequests: []forge.PullRequest{pr}},
+			{Head: mainBranch, State: "closed", PullRequests: []forge.PullRequest{pr}},
 		},
 		MergeCommits: map[int]string{9: "deadbeef"},
 		ExistingTags: map[string]bool{"v0.1.0": true},
@@ -66,7 +65,7 @@ func TestDoReleaseStillFinishesAnAlreadyTaggedPullRequest(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 
-	if err := doRelease(t.Context(), dir, config.Default(), f, discardLogger(), false, &stdout); err != nil {
+	if err := doRelease(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doRelease() error = %v", err)
 	}
 
@@ -91,7 +90,7 @@ func TestDoReleasePrintsNothingToReleaseWithoutAMergedPendingPullRequest(t *test
 	f := &forgetest.Fake{}
 	var stdout bytes.Buffer
 
-	if err := doRelease(t.Context(), dir, config.Default(), f, discardLogger(), false, &stdout); err != nil {
+	if err := doRelease(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doRelease() error = %v", err)
 	}
 	if stdout.String() != "nothing to release\n" {
@@ -106,12 +105,12 @@ func TestDoReleaseDryRunWritesNothing(t *testing.T) {
 	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v0.1.0", Labels: []string{"release: pending"}, Merged: true}
 	f := &forgetest.Fake{
 		ListResponses: []forgetest.ListResponse{
-			{Head: releasepr.Branch, State: "closed", PullRequests: []forge.PullRequest{pr}},
+			{Head: mainBranch, State: "closed", PullRequests: []forge.PullRequest{pr}},
 		},
 	}
 	var stdout bytes.Buffer
 
-	if err := doRelease(t.Context(), dir, config.Default(), f, discardLogger(), true, &stdout); err != nil {
+	if err := doRelease(t.Context(), dir, config.Default(), "", f, discardLogger(), true, &stdout); err != nil {
 		t.Fatalf("doRelease() error = %v", err)
 	}
 	if !strings.Contains(stdout.String(), "would tag and release v0.1.0") {

@@ -5,41 +5,54 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/ostendorf-cloud/release-me/internal/changelog"
+	"github.com/ostendorf-cloud/release-me/internal/history"
 )
 
 // runChangelog implements the changelog command: it prints the rendered
-// entries for the next version, nothing when there is nothing to release.
+// entries for the next version per component, nothing for a component with
+// nothing to release.
 func runChangelog(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("changelog", flag.ContinueOnError)
-	verbose := fs.Bool("verbose", false, "enable debug logging on stderr")
-	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
+	verbose, component, ok := parseFlags("changelog", args, stderr)
+	if !ok {
 		return 2
 	}
 
 	ctx := context.Background()
-	dir, cfg, f, logger, err := setup(ctx, stderr, *verbose)
+	dir, cfg, f, logger, err := setup(ctx, stderr, verbose)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
 
-	rel, released, err := computeRelease(ctx, dir, cfg, f, logger)
+	components, err := resolveComponents(cfg, component)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	if !released {
-		return 0
-	}
+	multi := len(components) > 1
 
-	out := changelog.Render(rel.version.Version, time.Now(), rel.entries, rel.hiddenTypes)
-	fmt.Fprint(stdout, out)
+	owner, repoName, err := history.Remote(ctx, dir)
+	if err != nil {
+		fmt.Fprintf(stderr, "release-me: origin remote: %v\n", err)
+		return 1
+	}
+	logger.Debug("resolved repository", "owner", owner, "repo", repoName)
+
+	for _, comp := range components {
+		rel, released, err := computeRelease(ctx, dir, cfg, comp, owner, repoName, f, logger)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		if !released {
+			continue
+		}
+		printBlock(stdout, comp.Name, multi, changelog.Render(rel.version.Version, time.Now(), rel.entries, rel.hiddenTypes))
+	}
 	return 0
 }
