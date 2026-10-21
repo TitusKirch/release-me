@@ -15,11 +15,59 @@ pull request, versions from Conventional Commits, a release pull request, a tag 
 
 ## Install
 
-Not available yet. The first release is cut by hand, from then on the tool releases itself.
+Through [mise](https://mise.jdx.dev), from the GitHub release's binaries:
 
 ```sh
 mise use ubi:ostendorf-cloud/release-me
 ```
+
+As a GitHub Action, pinned to a release tag. `release-me run` opens and updates pull requests
+and creates tags and releases, so the job needs `contents: write` and `pull-requests: write`;
+`secrets.GITHUB_TOKEN` cannot trigger the checks on the release pull request it opens, a
+repository or GitHub App token can:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+
+steps:
+  - uses: ostendorf-cloud/release-me/action@v0.1.0
+    with:
+      token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The action downloads the archive and checksums file matching its own version for the
+runner's os and arch, verifies the checksum, then runs `release-me run`. Inputs: `token`
+(required), `component`, `dry-run`, `verbose`, `download-token` for the download step on a
+private fork, defaulting to the calling workflow's own token, and `version` to pin a different
+release than the action's own tag, or `source` to build from the checkout with `go build`
+instead. `source` only builds this repository's own code: it is `go build`'s working directory
+for `uses: ./action` from inside this repository, not the caller's checkout for
+`uses: ostendorf-cloud/release-me/action@ref`.
+
+As a container image, for runners with an image cache:
+
+```sh
+docker run --rm -e GITHUB_TOKEN ghcr.io/ostendorf-cloud/release-me:0.1.0 run
+```
+
+Images are tagged with the released version. A stable release also moves `latest`, a
+pre-release does not.
+
+### Bootstrap
+
+Binaries, the action and the image all come from a GitHub release, and the first one has
+nothing earlier to download from. It is tagged and released by hand once: create the tag,
+create the GitHub release for it, then run `goreleaser release --clean` locally against that
+tag to build and upload its binaries, archives and checksums file (`task build:release` runs
+the same build as a `--snapshot`, without a tag or an upload, to check the build itself
+locally). `publish.yaml` carries every later release the same way, automatically.
+
+Until that first release exists, this repository's own `release.yaml` runs the action with
+`version: source`, which builds `release-me` with `go build` from the checkout instead of
+downloading it. Once the first release is tagged, point `release.yaml` at that version and the
+tool releases itself from then on.
 
 ## Use
 
