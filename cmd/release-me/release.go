@@ -70,38 +70,76 @@ func computeRelease(ctx context.Context, dir string, cfg config.Config, f forge.
 // assembleEntries resolves each history entry's text through the forge when
 // it names a pull request, falling back to the commit body when the forge
 // has no pull request for it, then parses the result as a conventional
-// commit, unparseable text falling back to fallbackType.
+// commit, unparseable text falling back to fallbackType. A pull request
+// carrying a "release-me" override block contributes its entries instead,
+// one Conventional Commits line per entry; an empty block hides it.
 func assembleEntries(ctx context.Context, f forge.Forge, owner, repoName string, raw []history.Entry, fallbackType string) ([]version.Change, []changelog.Entry, error) {
 	changes := make([]version.Change, 0, len(raw))
 	entries := make([]changelog.Entry, 0, len(raw))
 
 	for _, e := range raw {
-		text, url := entryText(e), ""
-
-		if e.PullRequestNumber > 0 {
-			pr, err := f.PullRequest(ctx, owner, repoName, e.PullRequestNumber)
-			switch {
-			case err == nil:
-				text, url = prText(pr.Title, pr.Body), pr.URL
-			case errors.Is(err, forge.ErrNotFound):
-				text, url = e.Body, pr.URL
-			default:
-				return nil, nil, fmt.Errorf("release-me: pull request #%d: %w", e.PullRequestNumber, err)
-			}
+		c, en, err := processEntry(ctx, f, owner, repoName, e, fallbackType)
+		if err != nil {
+			return nil, nil, err
 		}
+		changes = append(changes, c...)
+		entries = append(entries, en...)
+	}
+	return changes, entries, nil
+}
 
-		msg := conventional.Parse(text, fallbackType)
+// processEntry resolves one history entry into zero or more changes and
+// changelog entries.
+func processEntry(
+	ctx context.Context, f forge.Forge, owner, repoName string, e history.Entry, fallbackType string,
+) ([]version.Change, []changelog.Entry, error) {
+	text, url := entryText(e), ""
+
+	if e.PullRequestNumber > 0 {
+		pr, err := f.PullRequest(ctx, owner, repoName, e.PullRequestNumber)
+		switch {
+		case err == nil:
+			if override := conventional.ParseOverride(pr.Body); override.Present {
+				c, en := overrideEntries(override, e.PullRequestNumber, pr.URL, fallbackType)
+				return c, en, nil
+			}
+			text, url = prText(pr.Title, pr.Body), pr.URL
+		case errors.Is(err, forge.ErrNotFound):
+			text, url = e.Body, pr.URL
+		default:
+			return nil, nil, fmt.Errorf("release-me: pull request #%d: %w", e.PullRequestNumber, err)
+		}
+	}
+
+	msg := conventional.Parse(text, fallbackType)
+	return []version.Change{{Type: msg.Type, Breaking: msg.Breaking}}, []changelog.Entry{{
+		Type:              msg.Type,
+		Scope:             msg.Scope,
+		Description:       msg.Description,
+		Breaking:          msg.Breaking,
+		PullRequestNumber: e.PullRequestNumber,
+		URL:               url,
+	}}, nil
+}
+
+// overrideEntries parses one change and one changelog entry per line of an
+// override block, all naming the same pull request.
+func overrideEntries(override conventional.Override, number int, url, fallbackType string) ([]version.Change, []changelog.Entry) {
+	changes := make([]version.Change, 0, len(override.Entries))
+	entries := make([]changelog.Entry, 0, len(override.Entries))
+	for _, line := range override.Entries {
+		msg := conventional.Parse(line, fallbackType)
 		changes = append(changes, version.Change{Type: msg.Type, Breaking: msg.Breaking})
 		entries = append(entries, changelog.Entry{
 			Type:              msg.Type,
 			Scope:             msg.Scope,
 			Description:       msg.Description,
 			Breaking:          msg.Breaking,
-			PullRequestNumber: e.PullRequestNumber,
+			PullRequestNumber: number,
 			URL:               url,
 		})
 	}
-	return changes, entries, nil
+	return changes, entries
 }
 
 func entryText(e history.Entry) string {
