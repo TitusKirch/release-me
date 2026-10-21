@@ -5,6 +5,7 @@ package history
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/version"
@@ -37,4 +38,51 @@ func LastTag(ctx context.Context, dir, prefix string) (tag string, v version.Sem
 		}
 	}
 	return tag, v, ok, nil
+}
+
+// PreReleaseTag is one pre-release tag reachable from HEAD, together with
+// the semantic version it names.
+type PreReleaseTag struct {
+	Tag     string
+	Version version.Semver
+}
+
+// PreReleaseTags lists every pre-release tag reachable from HEAD whose name
+// is prefix followed by base's "X.Y.Z-<identifier>" shape, for the given
+// stable base version. Tags are ordered from lowest to highest semver
+// precedence, so the last element is always the pre-release tagged most
+// recently for base; a type change does not move it back.
+func PreReleaseTags(ctx context.Context, dir, prefix string, base version.Semver) ([]PreReleaseTag, error) {
+	out, err := run(ctx, dir, "tag", "--list", prefix+base.String()+"-*", "--merged", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+
+	var tags []PreReleaseTag
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		candidate, ok := version.ParseTag("v" + strings.TrimPrefix(line, prefix))
+		if !ok || !candidate.IsPreRelease() {
+			continue
+		}
+		if candidate.Major != base.Major || candidate.Minor != base.Minor || candidate.Patch != base.Patch {
+			continue
+		}
+		tags = append(tags, PreReleaseTag{Tag: line, Version: candidate})
+	}
+
+	slices.SortFunc(tags, func(a, b PreReleaseTag) int {
+		switch {
+		case a.Version.LessPrecedence(b.Version):
+			return -1
+		case b.Version.LessPrecedence(a.Version):
+			return 1
+		default:
+			return 0
+		}
+	})
+	return tags, nil
 }
