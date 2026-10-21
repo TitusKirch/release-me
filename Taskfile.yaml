@@ -15,6 +15,11 @@ tasks:
     cmds:
       - go build -o {{.BIN}} ./cmd/release-me
 
+  build:release:
+    desc: Build a local snapshot release with goreleaser
+    cmds:
+      - goreleaser release --snapshot --clean
+
   run:
     desc: Run the CLI from source, arguments after --
     cmds:
@@ -50,6 +55,21 @@ tasks:
     cmds:
       - actionlint
 
+  lint:goreleaser:
+    desc: goreleaser configuration lint
+    cmds:
+      - goreleaser check
+
+  lint:dockerfile:
+    desc: Dockerfile lint
+    cmds:
+      - hadolint Dockerfile
+
+  lint:shell:
+    desc: Shell script lint
+    cmds:
+      - shellcheck action/*.sh
+
   lint:secrets:
     desc: Secret scan over the git history
     cmds:
@@ -69,6 +89,9 @@ tasks:
       - task: lint:markdown
       - task: lint:yaml
       - task: lint:actions
+      - task: lint:goreleaser
+      - task: lint:dockerfile
+      - task: lint:shell
       - task: lint:secrets
       - task: test:go
       - task: build

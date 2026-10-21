@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: release-me
+
+builds:
+  - id: release-me
+    main: ./cmd/release-me
+    binary: release-me
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - arm64
+      - amd64
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+
+release:
+  # publish.yaml only runs goreleaser on an existing, already published
+  # release, so goreleaser never creates one here. mode: keep-existing
+  # (goreleaser's default) additionally keeps release-me's own release
+  # notes untouched if that ever changes.
+  mode: keep-existing

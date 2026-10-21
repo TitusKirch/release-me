@@ -1,0 +1,98 @@
+name: release-me
+description: Download release-me and run it against this repository.
+
+inputs:
+  token:
+    description: Token with permission to open release pull requests and create releases.
+    required: true
+  download-token:
+    description: >-
+      Token sent when downloading the release archive and checksums, needed only for a private
+      release-me fork. Defaults to the calling workflow's own token.
+    required: false
+    default: ""
+  component:
+    description: Limit the run to one configured component.
+    required: false
+    default: ""
+  dry-run:
+    description: Print what would change, write nothing.
+    required: false
+    default: "false"
+  verbose:
+    description: Enable debug logging on stderr.
+    required: false
+    default: "false"
+  version:
+    description: >-
+      release-me release to run, without the "v" prefix, or "source" to build it with go build
+      from this checkout instead of downloading a release. Defaults to the action's own release
+      tag.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the version to run
+      id: version
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: ${{ github.action_path }}/resolve-version.sh
+
+    - name: Resolve the runner platform
+      id: platform
+      if: steps.version.outputs.version != 'source'
+      shell: bash
+      run: ${{ github.action_path }}/resolve-platform.sh
+
+    - name: Set up Go
+      if: steps.version.outputs.version == 'source'
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      with:
+        go-version-file: ${{ github.action_path }}/../go.mod
+
+    - name: Build release-me from source
+      if: steps.version.outputs.version == 'source'
+      shell: bash
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: ${{ github.action_path }}/build-source.sh
+
+    - name: Download the release archive and checksums
+      if: steps.version.outputs.version != 'source'
+      shell: bash
+      env:
+        DOWNLOAD_TOKEN: ${{ inputs.download-token || github.token }}
+        VERSION: ${{ steps.version.outputs.version }}
+        OS: ${{ steps.platform.outputs.os }}
+        ARCH: ${{ steps.platform.outputs.arch }}
+      run: ${{ github.action_path }}/download.sh
+
+    - name: Verify the checksum
+      if: steps.version.outputs.version != 'source'
+      shell: bash
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+        OS: ${{ steps.platform.outputs.os }}
+        ARCH: ${{ steps.platform.outputs.arch }}
+      run: ${{ github.action_path }}/verify-checksum.sh
+
+    - name: Extract the binary
+      if: steps.version.outputs.version != 'source'
+      shell: bash
+      env:
+        OS: ${{ steps.platform.outputs.os }}
+        ARCH: ${{ steps.platform.outputs.arch }}
+      run: ${{ github.action_path }}/extract.sh
+
+    - name: Run release-me
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        COMPONENT: ${{ inputs.component }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        VERBOSE: ${{ inputs.verbose }}
+      run: ${{ github.action_path }}/run-release-me.sh
