@@ -5,7 +5,6 @@ package release_test
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"reflect"
 	"testing"
@@ -16,7 +15,7 @@ import (
 )
 
 func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 func TestVersionFromTitle(t *testing.T) {
