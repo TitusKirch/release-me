@@ -65,6 +65,11 @@ tasks:
     cmds:
       - hadolint Dockerfile
 
+  lint:shell:
+    desc: Shell script lint
+    cmds:
+      - shellcheck action/*.sh
+
   lint:secrets:
     desc: Secret scan over the git history
     cmds:
@@ -86,6 +91,7 @@ tasks:
       - task: lint:actions
       - task: lint:goreleaser
       - task: lint:dockerfile
+      - task: lint:shell
       - task: lint:secrets
       - task: test:go
       - task: build
