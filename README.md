@@ -33,8 +33,7 @@ release-me check       # config, labels and token
 ```
 
 Every writing command accepts `--dry-run`: it prints what would change and writes nothing, not
-even a branch. `--verbose` enables debug logging on stderr. The major tag lands in a later
-milestone; everything below works today, against a GitHub repository.
+even a branch. `--verbose` enables debug logging on stderr.
 
 Every command loops over the configured components, in `release-me.yaml`'s order, or the
 single implicit `main` component a repository without `components` carries. `--component
@@ -110,6 +109,12 @@ after the tag, today's shape; a configured component tags `<name>/vX.Y.Z` and na
 `<name> vX.Y.Z`. A tag that already exists, left over from an earlier, interrupted run, is not
 an error: the release and the label swap still happen, so the pull request does not stay
 pending forever, and the run reports it as already tagged.
+
+With `major-tag: true`, every stable release additionally creates or force-moves the major
+tag, `vX` for the implicit `main` component or `<name>/vX` for a configured one, onto the same
+commit. A tag that does not exist yet is created; one that does is moved, never left behind. A
+pre-release, once that lands, never moves it. `--dry-run` reports whether the major tag would
+be created or moved, writing nothing.
 
 ### run
 
@@ -193,21 +198,49 @@ files:
   and `check` use, default `release: alpha`, `release: beta` and `release: rc`. See
   [Pre-releases](#pre-releases). `check` reports any of the five missing labels by name, it
   never creates one.
-- `files`: files `pr` bumps to the next version, each a `path` and an optional `updater`,
-  default `marker`. The `marker` updater replaces the version on a line ending in
-  `# release-me: version` or `// release-me: version`, keeping the rest of the line, including
-  the comment, as it is:
+- `files`: files `pr` bumps to the next version, each a `path`, an optional `updater`, default
+  `marker`, and a `key` where the updater needs one. Every updater keeps the rest of the file
+  byte for byte: order, comments, indentation. A file that does not exist, or a `key` not found
+  in it, fails `pr`, naming the path and the key.
 
-  ```go
-  const Version = "0.1.0" // release-me: version
-  ```
+  - `marker` replaces the version on a line ending in `# release-me: version` or
+    `// release-me: version`, keeping the rest of the line, including the comment, as it is. No
+    `key`:
 
+    ```go
+    const Version = "0.1.0" // release-me: version
+    ```
+
+  - `helm` replaces a `Chart.yaml`'s top-level `version` field. No `key`:
+
+    ```yaml
+    version: 0.1.0
+    ```
+
+  - `go` replaces the string literal assigned to the constant or variable `key` names:
+
+    ```yaml
+    files:
+      - path: internal/version/version.go
+        updater: go
+        key: Version
+    ```
+
+  - `json`, `yaml` and `toml` replace the value at `key`, a dotted path of object keys,
+    mapping keys or table-and-key, such as `tool.poetry.version`.
+
+  Every file entry is validated when release-me.yaml loads: an unknown `updater`, a `key`
+  missing where the updater requires one, and a `key` given to an updater that takes none are
+  all errors.
+
+- `major-tag`: moves the major tag on every stable release, default `false`. See `release`
+  above. A component overrides it through its own `major-tag` key.
 - `components`: maps a name to a `path` and optional overrides of `initial-version`,
-  `bump-minor-pre-major`, `hidden-types` and `files`. A key left out of a component falls back
-  to the top-level setting above. A repository without `components` is one component named
-  `main` at path `.`, tag prefix `v`, branch `release-me/main`, the shape every example above
-  already is. A configured component gets tag prefix `<name>/v`, branch `release-me/<name>`,
-  changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`:
+  `bump-minor-pre-major`, `hidden-types`, `files` and `major-tag`. A key left out of a
+  component falls back to the top-level setting above. A repository without `components` is
+  one component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the shape
+  every example above already is. A configured component gets tag prefix `<name>/v`, branch
+  `release-me/<name>`, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`:
 
   ```yaml
   components:
@@ -227,9 +260,9 @@ files:
   Two components with overlapping paths, or an unknown name on `--component`, are configuration
   errors.
 
-`major-tag` lands with a later milestone. An unknown key is an error, inside a component too.
-The file is read from the repository root, found through `git rev-parse --show-toplevel`,
-whatever directory the command runs from.
+An unknown key is an error, inside a component too. The file is read from the repository
+root, found through `git rev-parse --show-toplevel`, whatever directory the command runs
+from.
 
 ## Development
 
