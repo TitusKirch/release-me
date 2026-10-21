@@ -369,7 +369,7 @@ func TestCreateRelease(t *testing.T) {
 	})
 	f := newTestForge(t, mux)
 
-	if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0"); err != nil {
+	if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false); err != nil {
 		t.Fatalf("CreateRelease() error = %v", err)
 	}
 	if body["draft"] != false || body["prerelease"] != false {
@@ -377,6 +377,26 @@ func TestCreateRelease(t *testing.T) {
 	}
 	if body["tag_name"] != "v0.1.0" || body["body"] != "Release v0.1.0" {
 		t.Fatalf("body = %v", body)
+	}
+}
+
+func TestCreateReleaseMarksAPreReleaseVersionAsAPreRelease(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	var body map[string]any
+	mux.HandleFunc("/api/v3/repos/owner/repo/releases", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode release body: %v", err)
+		}
+		fmt.Fprint(w, `{"id": 1, "tag_name": "v0.1.0-alpha.1"}`)
+	})
+	f := newTestForge(t, mux)
+
+	if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0-alpha.1", "v0.1.0-alpha.1", "Release v0.1.0-alpha.1", true); err != nil {
+		t.Fatalf("CreateRelease() error = %v", err)
+	}
+	if body["draft"] != false || body["prerelease"] != true {
+		t.Fatalf("body = %v, want draft false and prerelease true", body)
 	}
 }
 
@@ -389,7 +409,7 @@ func TestCreateReleaseReturnsErrReleaseExistsOnADuplicateTag(t *testing.T) {
 	})
 	f := newTestForge(t, mux)
 
-	err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0")
+	err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false)
 	if !errors.Is(err, forge.ErrReleaseExists) {
 		t.Fatalf("CreateRelease() error = %v, want %v", err, forge.ErrReleaseExists)
 	}

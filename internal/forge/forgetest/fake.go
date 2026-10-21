@@ -61,6 +61,7 @@ type CreateTagCall struct {
 // CreateReleaseCall records one call to CreateRelease.
 type CreateReleaseCall struct {
 	Owner, Repo, Tag, Name, Body string
+	Prerelease                   bool
 }
 
 // Fake is a forge.Forge backed by fixed, pre-configured responses. It
@@ -210,11 +211,11 @@ func (f *Fake) CreateTag(_ context.Context, owner, repo, tag, sha string) error 
 }
 
 // CreateRelease implements forge.Forge.
-func (f *Fake) CreateRelease(_ context.Context, owner, repo, tag, name, body string) error {
+func (f *Fake) CreateRelease(_ context.Context, owner, repo, tag, name, body string, prerelease bool) error {
 	if f.ExistingReleases[tag] {
 		return forge.ErrReleaseExists
 	}
-	f.CreatedReleases = append(f.CreatedReleases, CreateReleaseCall{Owner: owner, Repo: repo, Tag: tag, Name: name, Body: body})
+	f.CreatedReleases = append(f.CreatedReleases, CreateReleaseCall{Owner: owner, Repo: repo, Tag: tag, Name: name, Body: body, Prerelease: prerelease})
 	return nil
 }
 

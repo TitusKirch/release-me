@@ -177,8 +177,8 @@ func (f *Forge) CreateTag(ctx context.Context, owner, repo, tag, sha string) err
 }
 
 // CreateRelease implements forge.Forge.
-func (f *Forge) CreateRelease(ctx context.Context, owner, repo, tag, name, body string) error {
-	draft, prerelease := false, false
+func (f *Forge) CreateRelease(ctx context.Context, owner, repo, tag, name, body string, prerelease bool) error {
+	draft := false
 	_, resp, err := f.client.Repositories.CreateRelease(ctx, owner, repo, gogithub.CreateReleaseRequest{
 		TagName:    tag,
 		Name:       &name,

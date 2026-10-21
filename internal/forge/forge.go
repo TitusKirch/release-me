@@ -83,10 +83,10 @@ type Forge interface {
 	// ErrTagExists is returned when the tag already exists.
 	CreateTag(ctx context.Context, owner, repo, tag, sha string) error
 
-	// CreateRelease creates a non-draft, non-prerelease release for tag,
-	// with the given name and body. ErrReleaseExists is returned when a
-	// release for tag already exists.
-	CreateRelease(ctx context.Context, owner, repo, tag, name, body string) error
+	// CreateRelease creates a non-draft release for tag, with the given
+	// name and body, marked as a pre-release when prerelease is true.
+	// ErrReleaseExists is returned when a release for tag already exists.
+	CreateRelease(ctx context.Context, owner, repo, tag, name, body string, prerelease bool) error
 
 	// MergeCommit returns the SHA of the commit a merged pull request was
 	// merged as.
