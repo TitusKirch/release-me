@@ -142,7 +142,8 @@ Validates `release-me.yaml`, including an unknown `--component` name, that the `
 `tagged`, `alpha`, `beta` and `rc` labels exist on the repository, and that the token
 environment variable is both set and accepted by the forge: a rejected token is reported as
 such, not as a missing label, since the symptom from the forge is the same 401 either way.
-Prints every missing or invalid item and exits 1 when anything is missing, 0 otherwise.
+Prints which forge it resolved and why, then every missing or invalid item and exits 1 when
+anything is missing, 0 otherwise.
 
 ## comment
 

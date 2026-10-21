@@ -117,3 +117,13 @@ Until that first release exists, this repository's own `release.yaml` runs the a
 `version: source`, which builds `release-me` with `go build` from the checkout instead of
 downloading it. Once the first release is tagged, point `release.yaml` at that version and the
 tool releases itself from then on.
+
+## GitLab CI
+
+The [`ci/gitlab-ci.yaml`](../ci/gitlab-ci.yaml) job template runs `release-me run` from the
+image on GHCR, on the default branch only. Include it from the project's `.gitlab-ci.yml`
+and set a `GITLAB_TOKEN` CI/CD variable, masked and protected, with API scope. The default
+GitLab forge token is `GITLAB_TOKEN`; the instance comes from `base-url`, default
+`https://gitlab.com`. For a self hosted instance, set `base-url` to its actual URL, the one
+GitLab CI exposes as `CI_SERVER_URL`. See
+[forge configuration](configuration.md#forge) for host selection and GitLab limitations.

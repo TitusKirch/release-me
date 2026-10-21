@@ -24,9 +24,30 @@ The type assigned to text that does not parse as a conventional commit, default 
 
 ## `token-env`
 
-The environment variable holding the GitHub token, default `GITHUB_TOKEN`. It governs API
-calls only; `pr`'s push to the release branch authenticates through the git credentials the
-checkout's `origin` remote already carries, the same as any other push.
+The environment variable holding the forge token, default `GITHUB_TOKEN`, or `GITLAB_TOKEN`
+when the forge is GitLab and the key keeps its default. GitLab sends it in the `PRIVATE-TOKEN`
+header. It governs API calls only; `pr`'s push to the release branch authenticates through the
+git credentials the checkout's `origin` remote already carries, the same as any other push.
+
+## `forge`
+
+`github` or `gitlab`. Without the key, an origin remote whose host contains `gitlab` selects
+GitLab; any other host selects GitHub. For a self hosted GitLab instance whose host does not
+contain `gitlab`, set `forge: gitlab` explicitly.
+
+The GitLab forge uses the REST API v4, including merge requests, labels, tags and releases.
+GitLab has no separate pre-release marker: a pre-release keeps its version and tag, such as
+`v1.0.0-rc.1`. It also has no draft release equivalent, so `draft-until-assets-attach: true`
+fails explicitly instead of publishing the requested draft. Moving an existing major tag
+through `major-tag: true` fails explicitly too: the REST API cannot move a tag without deleting
+and recreating it. Keep both settings off on GitLab.
+
+## `base-url`
+
+The GitLab instance's base URL, such as `https://gitlab.example.com`, default
+`https://gitlab.com`. For a self hosted instance, set `base-url` explicitly to the instance URL
+GitLab CI exposes as `CI_SERVER_URL`; the environment variable is not read automatically.
+Ignored for GitHub.
 
 ## `changelog`
 

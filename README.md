@@ -14,7 +14,7 @@ pull request, versions from Conventional Commits, a release pull request, a tag 
 - Opens and updates one release pull request per component, or one shared by every component,
   with the changelog, bumps the version in the files you list, and on merge creates the tag and
   the release.
-- GitHub first. GitLab follows through the same forge interface.
+- Works against GitHub and GitLab, self hosted included, through the same forge interface.
 
 ## Install
 
@@ -57,6 +57,8 @@ As a container image, for runners with an image cache:
 ```sh
 docker run --rm -e GITHUB_TOKEN ghcr.io/ostendorf-cloud/release-me:0.1.0 run
 ```
+
+For GitLab CI, use the [GitLab job template](docs/action.md#gitlab-ci).
 
 Images are tagged with the released version. A stable release also moves `latest`, a
 pre-release does not.
@@ -144,7 +146,9 @@ files:
 | `bump-minor-pre-major` | Turns a major bump into a minor one below `1.0.0`. | `false` | No |
 | `hidden-types` | Entry types hidden from the changelog. | `chore, docs, ci, style, refactor, test, build, other` | No |
 | `fallback-type` | Type assigned to text that does not parse as a conventional commit. | `other` | No |
-| `token-env` | Environment variable holding the GitHub token. | `GITHUB_TOKEN` | No |
+| `token-env` | Environment variable holding the forge token. | `GITHUB_TOKEN`, `GITLAB_TOKEN` for GitLab | No |
+| `forge` | Forge to use, `github` or `gitlab`. | guessed from the origin host | No |
+| `base-url` | GitLab instance base URL. | `https://gitlab.com` | No |
 | `changelog` | Changelog file path. | `CHANGELOG.md` | No |
 | `changelog-source` | Which commits become changelog entries. | `first-parent` | No |
 | `labels.pending` / `labels.tagged` | Label names `pr`, `release` and `check` use. | `release: pending` / `release: tagged` | No |
