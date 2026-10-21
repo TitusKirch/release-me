@@ -132,6 +132,34 @@ func TestDoReleaseMarksAPreReleaseVersionAsAPreReleaseAndSwapsItsTypeLabel(t *te
 	}
 }
 
+func TestDoReleaseCreatesTheMajorTagWhenConfigured(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	commitEntry(t, dir, "chore: initial commit")
+
+	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v1.0.0", Labels: []string{"release: pending"}, Merged: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: mainBranch, State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending"}},
+	}
+	cfg := config.Default()
+	cfg.MajorTag = true
+	var stdout bytes.Buffer
+
+	if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doRelease() error = %v", err)
+	}
+
+	if len(f.CreatedTags) != 2 || f.CreatedTags[1].Tag != "v1" {
+		t.Fatalf("CreatedTags = %+v, want the major tag v1 created too", f.CreatedTags)
+	}
+	if !strings.Contains(stdout.String(), "created major tag v1") {
+		t.Fatalf("stdout = %q, want it to report the major tag", stdout.String())
+	}
+}
+
 func TestDoReleaseDryRunWritesNothing(t *testing.T) {
 	dir, _ := newPRRepo(t)
 	commitEntry(t, dir, "chore: initial commit")

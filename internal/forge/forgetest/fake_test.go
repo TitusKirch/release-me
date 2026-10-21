@@ -233,6 +233,51 @@ func TestFakeCreateTag(t *testing.T) {
 	}
 }
 
+func TestFakeTagExists(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{ExistingTags: map[string]bool{"v1": true}}
+
+	got, err := f.TagExists(context.Background(), "owner", "repo", "v1")
+	if err != nil {
+		t.Fatalf("TagExists() error = %v", err)
+	}
+	if !got {
+		t.Fatal("TagExists() = false, want true for a configured tag")
+	}
+
+	got, err = f.TagExists(context.Background(), "owner", "repo", "v2")
+	if err != nil {
+		t.Fatalf("TagExists() error = %v", err)
+	}
+	if got {
+		t.Fatal("TagExists() = true, want false for an unconfigured tag")
+	}
+}
+
+func TestFakeTagExistsReturnsTheConfiguredError(t *testing.T) {
+	t.Parallel()
+	wantErr := errors.New("forge unavailable")
+	f := &forgetest.Fake{TagExistsErr: wantErr}
+
+	_, err := f.TagExists(context.Background(), "owner", "repo", "v1")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("TagExists() error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestFakeMoveTagRecordsTheCall(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{}
+
+	if err := f.MoveTag(context.Background(), "owner", "repo", "v1", "deadbeef"); err != nil {
+		t.Fatalf("MoveTag() error = %v", err)
+	}
+	want := forgetest.MoveTagCall{Owner: "owner", Repo: "repo", Tag: "v1", SHA: "deadbeef"}
+	if len(f.MovedTags) != 1 || f.MovedTags[0] != want {
+		t.Fatalf("MovedTags = %+v, want %+v", f.MovedTags, want)
+	}
+}
+
 func TestFakeCreateReleaseRecordsTheCall(t *testing.T) {
 	t.Parallel()
 	f := &forgetest.Fake{}

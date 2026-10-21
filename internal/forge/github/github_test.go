@@ -357,6 +357,97 @@ func TestCreateTag(t *testing.T) {
 	}
 }
 
+func TestTagExists(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+		want    bool
+		wantErr bool
+	}{
+		{
+			name: "reports true for a tag that exists",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprint(w, `{"ref": "refs/tags/v1", "object": {"sha": "deadbeef"}}`)
+			},
+			want: true,
+		},
+		{
+			name: "reports false for a tag that does not exist",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+				fmt.Fprint(w, `{"message": "Not Found"}`)
+			},
+		},
+		{
+			name: "wraps a server error",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v3/repos/owner/repo/git/ref/tags/v1", tc.handler)
+			f := newTestForge(t, mux)
+
+			got, err := f.TagExists(context.Background(), "owner", "repo", "v1")
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("TagExists() error = nil, want an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("TagExists() error = %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("TagExists() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMoveTagForceUpdatesTheRef(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	var body map[string]any
+	mux.HandleFunc("/api/v3/repos/owner/repo/git/refs/tags/v1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Fatalf("method = %s, want PATCH", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		fmt.Fprint(w, `{"ref": "refs/tags/v1", "object": {"sha": "deadbeef"}}`)
+	})
+	f := newTestForge(t, mux)
+
+	if err := f.MoveTag(context.Background(), "owner", "repo", "v1", "deadbeef"); err != nil {
+		t.Fatalf("MoveTag() error = %v", err)
+	}
+	if body["sha"] != "deadbeef" || body["force"] != true {
+		t.Fatalf("body = %v, want sha deadbeef and force true", body)
+	}
+}
+
+func TestMoveTagWrapsAServerError(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/owner/repo/git/refs/tags/v1", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"message": "Reference does not exist"}`)
+	})
+	f := newTestForge(t, mux)
+
+	if err := f.MoveTag(context.Background(), "owner", "repo", "v1", "deadbeef"); err == nil {
+		t.Fatal("MoveTag() error = nil, want an error")
+	}
+}
+
 func TestCreateRelease(t *testing.T) {
 	t.Parallel()
 	mux := http.NewServeMux()

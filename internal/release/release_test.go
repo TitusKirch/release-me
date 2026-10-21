@@ -236,6 +236,161 @@ func TestRunIgnoresAPullRequestTitledForADifferentComponent(t *testing.T) {
 	}
 }
 
+func TestMajorTagName(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		tagPrefix string
+		version   string
+		wantTag   string
+		wantOK    bool
+	}{
+		{name: "builds the bare major tag for the main component", tagPrefix: "v", version: "1.2.3", wantTag: "v1", wantOK: true},
+		{
+			name: "builds the component-prefixed major tag", tagPrefix: "frontend/v", version: "2.0.0",
+			wantTag: "frontend/v2", wantOK: true,
+		},
+		{name: "does not apply to a pre-release version", tagPrefix: "v", version: "1.2.3-rc.1"},
+		{name: "does not apply to an unparseable version", tagPrefix: "v", version: "not-a-version"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tag, ok := release.MajorTagName(tc.tagPrefix, tc.version)
+			if ok != tc.wantOK || tag != tc.wantTag {
+				t.Fatalf("MajorTagName(%q, %q) = (%q, %v), want (%q, %v)", tc.tagPrefix, tc.version, tag, ok, tc.wantTag, tc.wantOK)
+			}
+		})
+	}
+}
+
+func TestRunCreatesTheMajorTagOnAStableRelease(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v1.0.0", Labels: []string{"release: pending"}, Merged: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending"}},
+	}
+	comp := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", MajorTag: true}
+
+	results, err := release.Run(context.Background(), f, "owner", "repo", comp, testLabels, false, discardLogger())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].MajorTag != "v1" || results[0].MajorTagMessage != "created major tag v1" {
+		t.Fatalf("Run() = %+v, want the major tag v1 created", results)
+	}
+	if len(f.CreatedTags) != 2 || f.CreatedTags[1] != (forgetest.CreateTagCall{Owner: "owner", Repo: "repo", Tag: "v1", SHA: "deadbeef"}) {
+		t.Fatalf("CreatedTags = %+v", f.CreatedTags)
+	}
+	if len(f.MovedTags) != 0 {
+		t.Fatalf("MovedTags = %+v, want none", f.MovedTags)
+	}
+}
+
+func TestRunMovesAnExistingMajorTagOnAStableRelease(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v1.3.0", Labels: []string{"release: pending"}, Merged: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending"}},
+		ExistingTags: map[string]bool{"v1": true},
+	}
+	comp := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", MajorTag: true}
+
+	results, err := release.Run(context.Background(), f, "owner", "repo", comp, testLabels, false, discardLogger())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].MajorTag != "v1" || results[0].MajorTagMessage != "moved major tag v1" {
+		t.Fatalf("Run() = %+v, want the major tag v1 moved", results)
+	}
+	if len(f.MovedTags) != 1 || f.MovedTags[0] != (forgetest.MoveTagCall{Owner: "owner", Repo: "repo", Tag: "v1", SHA: "deadbeef"}) {
+		t.Fatalf("MovedTags = %+v", f.MovedTags)
+	}
+}
+
+func TestRunSkipsTheMajorTagWhenItIsOffForTheComponent(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v1.0.0", Labels: []string{"release: pending"}, Merged: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending"}},
+	}
+
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, false, discardLogger())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].MajorTag != "" || results[0].MajorTagMessage != "" {
+		t.Fatalf("Run() = %+v, want no major tag activity", results)
+	}
+	if len(f.CreatedTags) != 1 || len(f.MovedTags) != 0 {
+		t.Fatalf("CreatedTags = %+v, MovedTags = %+v, want only the release tag", f.CreatedTags, f.MovedTags)
+	}
+}
+
+func TestRunDryRunReportsTheMajorTagWithoutWritingIt(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v1.3.0", Labels: []string{"release: pending"}, Merged: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		ExistingTags: map[string]bool{"v1": true},
+	}
+	comp := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", MajorTag: true}
+
+	results, err := release.Run(context.Background(), f, "owner", "repo", comp, testLabels, true, discardLogger())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].MajorTag != "v1" || results[0].MajorTagMessage != "would move major tag v1" {
+		t.Fatalf("Run() = %+v, want a dry-run report of moving v1", results)
+	}
+	if len(f.CreatedTags) != 0 || len(f.MovedTags) != 0 {
+		t.Fatalf("dry run wrote something: tags=%+v moved=%+v", f.CreatedTags, f.MovedTags)
+	}
+}
+
+func TestRunDoesNotMoveTheMajorTagForAPreReleaseVersion(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v1.0.0-rc.1", Labels: []string{"release: pending"}, Merged: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending"}},
+	}
+	comp := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", MajorTag: true}
+
+	results, err := release.Run(context.Background(), f, "owner", "repo", comp, testLabels, false, discardLogger())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].MajorTag != "" || results[0].MajorTagMessage != "pre-release, major tag not moved" {
+		t.Fatalf("Run() = %+v, want no major tag activity for a pre-release", results)
+	}
+	// Neither CreateTag nor MoveTag is ever called for the major tag; the
+	// only tag call left is the version tag itself.
+	if len(f.MovedTags) != 0 {
+		t.Fatalf("MovedTags = %+v, want none for a pre-release", f.MovedTags)
+	}
+	if len(f.CreatedTags) != 1 || f.CreatedTags[0].Tag != "v1.0.0-rc.1" {
+		t.Fatalf("CreatedTags = %+v, want only the version tag, no major tag", f.CreatedTags)
+	}
+}
+
 func TestRunDryRunChangesNothing(t *testing.T) {
 	t.Parallel()
 	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v0.2.0", Labels: []string{"release: pending"}, Merged: true}

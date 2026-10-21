@@ -83,6 +83,13 @@ type Forge interface {
 	// ErrTagExists is returned when the tag already exists.
 	CreateTag(ctx context.Context, owner, repo, tag, sha string) error
 
+	// TagExists reports whether tag already exists on the repository.
+	TagExists(ctx context.Context, owner, repo, tag string) (bool, error)
+
+	// MoveTag force-moves the existing tag named tag onto the commit sha.
+	// Callers check TagExists first; MoveTag never creates a tag.
+	MoveTag(ctx context.Context, owner, repo, tag, sha string) error
+
 	// CreateRelease creates a non-draft release for tag, with the given
 	// name and body, marked as a pre-release when prerelease is true.
 	// ErrReleaseExists is returned when a release for tag already exists.
