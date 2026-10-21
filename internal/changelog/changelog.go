@@ -35,12 +35,13 @@ var sections = []section{
 	{heading: "Reverts", match: func(e Entry) bool { return !e.Breaking && e.Type == "revert" }},
 }
 
-// Render renders the Markdown changelog for one version.
-//
-// Entries whose type is in hiddenTypes produce no line. An entry that
+// Sections renders the section bodies for one version's entries, with no
+// heading, so a caller can compare them independently of the version and
+// the date. It applies the same hiddenTypes and section rules as Render:
+// entries whose type is in hiddenTypes produce no line, and an entry that
 // belongs to none of the five sections, breaking already counted as one,
-// also produces no line. Render returns "" when no entry is visible.
-func Render(version string, date time.Time, entries []Entry, hiddenTypes []string) string {
+// also produces no line. Sections returns "" when no entry is visible.
+func Sections(entries []Entry, hiddenTypes []string) string {
 	visible := make([]Entry, 0, len(entries))
 	for _, e := range entries {
 		if slices.Contains(hiddenTypes, e.Type) {
@@ -67,13 +68,20 @@ func Render(version string, date time.Time, entries []Entry, hiddenTypes []strin
 		}
 		body.WriteString("\n")
 	}
-	if body.Len() == 0 {
+	return strings.TrimRight(body.String(), "\n")
+}
+
+// Render renders the Markdown changelog for one version: the heading, then
+// Sections. Render returns "" when Sections does, no entry visible.
+func Render(version string, date time.Time, entries []Entry, hiddenTypes []string) string {
+	body := Sections(entries, hiddenTypes)
+	if body == "" {
 		return ""
 	}
 
 	var out strings.Builder
 	fmt.Fprintf(&out, "## v%s (%s)\n\n", version, date.Format("2006-01-02"))
-	out.WriteString(strings.TrimRight(body.String(), "\n"))
+	out.WriteString(body)
 	out.WriteString("\n")
 	return out.String()
 }
