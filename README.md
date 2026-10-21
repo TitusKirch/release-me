@@ -221,6 +221,9 @@ labels:
   alpha: "release: alpha"
   beta: "release: beta"
   rc: "release: rc"
+author:
+  name: release-me
+  email: release-me[bot]@users.noreply.github.com
 files:
   - path: cmd/cli/version.go
     updater: marker
@@ -246,6 +249,11 @@ files:
   and `check` use, default `release: alpha`, `release: beta` and `release: rc`. See
   [Pre-releases](#pre-releases). `check` reports any of the five missing labels by name, it
   never creates one.
+- `author.name` and `author.email`: the git identity `pr` commits the release branch as,
+  default `release-me` and `release-me[bot]@users.noreply.github.com`. Passed to the commit
+  through the git subprocess's environment, never written into git config. A
+  `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` or `GIT_COMMITTER_EMAIL` already
+  set in the environment wins over these values. `check --verbose` logs the resolved author.
 - `files`: files `pr` bumps to the next version, each a `path`, an optional `updater`, default
   `marker`, and a `key` where the updater needs one. Every updater keeps the rest of the file
   byte for byte: order, comments, indentation. A file that does not exist, or a `key` not found
