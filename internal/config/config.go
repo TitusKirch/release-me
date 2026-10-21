@@ -3,14 +3,18 @@
 
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
-// changelog and labels. major-tag stays unknown until milestone 5 reads it.
+// changelog, labels and components. major-tag stays unknown until
+// milestone 5 reads it.
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	stdpath "path"
+	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
@@ -67,6 +71,98 @@ type Config struct {
 	Files             []File
 	ChangelogPath     string
 	Labels            Labels
+	// Components is the "components" key, in the order release-me.yaml
+	// declares them, or nil when the key is absent: a repository without
+	// it is one component at the repository root, as Resolve reports.
+	Components []Component
+}
+
+// Component is one entry of the "components" key: a name mapped to a path
+// and optional overrides of the top-level initial-version,
+// bump-minor-pre-major, hidden-types and files. A nil field was left out of
+// release-me.yaml and falls back to the top-level value, the same
+// left-out-versus-zero-value distinction Load applies to the top level
+// itself.
+type Component struct {
+	Name              string
+	Path              string
+	InitialVersion    *string
+	BumpMinorPreMajor *bool
+	HiddenTypes       *[]string
+	Files             *[]File
+}
+
+// ResolvedComponent is one component ready for a command to release: its
+// name and path, the tag prefix, release branch and changelog path derived
+// from them, and its settings with the top-level ones applied where it
+// carries no override of its own.
+type ResolvedComponent struct {
+	Name          string
+	Path          string
+	TagPrefix     string
+	Branch        string
+	ChangelogPath string
+	// Multi is true when release-me.yaml declares a "components" key. It
+	// is false for the single implicit "main" component, which keeps
+	// today's tag prefix "v" and release name instead of the generic
+	// "<name>/v" prefix and "<name> vX.Y.Z" release name a configured
+	// component carries.
+	Multi             bool
+	InitialVersion    string
+	BumpMinorPreMajor bool
+	HiddenTypes       []string
+	Files             []File
+}
+
+// Resolve returns the components a command should loop over, in
+// release-me.yaml's order: the configured "components", each merged with
+// the top-level settings it does not override, or the single implicit
+// "main" component at the repository root when the "components" key is
+// absent.
+func (cfg Config) Resolve() []ResolvedComponent {
+	if len(cfg.Components) == 0 {
+		return []ResolvedComponent{{
+			Name:              "main",
+			Path:              ".",
+			TagPrefix:         "v",
+			Branch:            "release-me/main",
+			ChangelogPath:     cfg.ChangelogPath,
+			InitialVersion:    cfg.InitialVersion,
+			BumpMinorPreMajor: cfg.BumpMinorPreMajor,
+			HiddenTypes:       cfg.HiddenTypes,
+			Files:             cfg.Files,
+		}}
+	}
+
+	out := make([]ResolvedComponent, 0, len(cfg.Components))
+	for _, c := range cfg.Components {
+		rc := ResolvedComponent{
+			Name:              c.Name,
+			Path:              c.Path,
+			TagPrefix:         c.Name + "/v",
+			Branch:            "release-me/" + c.Name,
+			ChangelogPath:     stdpath.Join(c.Path, "CHANGELOG.md"),
+			Multi:             true,
+			InitialVersion:    cfg.InitialVersion,
+			BumpMinorPreMajor: cfg.BumpMinorPreMajor,
+			HiddenTypes:       cfg.HiddenTypes,
+			Files:             cfg.Files,
+		}
+		if c.InitialVersion != nil {
+			rc.InitialVersion = *c.InitialVersion
+		}
+		if c.BumpMinorPreMajor != nil {
+			rc.BumpMinorPreMajor = *c.BumpMinorPreMajor
+		}
+		if c.HiddenTypes != nil {
+			rc.HiddenTypes = *c.HiddenTypes
+		}
+		if c.Files != nil {
+			rc.Files = *c.Files
+		}
+		out = append(out, rc)
+	}
+	return out
 }
 
 // rawFile mirrors File, the yaml shape of one "files" entry.
@@ -93,6 +189,22 @@ type raw struct {
 	Files             *[]rawFile `yaml:"files"`
 	Changelog         *string    `yaml:"changelog"`
 	Labels            *rawLabels `yaml:"labels"`
+	// Components is decoded as a node, not a Go map, so decodeComponents
+	// can read its entries back in release-me.yaml's order: a Go map
+	// gives no such guarantee. A zero Kind means the "components" key was
+	// left out: yaml.v3 only special cases decoding into a Node field by
+	// value, never through a pointer.
+	Components yaml.Node `yaml:"components"`
+}
+
+// rawComponent mirrors Component with pointer fields, the yaml shape of one
+// "components" entry.
+type rawComponent struct {
+	Path              *string    `yaml:"path"`
+	InitialVersion    *string    `yaml:"initial-version"`
+	BumpMinorPreMajor *bool      `yaml:"bump-minor-pre-major"`
+	HiddenTypes       *[]string  `yaml:"hidden-types"`
+	Files             *[]rawFile `yaml:"files"`
 }
 
 // Default is the configuration applied when release-me.yaml is absent.
@@ -164,18 +276,112 @@ func Load(path string) (cfg Config, err error) {
 		}
 	}
 	if r.Files != nil {
-		files := make([]File, 0, len(*r.Files))
-		for _, rf := range *r.Files {
-			name := updater.Marker
-			if rf.Updater != nil {
-				name = *rf.Updater
-			}
-			if _, ok := updater.Updaters[name]; !ok {
-				return Config{}, fmt.Errorf("config: parse %s: file %s: unknown updater %q", path, rf.Path, name)
-			}
-			files = append(files, File{Path: rf.Path, Updater: name})
+		files, err := decodeFiles(path, *r.Files)
+		if err != nil {
+			return Config{}, err
 		}
 		cfg.Files = files
 	}
+	if r.Components.Kind != 0 {
+		components, err := decodeComponents(path, &r.Components)
+		if err != nil {
+			return Config{}, err
+		}
+		if err := validateComponentPaths(path, components); err != nil {
+			return Config{}, err
+		}
+		cfg.Components = components
+	}
 	return cfg, nil
+}
+
+// decodeFiles converts the yaml shape of a "files" key into []File,
+// defaulting a left-out updater to the marker updater and rejecting one
+// that names no known updater.
+func decodeFiles(path string, raw []rawFile) ([]File, error) {
+	files := make([]File, 0, len(raw))
+	for _, rf := range raw {
+		name := updater.Marker
+		if rf.Updater != nil {
+			name = *rf.Updater
+		}
+		if _, ok := updater.Updaters[name]; !ok {
+			return nil, fmt.Errorf("config: parse %s: file %s: unknown updater %q", path, rf.Path, name)
+		}
+		files = append(files, File{Path: rf.Path, Updater: name})
+	}
+	return files, nil
+}
+
+// decodeComponents converts the "components" mapping node into []Component,
+// in the order its keys appear in release-me.yaml. Each entry's value is
+// decoded with the same strict, unknown-key-rejecting rules as the rest of
+// release-me.yaml.
+func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
+	if node.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("config: parse %s: components: must be a mapping of name to settings", path)
+	}
+
+	components := make([]Component, 0, len(node.Content)/2)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		name := node.Content[i].Value
+		valueNode := node.Content[i+1]
+
+		data, err := yaml.Marshal(valueNode)
+		if err != nil {
+			return nil, fmt.Errorf("config: parse %s: component %s: %w", path, name, err)
+		}
+		var rc rawComponent
+		dec := yaml.NewDecoder(bytes.NewReader(data))
+		dec.KnownFields(true)
+		if err := dec.Decode(&rc); err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("config: parse %s: component %s: %w", path, name, err)
+		}
+		if rc.Path == nil {
+			return nil, fmt.Errorf("config: parse %s: component %s: path is required", path, name)
+		}
+
+		c := Component{Name: name, Path: *rc.Path, InitialVersion: rc.InitialVersion, BumpMinorPreMajor: rc.BumpMinorPreMajor, HiddenTypes: rc.HiddenTypes}
+		if rc.Files != nil {
+			files, err := decodeFiles(path, *rc.Files)
+			if err != nil {
+				return nil, err
+			}
+			c.Files = &files
+		}
+		components = append(components, c)
+	}
+	return components, nil
+}
+
+// validateComponentPaths rejects two components whose paths overlap: equal,
+// or one nested inside the other, including the root path ".", which
+// overlaps with every other component.
+func validateComponentPaths(path string, components []Component) error {
+	for i := 0; i < len(components); i++ {
+		for j := i + 1; j < len(components); j++ {
+			a, b := components[i], components[j]
+			if pathsOverlap(a.Path, b.Path) {
+				return fmt.Errorf("config: parse %s: component %q and %q have overlapping paths %q and %q",
+					path, a.Name, b.Name, a.Path, b.Path)
+			}
+		}
+	}
+	return nil
+}
+
+// pathsOverlap reports whether a and b name the same component path, or one
+// is nested inside the other. "." is the repository root and overlaps with
+// every path.
+func pathsOverlap(a, b string) bool {
+	return pathContains(a, b) || pathContains(b, a)
+}
+
+// pathContains reports whether child is parent itself or nested under it.
+// parent "." contains every path.
+func pathContains(parent, child string) bool {
+	if parent == "." {
+		return true
+	}
+	return child == parent || strings.HasPrefix(child, parent+"/")
 }
