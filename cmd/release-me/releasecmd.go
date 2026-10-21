@@ -57,7 +57,7 @@ func doRelease(ctx context.Context, dir string, cfg config.Config, component str
 	for _, comp := range components {
 		results, err := tagrelease.Run(
 			ctx, f, owner, repoName,
-			tagrelease.Component{Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi},
+			tagrelease.Component{Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag},
 			tagrelease.Labels{
 				Pending: cfg.Labels.Pending, Tagged: cfg.Labels.Tagged,
 				Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc,
@@ -70,6 +70,9 @@ func doRelease(ctx context.Context, dir string, cfg config.Config, component str
 		for _, r := range results {
 			any = true
 			printLine(stdout, comp.Name, multi, r.Message)
+			if r.MajorTagMessage != "" {
+				printLine(stdout, comp.Name, multi, r.MajorTagMessage)
+			}
 		}
 	}
 	if !any {

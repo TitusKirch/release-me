@@ -86,10 +86,14 @@ labels:
   alpha: needs-alpha
   beta: needs-beta
   rc: needs-rc
+major-tag: true
 files:
   - path: cmd/cli/version.go
   - path: deploy/values.yaml
     updater: marker
+  - path: internal/version/version.go
+    updater: go
+    key: Version
 `,
 			want: config.Config{
 				InitialVersion:    "0.2.0",
@@ -102,9 +106,11 @@ files:
 					Pending: "needs-release", Tagged: "released",
 					Alpha: "needs-alpha", Beta: "needs-beta", Rc: "needs-rc",
 				},
+				MajorTag: true,
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
 					{Path: "deploy/values.yaml", Updater: "marker"},
+					{Path: "internal/version/version.go", Updater: "go", Key: "Version"},
 				},
 			},
 		},
@@ -174,12 +180,20 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 		name    string
 		content string
 	}{
-		{name: "rejects an unknown key", content: "major-tag: true\n"},
+		{name: "rejects an unknown key", content: "release-tag: v1\n"},
 		{name: "rejects malformed YAML", content: "initial-version: [0.1.0\n"},
 		{name: "rejects a fallback type that bumps the version", content: "fallback-type: feat\n"},
-		{name: "rejects an unknown updater", content: "files:\n  - path: cmd/cli/version.go\n    updater: go\n"},
+		{name: "rejects an unknown updater", content: "files:\n  - path: cmd/cli/version.go\n    updater: xml\n"},
+		{
+			name:    "rejects a file whose updater requires a key but carries none",
+			content: "files:\n  - path: cmd/cli/version.go\n    updater: go\n",
+		},
+		{
+			name:    "rejects a file key on an updater that takes none",
+			content: "files:\n  - path: cmd/cli/version.go\n    key: Version\n",
+		},
 		{name: "rejects a component without a path", content: "components:\n  frontend:\n    initial-version: 0.1.0\n"},
-		{name: "rejects an unknown key inside a component", content: "components:\n  frontend:\n    path: frontend\n    major-tag: true\n"},
+		{name: "rejects an unknown key inside a component", content: "components:\n  frontend:\n    path: frontend\n    release-tag: v1\n"},
 		{
 			name:    "rejects two components with the same path",
 			content: "components:\n  frontend:\n    path: app\n  frontend2:\n    path: app\n",
@@ -286,5 +300,32 @@ components:
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resolve() = %+v, want %+v", got, want)
+	}
+}
+
+func TestResolveAppliesMajorTagFromTheTopLevelAndPerComponentOverride(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, `major-tag: true
+components:
+  backend:
+    path: backend
+  frontend:
+    path: frontend
+    major-tag: false
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got := cfg.Resolve()
+	if len(got) != 2 || got[0].Name != "backend" || got[1].Name != "frontend" {
+		t.Fatalf("Resolve() = %+v, want [backend, frontend]", got)
+	}
+	if !got[0].MajorTag {
+		t.Fatalf("backend MajorTag = %v, want true from the top level", got[0].MajorTag)
+	}
+	if got[1].MajorTag {
+		t.Fatalf("frontend MajorTag = %v, want false from its own override", got[1].MajorTag)
 	}
 }

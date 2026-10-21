@@ -58,6 +58,11 @@ type CreateTagCall struct {
 	Owner, Repo, Tag, SHA string
 }
 
+// MoveTagCall records one call to MoveTag.
+type MoveTagCall struct {
+	Owner, Repo, Tag, SHA string
+}
+
 // CreateReleaseCall records one call to CreateRelease.
 type CreateReleaseCall struct {
 	Owner, Repo, Tag, Name, Body string
@@ -102,8 +107,13 @@ type Fake struct {
 	MergeCommits map[int]string
 
 	// ExistingTags is the set of tag names CreateTag treats as already
-	// present, returning forge.ErrTagExists instead of recording a call.
+	// present, returning forge.ErrTagExists instead of recording a call,
+	// and that TagExists reports as present.
 	ExistingTags map[string]bool
+
+	// TagExistsErr, when set, is returned by TagExists instead of
+	// consulting ExistingTags.
+	TagExistsErr error
 
 	// ExistingReleases is the set of tag names CreateRelease treats as
 	// already released, returning forge.ErrReleaseExists instead of
@@ -118,6 +128,7 @@ type Fake struct {
 	AddLabelsCalls      []AddLabelsCall
 	SetLabelsCalls      []SetLabelsCall
 	CreatedTags         []CreateTagCall
+	MovedTags           []MoveTagCall
 	CreatedReleases     []CreateReleaseCall
 }
 
@@ -207,6 +218,20 @@ func (f *Fake) CreateTag(_ context.Context, owner, repo, tag, sha string) error 
 		return forge.ErrTagExists
 	}
 	f.CreatedTags = append(f.CreatedTags, CreateTagCall{Owner: owner, Repo: repo, Tag: tag, SHA: sha})
+	return nil
+}
+
+// TagExists implements forge.Forge.
+func (f *Fake) TagExists(_ context.Context, _, _, tag string) (bool, error) {
+	if f.TagExistsErr != nil {
+		return false, f.TagExistsErr
+	}
+	return f.ExistingTags[tag], nil
+}
+
+// MoveTag implements forge.Forge.
+func (f *Fake) MoveTag(_ context.Context, owner, repo, tag, sha string) error {
+	f.MovedTags = append(f.MovedTags, MoveTagCall{Owner: owner, Repo: repo, Tag: tag, SHA: sha})
 	return nil
 }
 

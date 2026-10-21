@@ -176,6 +176,28 @@ func (f *Forge) CreateTag(ctx context.Context, owner, repo, tag, sha string) err
 	return nil
 }
 
+// TagExists implements forge.Forge.
+func (f *Forge) TagExists(ctx context.Context, owner, repo, tag string) (bool, error) {
+	_, resp, err := f.client.Git.GetRef(ctx, owner, repo, "refs/tags/"+tag)
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return false, nil
+		}
+		return false, fmt.Errorf("github: get tag %s: %w", tag, err)
+	}
+	return true, nil
+}
+
+// MoveTag implements forge.Forge.
+func (f *Forge) MoveTag(ctx context.Context, owner, repo, tag, sha string) error {
+	force := true
+	_, _, err := f.client.Git.UpdateRef(ctx, owner, repo, "refs/tags/"+tag, gogithub.UpdateRef{SHA: sha, Force: &force})
+	if err != nil {
+		return fmt.Errorf("github: move tag %s: %w", tag, err)
+	}
+	return nil
+}
+
 // CreateRelease implements forge.Forge.
 func (f *Forge) CreateRelease(ctx context.Context, owner, repo, tag, name, body string, prerelease bool) error {
 	draft := false

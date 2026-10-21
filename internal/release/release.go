@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
+	"strconv"
 
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
@@ -48,6 +49,10 @@ type Component struct {
 	Branch    string
 	TagPrefix string
 	Multi     bool
+	// MajorTag is comp's resolved "major-tag" key: when true, a stable
+	// release moves the major tag, TagPrefix plus the released major
+	// number, to the release commit. A pre-release never moves it.
+	MajorTag bool
 }
 
 // Labels names the labels Run reads and writes: Pending and Tagged on
@@ -84,6 +89,66 @@ type Result struct {
 	Tag               string
 	Message           string
 	Skipped           bool
+	// MajorTag is the major tag name major-tag moved or created, empty
+	// when major-tag is off for the component or the version released is
+	// a pre-release.
+	MajorTag string
+	// MajorTagMessage reports what happened to the major tag, including
+	// why it was skipped; empty when major-tag is off for the component.
+	MajorTagMessage string
+}
+
+// MajorTagName returns the major tag name for tagPrefix and releasedVersion,
+// an "X.Y.Z" version string without its "v" prefix, and whether major-tag
+// applies to it: false for a pre-release version, such as "1.2.3-rc.1",
+// which never moves the major tag.
+func MajorTagName(tagPrefix, releasedVersion string) (tag string, applies bool) {
+	v, ok := version.ParseTag("v" + releasedVersion)
+	if !ok || v.IsPreRelease() {
+		return "", false
+	}
+	return tagPrefix + strconv.Itoa(v.Major), true
+}
+
+// applyMajorTag creates or force-moves the major tag for comp, named by
+// tagPrefix, onto sha, when majorTagEnabled and releasedVersion is not a
+// pre-release. dryRun reads whether the tag exists, to report accurately
+// what would happen, but writes nothing.
+func applyMajorTag(
+	ctx context.Context, f forge.Forge, owner, repoName, componentName, tagPrefix, releasedVersion, sha string,
+	majorTagEnabled, dryRun bool,
+) (tag, message string, err error) {
+	if !majorTagEnabled {
+		return "", "", nil
+	}
+	tag, applies := MajorTagName(tagPrefix, releasedVersion)
+	if !applies {
+		return "", "pre-release, major tag not moved", nil
+	}
+
+	exists, err := f.TagExists(ctx, owner, repoName, tag)
+	if err != nil {
+		return "", "", fmt.Errorf("release: component %s: major tag %s: %w", componentName, tag, err)
+	}
+
+	verb := "create"
+	if exists {
+		verb = "move"
+	}
+	if dryRun {
+		return tag, fmt.Sprintf("would %s major tag %s", verb, tag), nil
+	}
+
+	if exists {
+		if err := f.MoveTag(ctx, owner, repoName, tag, sha); err != nil {
+			return "", "", fmt.Errorf("release: component %s: move major tag %s: %w", componentName, tag, err)
+		}
+		return tag, fmt.Sprintf("moved major tag %s", tag), nil
+	}
+	if err := f.CreateTag(ctx, owner, repoName, tag, sha); err != nil {
+		return "", "", fmt.Errorf("release: component %s: create major tag %s: %w", componentName, tag, err)
+	}
+	return tag, fmt.Sprintf("created major tag %s", tag), nil
 }
 
 // Run tags, releases and swaps the label of every merged, pending-labeled
@@ -119,7 +184,7 @@ func Run(
 			name = fmt.Sprintf("%s v%s", comp.Name, versionStr)
 		}
 
-		result, err := releaseOne(ctx, f, owner, repoName, comp.Name, pr, tag, name, ver, labels, dryRun)
+		result, err := releaseOne(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, pr, tag, name, ver, labels, dryRun, comp.MajorTag)
 		if err != nil {
 			return nil, err
 		}
@@ -129,12 +194,18 @@ func Run(
 }
 
 func releaseOne(
-	ctx context.Context, f forge.Forge, owner, repoName, componentName string,
-	pr forge.PullRequest, tag, releaseName string, ver version.Semver, labels Labels, dryRun bool,
+	ctx context.Context, f forge.Forge, owner, repoName, componentName, tagPrefix string,
+	pr forge.PullRequest, tag, releaseName string, ver version.Semver, labels Labels, dryRun, majorTagEnabled bool,
 ) (Result, error) {
 	versionStr := ver.String()
 	if dryRun {
-		return Result{PullRequestNumber: pr.Number, Version: versionStr, Tag: tag, Message: fmt.Sprintf("would tag and release %s", tag)}, nil
+		result := Result{PullRequestNumber: pr.Number, Version: versionStr, Tag: tag, Message: fmt.Sprintf("would tag and release %s", tag)}
+		mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, componentName, tagPrefix, versionStr, "", majorTagEnabled, dryRun)
+		if err != nil {
+			return Result{}, err
+		}
+		result.MajorTag, result.MajorTagMessage = mtag, mmsg
+		return result, nil
 	}
 
 	sha, err := f.MergeCommit(ctx, owner, repoName, pr.Number)
@@ -177,9 +248,15 @@ func releaseOne(
 	if alreadyTagged {
 		message = fmt.Sprintf("already tagged %s", tag)
 	}
+
+	mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, componentName, tagPrefix, versionStr, sha, majorTagEnabled, dryRun)
+	if err != nil {
+		return Result{}, err
+	}
+
 	return Result{
 		PullRequestNumber: pr.Number, Version: versionStr, Tag: tag, Skipped: alreadyTagged,
-		Message: message,
+		Message: message, MajorTag: mtag, MajorTagMessage: mmsg,
 	}, nil
 }
 
