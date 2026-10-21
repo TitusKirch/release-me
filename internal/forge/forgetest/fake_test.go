@@ -60,3 +60,213 @@ func TestFakePullRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestFakePullRequestsReturnsTheConfiguredList(t *testing.T) {
+	t.Parallel()
+	open := forge.PullRequest{Number: 5, Title: "chore(main): release v0.2.0"}
+	f := &forgetest.Fake{ListResponses: []forgetest.ListResponse{
+		{Head: "release-me/main", State: "open", PullRequests: []forge.PullRequest{open}},
+	}}
+
+	got, err := f.PullRequests(context.Background(), "owner", "repo", "release-me/main", "open")
+	if err != nil {
+		t.Fatalf("PullRequests() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, []forge.PullRequest{open}) {
+		t.Fatalf("PullRequests() = %+v, want %+v", got, []forge.PullRequest{open})
+	}
+
+	got, err = f.PullRequests(context.Background(), "owner", "repo", "release-me/main", "closed")
+	if err != nil {
+		t.Fatalf("PullRequests() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("PullRequests() = %+v, want an empty result for an unconfigured state", got)
+	}
+}
+
+func TestFakeCreatePullRequestRecordsTheCallAndAssignsANumber(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{}
+
+	got, err := f.CreatePullRequest(context.Background(), "owner", "repo", "main", "release-me/main",
+		"chore(main): release v0.1.0", "Release v0.1.0", []string{"release: pending"})
+	if err != nil {
+		t.Fatalf("CreatePullRequest() error = %v", err)
+	}
+	if got.Number != 1 {
+		t.Fatalf("CreatePullRequest() number = %d, want 1", got.Number)
+	}
+	if len(f.CreatedPullRequests) != 1 || f.CreatedPullRequests[0].Base != "main" {
+		t.Fatalf("CreatedPullRequests = %+v", f.CreatedPullRequests)
+	}
+	if labels, _ := f.Labels(context.Background(), "owner", "repo", 1); !reflect.DeepEqual(labels, []string{"release: pending"}) {
+		t.Fatalf("Labels() = %v, want the labels set on create", labels)
+	}
+}
+
+func TestFakeUpdatePullRequestRecordsTheCallWithoutTouchingLabels(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{PRLabels: map[int][]string{3: {"release: pending", "priority: high"}}}
+
+	if _, err := f.UpdatePullRequest(context.Background(), "owner", "repo", 3,
+		"chore(main): release v0.2.0", "Release v0.2.0"); err != nil {
+		t.Fatalf("UpdatePullRequest() error = %v", err)
+	}
+	if len(f.UpdatedPullRequests) != 1 || f.UpdatedPullRequests[0].Number != 3 {
+		t.Fatalf("UpdatedPullRequests = %+v", f.UpdatedPullRequests)
+	}
+	labels, _ := f.Labels(context.Background(), "owner", "repo", 3)
+	if !reflect.DeepEqual(labels, []string{"release: pending", "priority: high"}) {
+		t.Fatalf("Labels() = %v, want the labels untouched", labels)
+	}
+}
+
+func TestFakeAddLabelsMergesIntoTheExistingSet(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{PRLabels: map[int][]string{3: {"priority: high"}}}
+
+	if err := f.AddLabels(context.Background(), "owner", "repo", 3, []string{"release: pending"}); err != nil {
+		t.Fatalf("AddLabels() error = %v", err)
+	}
+	if len(f.AddLabelsCalls) != 1 || f.AddLabelsCalls[0].Number != 3 {
+		t.Fatalf("AddLabelsCalls = %+v", f.AddLabelsCalls)
+	}
+	labels, _ := f.Labels(context.Background(), "owner", "repo", 3)
+	if !reflect.DeepEqual(labels, []string{"priority: high", "release: pending"}) {
+		t.Fatalf("Labels() = %v, want the label added alongside the existing one", labels)
+	}
+
+	// Adding a label the pull request already carries is a no-op.
+	if err := f.AddLabels(context.Background(), "owner", "repo", 3, []string{"release: pending"}); err != nil {
+		t.Fatalf("AddLabels() error = %v", err)
+	}
+	labels, _ = f.Labels(context.Background(), "owner", "repo", 3)
+	if !reflect.DeepEqual(labels, []string{"priority: high", "release: pending"}) {
+		t.Fatalf("Labels() = %v, want no duplicate", labels)
+	}
+}
+
+func TestFakeDefaultBranch(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{DefaultBranchName: "trunk"}
+
+	got, err := f.DefaultBranch(context.Background(), "owner", "repo")
+	if err != nil {
+		t.Fatalf("DefaultBranch() error = %v", err)
+	}
+	if got != "trunk" {
+		t.Fatalf("DefaultBranch() = %q, want %q", got, "trunk")
+	}
+}
+
+func TestFakeRepositoryLabelsReturnsTheConfiguredError(t *testing.T) {
+	t.Parallel()
+	wantErr := forge.ErrUnauthorized
+	f := &forgetest.Fake{RepoLabels: []string{"release: pending"}, RepoLabelsErr: wantErr}
+
+	_, err := f.RepositoryLabels(context.Background(), "owner", "repo")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("RepositoryLabels() error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestFakeSetLabelsRecordsTheCall(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{}
+
+	if err := f.SetLabels(context.Background(), "owner", "repo", 7, []string{"release: tagged"}); err != nil {
+		t.Fatalf("SetLabels() error = %v", err)
+	}
+	if len(f.SetLabelsCalls) != 1 || f.SetLabelsCalls[0].Number != 7 {
+		t.Fatalf("SetLabelsCalls = %+v", f.SetLabelsCalls)
+	}
+	labels, _ := f.Labels(context.Background(), "owner", "repo", 7)
+	if !reflect.DeepEqual(labels, []string{"release: tagged"}) {
+		t.Fatalf("Labels() = %v, want %v", labels, []string{"release: tagged"})
+	}
+}
+
+func TestFakeRepositoryLabelsReturnsTheConfiguredList(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{RepoLabels: []string{"release: pending", "release: tagged"}}
+
+	got, err := f.RepositoryLabels(context.Background(), "owner", "repo")
+	if err != nil {
+		t.Fatalf("RepositoryLabels() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"release: pending", "release: tagged"}) {
+		t.Fatalf("RepositoryLabels() = %v", got)
+	}
+}
+
+func TestFakeCreateTag(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name         string
+		existingTags map[string]bool
+		tag          string
+		wantErr      error
+		wantCalls    int
+	}{
+		{name: "records a new tag", tag: "v0.1.0", wantCalls: 1},
+		{
+			name:         "returns ErrTagExists for a tag that already exists",
+			existingTags: map[string]bool{"v0.1.0": true},
+			tag:          "v0.1.0",
+			wantErr:      forge.ErrTagExists,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := &forgetest.Fake{ExistingTags: tc.existingTags}
+
+			err := f.CreateTag(context.Background(), "owner", "repo", tc.tag, "deadbeef")
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("CreateTag() error = %v, want %v", err, tc.wantErr)
+			}
+			if len(f.CreatedTags) != tc.wantCalls {
+				t.Fatalf("CreatedTags = %+v, want %d calls", f.CreatedTags, tc.wantCalls)
+			}
+		})
+	}
+}
+
+func TestFakeCreateReleaseRecordsTheCall(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{}
+
+	if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0"); err != nil {
+		t.Fatalf("CreateRelease() error = %v", err)
+	}
+	if len(f.CreatedReleases) != 1 || f.CreatedReleases[0].Tag != "v0.1.0" {
+		t.Fatalf("CreatedReleases = %+v", f.CreatedReleases)
+	}
+}
+
+func TestFakeCreateReleaseReturnsErrReleaseExistsForAnExistingTag(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{ExistingReleases: map[string]bool{"v0.1.0": true}}
+
+	err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0")
+	if !errors.Is(err, forge.ErrReleaseExists) {
+		t.Fatalf("CreateRelease() error = %v, want %v", err, forge.ErrReleaseExists)
+	}
+	if len(f.CreatedReleases) != 0 {
+		t.Fatalf("CreatedReleases = %+v, want none", f.CreatedReleases)
+	}
+}
+
+func TestFakeMergeCommitReturnsTheConfiguredSHA(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{MergeCommits: map[int]string{11: "deadbeef"}}
+
+	got, err := f.MergeCommit(context.Background(), "owner", "repo", 11)
+	if err != nil {
+		t.Fatalf("MergeCommit() error = %v", err)
+	}
+	if got != "deadbeef" {
+		t.Fatalf("MergeCommit() = %q, want %q", got, "deadbeef")
+	}
+}

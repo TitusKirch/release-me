@@ -1,9 +1,9 @@
 // Copyright 2026 Simon Ostendorf
 // SPDX-License-Identifier: Apache-2.0
 
-// Package config loads release-me.yaml, the keys this milestone reads:
-// initial-version, bump-minor-pre-major, hidden-types, fallback-type,
-// token-env.
+// Package config loads release-me.yaml: initial-version,
+// bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
+// changelog and labels. major-tag stays unknown until milestone 5 reads it.
 package config
 
 import (
@@ -13,6 +13,7 @@ import (
 	"os"
 
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
+	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,6 +26,13 @@ const (
 	// callers of this package never need to import internal/conventional
 	// just to read the default.
 	DefaultFallbackType = conventional.FallbackType
+	// DefaultChangelogPath is the changelog file path applied when the
+	// "changelog" key is left out of release-me.yaml.
+	DefaultChangelogPath = "CHANGELOG.md"
+	// DefaultPendingLabel and DefaultTaggedLabel are the label names
+	// applied when the "labels" block, or one of its keys, is left out.
+	DefaultPendingLabel = "release: pending"
+	DefaultTaggedLabel  = "release: tagged"
 )
 
 // DefaultHiddenTypes is the hidden-types list applied when the key is left
@@ -35,23 +43,56 @@ var DefaultHiddenTypes = []string{"chore", "docs", "ci", "style", "refactor", "t
 // never move the version.
 var bumpingTypes = map[string]bool{"feat": true, "fix": true, "perf": true, "revert": true}
 
-// Config is the subset of release-me.yaml this milestone reads.
+// File is one entry of the "files" key: a file release-me bumps the version
+// in, through the named updater.
+type File struct {
+	Path    string
+	Updater string
+}
+
+// Labels is the "labels" key: the two label names release-me expects on the
+// repository.
+type Labels struct {
+	Pending string
+	Tagged  string
+}
+
+// Config is the release-me.yaml configuration.
 type Config struct {
 	InitialVersion    string
 	BumpMinorPreMajor bool
 	HiddenTypes       []string
 	FallbackType      string
 	TokenEnv          string
+	Files             []File
+	ChangelogPath     string
+	Labels            Labels
+}
+
+// rawFile mirrors File, the yaml shape of one "files" entry.
+type rawFile struct {
+	Path    string  `yaml:"path"`
+	Updater *string `yaml:"updater"`
+}
+
+// rawLabels mirrors Labels with pointer fields, so Load can tell a key left
+// out of the "labels" block apart from one set to its zero value.
+type rawLabels struct {
+	Pending *string `yaml:"pending"`
+	Tagged  *string `yaml:"tagged"`
 }
 
 // raw mirrors Config with pointer fields, so Load can tell a key left out of
 // the file apart from one set to its zero value.
 type raw struct {
-	InitialVersion    *string   `yaml:"initial-version"`
-	BumpMinorPreMajor *bool     `yaml:"bump-minor-pre-major"`
-	HiddenTypes       *[]string `yaml:"hidden-types"`
-	FallbackType      *string   `yaml:"fallback-type"`
-	TokenEnv          *string   `yaml:"token-env"`
+	InitialVersion    *string    `yaml:"initial-version"`
+	BumpMinorPreMajor *bool      `yaml:"bump-minor-pre-major"`
+	HiddenTypes       *[]string  `yaml:"hidden-types"`
+	FallbackType      *string    `yaml:"fallback-type"`
+	TokenEnv          *string    `yaml:"token-env"`
+	Files             *[]rawFile `yaml:"files"`
+	Changelog         *string    `yaml:"changelog"`
+	Labels            *rawLabels `yaml:"labels"`
 }
 
 // Default is the configuration applied when release-me.yaml is absent.
@@ -61,6 +102,8 @@ func Default() Config {
 		HiddenTypes:    DefaultHiddenTypes,
 		FallbackType:   DefaultFallbackType,
 		TokenEnv:       DefaultTokenEnv,
+		ChangelogPath:  DefaultChangelogPath,
+		Labels:         Labels{Pending: DefaultPendingLabel, Tagged: DefaultTaggedLabel},
 	}
 }
 
@@ -108,6 +151,31 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.TokenEnv != nil {
 		cfg.TokenEnv = *r.TokenEnv
+	}
+	if r.Changelog != nil {
+		cfg.ChangelogPath = *r.Changelog
+	}
+	if r.Labels != nil {
+		if r.Labels.Pending != nil {
+			cfg.Labels.Pending = *r.Labels.Pending
+		}
+		if r.Labels.Tagged != nil {
+			cfg.Labels.Tagged = *r.Labels.Tagged
+		}
+	}
+	if r.Files != nil {
+		files := make([]File, 0, len(*r.Files))
+		for _, rf := range *r.Files {
+			name := updater.Marker
+			if rf.Updater != nil {
+				name = *rf.Updater
+			}
+			if _, ok := updater.Updaters[name]; !ok {
+				return Config{}, fmt.Errorf("config: parse %s: file %s: unknown updater %q", path, rf.Path, name)
+			}
+			files = append(files, File{Path: rf.Path, Updater: name})
+		}
+		cfg.Files = files
 	}
 	return cfg, nil
 }

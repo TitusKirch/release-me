@@ -64,6 +64,39 @@ func TestAssembleEntries(t *testing.T) {
 			wantChanges: []version.Change{{Type: "fix"}},
 			wantEntries: []changelog.Entry{{Type: "fix", Description: "stop the panic on empty history"}},
 		},
+		{
+			name: "uses the override block instead of the pull request title",
+			raw: []history.Entry{
+				{PullRequestNumber: 5, Subject: "Merge pull request #5 from owner/feat-branch"},
+			},
+			responses: map[int]forgetest.Response{
+				5: {PullRequest: forge.PullRequest{
+					Title: "misc: internal rework",
+					Body:  "```release-me\nfeat(cli): add the next command\nfix: stop the panic on empty history\n```",
+					URL:   "https://github.com/owner/repo/pull/5",
+				}},
+			},
+			wantChanges: []version.Change{{Type: "feat"}, {Type: "fix"}},
+			wantEntries: []changelog.Entry{
+				{Type: "feat", Scope: "cli", Description: "add the next command", PullRequestNumber: 5, URL: "https://github.com/owner/repo/pull/5"},
+				{Type: "fix", Description: "stop the panic on empty history", PullRequestNumber: 5, URL: "https://github.com/owner/repo/pull/5"},
+			},
+		},
+		{
+			name: "hides a pull request with an empty override block",
+			raw: []history.Entry{
+				{PullRequestNumber: 6, Subject: "Merge pull request #6 from owner/chore-branch"},
+			},
+			responses: map[int]forgetest.Response{
+				6: {PullRequest: forge.PullRequest{
+					Title: "feat: this would otherwise bump the version",
+					Body:  "```release-me\n```",
+					URL:   "https://github.com/owner/repo/pull/6",
+				}},
+			},
+			wantChanges: []version.Change{},
+			wantEntries: []changelog.Entry{},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -4,6 +4,7 @@
 package conventional_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
@@ -94,5 +95,65 @@ func TestParseUsesTheGivenFallbackType(t *testing.T) {
 	want := conventional.Message{Type: "misc", Description: "quick hack before the demo"}
 	if got != want {
 		t.Fatalf("Parse() = %+v, want %+v", got, want)
+	}
+}
+
+func TestParseOverride(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		body string
+		want conventional.Override
+	}{
+		{
+			name: "returns not present without a block",
+			body: "Just a regular pull request description.",
+			want: conventional.Override{},
+		},
+		{
+			name: "reads one entry per line",
+			body: "Some context.\n\n```release-me\nfeat(cli): add the next command\n```\n",
+			want: conventional.Override{Present: true, Entries: []string{"feat(cli): add the next command"}},
+		},
+		{
+			name: "reads several entries",
+			body: "```release-me\nfeat: add the next command\nfix: stop the panic on empty history\n```",
+			want: conventional.Override{Present: true, Entries: []string{
+				"feat: add the next command",
+				"fix: stop the panic on empty history",
+			}},
+		},
+		{
+			name: "drops blank lines inside the block",
+			body: "```release-me\nfeat: add the next command\n\nfix: stop the panic\n```",
+			want: conventional.Override{Present: true, Entries: []string{
+				"feat: add the next command",
+				"fix: stop the panic",
+			}},
+		},
+		{
+			name: "an empty block is present with no entries",
+			body: "```release-me\n```",
+			want: conventional.Override{Present: true},
+		},
+		{
+			name: "does not match the differently named notes block",
+			body: "```release-me-notes\nfree text for the release\n```",
+			want: conventional.Override{},
+		},
+		{
+			name: "does not match a stray fence inside a sentence",
+			body: "Wrap it in ```release-me for emphasis, not an actual block.",
+			want: conventional.Override{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := conventional.ParseOverride(tc.body)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("ParseOverride() = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 }

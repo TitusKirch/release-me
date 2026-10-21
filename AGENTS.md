@@ -43,7 +43,8 @@ task run -- next     # run the CLI from source
 - Errors wrap with `%w` and name the component and the pull request where one is involved.
 - Logging through `log/slog`, configured in `main`, quiet by default, `--verbose` for debug.
 - Secrets never reach a log line or an error message. The token is read from the environment.
-- License header in every `.go` file, after the package comment where one exists:
+- License header first in every `.go` file, a blank line, then the package comment where one
+  exists:
 
 ```text
 // Copyright 2026 Simon Ostendorf

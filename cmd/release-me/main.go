@@ -45,9 +45,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runNext(args[1:], stdout, stderr)
 	case "changelog":
 		return runChangelog(args[1:], stdout, stderr)
-	case "pr", "release", "run", "check":
-		fmt.Fprintf(stderr, "release-me %s: not available yet\n", args[0])
-		return 1
+	case "pr":
+		return runPR(args[1:], stdout, stderr)
+	case "release":
+		return runRelease(args[1:], stdout, stderr)
+	case "run":
+		return runRun(args[1:], stdout, stderr)
+	case "check":
+		return runCheck(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
