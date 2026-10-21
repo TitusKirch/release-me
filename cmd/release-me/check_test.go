@@ -14,6 +14,18 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/forge/forgetest"
 )
 
+// testLabels is a fully populated config.Labels, so a case that does not
+// exercise a missing pre-release label does not trip over one left at its
+// zero value.
+var testLabels = config.Labels{
+	Pending: "release: pending", Tagged: "release: tagged",
+	Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc",
+}
+
+// allLabels is every label name testLabels carries, the repository labels
+// a case with nothing missing configures.
+var allLabels = []string{"release: pending", "release: tagged", "release: alpha", "release: beta", "release: rc"}
+
 func TestDoCheckReportsEveryMissingItem(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -26,9 +38,9 @@ func TestDoCheckReportsEveryMissingItem(t *testing.T) {
 	}{
 		{
 			name:       "reports nothing when everything is present",
-			cfg:        config.Config{Labels: config.Labels{Pending: "release: pending", Tagged: "release: tagged"}},
+			cfg:        config.Config{Labels: testLabels},
 			token:      "a-token",
-			repoLabels: []string{"release: pending", "release: tagged", "feature"},
+			repoLabels: append(append([]string{}, allLabels...), "feature"),
 			want:       nil,
 		},
 		{
@@ -40,26 +52,40 @@ func TestDoCheckReportsEveryMissingItem(t *testing.T) {
 		},
 		{
 			name:       "reports the missing token",
-			cfg:        config.Config{Labels: config.Labels{Pending: "release: pending", Tagged: "release: tagged"}},
+			cfg:        config.Config{Labels: testLabels},
 			token:      "",
-			repoLabels: []string{"release: pending", "release: tagged"},
+			repoLabels: allLabels,
 			want:       []string{"token: environment variable GITHUB_TOKEN is not set"},
 		},
 		{
 			name:       "reports a missing label",
-			cfg:        config.Config{Labels: config.Labels{Pending: "release: pending", Tagged: "release: tagged"}},
+			cfg:        config.Config{Labels: testLabels},
 			token:      "a-token",
-			repoLabels: []string{"release: pending"},
+			repoLabels: []string{"release: pending", "release: alpha", "release: beta", "release: rc"},
 			want:       []string{`label "release: tagged" does not exist on the repository`},
 		},
 		{
-			name:       "reports both missing labels",
-			cfg:        config.Config{Labels: config.Labels{Pending: "release: pending", Tagged: "release: tagged"}},
+			name:       "reports the missing pre-release type labels",
+			cfg:        config.Config{Labels: testLabels},
+			token:      "a-token",
+			repoLabels: []string{"release: pending", "release: tagged"},
+			want: []string{
+				`label "release: alpha" does not exist on the repository`,
+				`label "release: beta" does not exist on the repository`,
+				`label "release: rc" does not exist on the repository`,
+			},
+		},
+		{
+			name:       "reports every missing label",
+			cfg:        config.Config{Labels: testLabels},
 			token:      "a-token",
 			repoLabels: nil,
 			want: []string{
 				`label "release: pending" does not exist on the repository`,
 				`label "release: tagged" does not exist on the repository`,
+				`label "release: alpha" does not exist on the repository`,
+				`label "release: beta" does not exist on the repository`,
+				`label "release: rc" does not exist on the repository`,
 			},
 		},
 	}
@@ -78,7 +104,7 @@ func TestDoCheckReportsEveryMissingItem(t *testing.T) {
 
 func TestDoCheckReportsARejectedTokenNotAMissingLabel(t *testing.T) {
 	t.Parallel()
-	cfg := config.Config{Labels: config.Labels{Pending: "release: pending", Tagged: "release: tagged"}}
+	cfg := config.Config{Labels: testLabels}
 	wrapped := fmt.Errorf("github: list repository labels: %w: 401 Bad credentials", forge.ErrUnauthorized)
 	f := &forgetest.Fake{RepoLabelsErr: wrapped}
 
@@ -90,7 +116,7 @@ func TestDoCheckReportsARejectedTokenNotAMissingLabel(t *testing.T) {
 
 func TestDoCheckDoesNotCheckLabelsWithoutAForge(t *testing.T) {
 	t.Parallel()
-	cfg := config.Config{Labels: config.Labels{Pending: "release: pending", Tagged: "release: tagged"}}
+	cfg := config.Config{Labels: testLabels}
 
 	got := doCheck(t.Context(), cfg, errors.New("boom"), nil, "GITHUB_TOKEN", "a-token", "owner", "repo", nil)
 	want := []string{"config: boom"}
@@ -101,8 +127,8 @@ func TestDoCheckDoesNotCheckLabelsWithoutAForge(t *testing.T) {
 
 func TestDoCheckReportsAnUnknownComponentName(t *testing.T) {
 	t.Parallel()
-	cfg := config.Config{Labels: config.Labels{Pending: "release: pending", Tagged: "release: tagged"}}
-	f := &forgetest.Fake{RepoLabels: []string{"release: pending", "release: tagged"}}
+	cfg := config.Config{Labels: testLabels}
+	f := &forgetest.Fake{RepoLabels: allLabels}
 
 	got := doCheck(t.Context(), cfg, nil, fmt.Errorf(`release-me: unknown component "frontend"`), "GITHUB_TOKEN", "a-token", "owner", "repo", f)
 	if len(got) != 1 || !strings.Contains(got[0], `"frontend"`) {

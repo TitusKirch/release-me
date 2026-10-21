@@ -103,3 +103,96 @@ func TestLastTag(t *testing.T) {
 		})
 	}
 }
+
+func TestPreReleaseTags(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		setup  func(t *testing.T, dir string)
+		prefix string
+		base   version.Semver
+		want   []history.PreReleaseTag
+	}{
+		{
+			name: "reports none without a matching pre-release tag",
+			setup: func(t *testing.T, dir string) {
+				commitEntry(t, dir, "chore: initial commit", "")
+				tag(t, dir, "v1.0.0")
+			},
+			prefix: "v",
+			base:   version.Semver{Major: 1, Minor: 1, Patch: 0},
+		},
+		{
+			name: "orders alpha below beta below rc by semver precedence, not creation order",
+			setup: func(t *testing.T, dir string) {
+				commitEntry(t, dir, "chore: initial commit", "")
+				tag(t, dir, "v1.1.0-rc.1")
+				tag(t, dir, "v1.1.0-alpha.1")
+				tag(t, dir, "v1.1.0-beta.1")
+			},
+			prefix: "v",
+			base:   version.Semver{Major: 1, Minor: 1, Patch: 0},
+			want: []history.PreReleaseTag{
+				{Tag: "v1.1.0-alpha.1", Version: version.Semver{Major: 1, Minor: 1, Patch: 0, Pre: "alpha.1"}},
+				{Tag: "v1.1.0-beta.1", Version: version.Semver{Major: 1, Minor: 1, Patch: 0, Pre: "beta.1"}},
+				{Tag: "v1.1.0-rc.1", Version: version.Semver{Major: 1, Minor: 1, Patch: 0, Pre: "rc.1"}},
+			},
+		},
+		{
+			name: "orders counters of the same type numerically",
+			setup: func(t *testing.T, dir string) {
+				commitEntry(t, dir, "chore: initial commit", "")
+				tag(t, dir, "v1.1.0-alpha.10")
+				tag(t, dir, "v1.1.0-alpha.2")
+			},
+			prefix: "v",
+			base:   version.Semver{Major: 1, Minor: 1, Patch: 0},
+			want: []history.PreReleaseTag{
+				{Tag: "v1.1.0-alpha.2", Version: version.Semver{Major: 1, Minor: 1, Patch: 0, Pre: "alpha.2"}},
+				{Tag: "v1.1.0-alpha.10", Version: version.Semver{Major: 1, Minor: 1, Patch: 0, Pre: "alpha.10"}},
+			},
+		},
+		{
+			name: "ignores a stable tag and a pre-release tag of a different base version",
+			setup: func(t *testing.T, dir string) {
+				commitEntry(t, dir, "chore: initial commit", "")
+				tag(t, dir, "v1.1.0")
+				tag(t, dir, "v1.2.0-alpha.1")
+			},
+			prefix: "v",
+			base:   version.Semver{Major: 1, Minor: 1, Patch: 0},
+		},
+		{
+			name: "uses a custom prefix",
+			setup: func(t *testing.T, dir string) {
+				commitEntry(t, dir, "chore: initial commit", "")
+				tag(t, dir, "frontend/v0.4.0-alpha.1")
+			},
+			prefix: "frontend/v",
+			base:   version.Semver{Major: 0, Minor: 4, Patch: 0},
+			want: []history.PreReleaseTag{
+				{Tag: "frontend/v0.4.0-alpha.1", Version: version.Semver{Minor: 4, Pre: "alpha.1"}},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := newRepo(t)
+			tc.setup(t, dir)
+
+			got, err := history.PreReleaseTags(context.Background(), dir, tc.prefix, tc.base)
+			if err != nil {
+				t.Fatalf("PreReleaseTags() error = %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("PreReleaseTags() = %+v, want %+v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("PreReleaseTags()[%d] = %+v, want %+v", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}

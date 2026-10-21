@@ -37,6 +37,12 @@ const (
 	// applied when the "labels" block, or one of its keys, is left out.
 	DefaultPendingLabel = "release: pending"
 	DefaultTaggedLabel  = "release: tagged"
+	// DefaultAlphaLabel, DefaultBetaLabel and DefaultRcLabel are the
+	// pre-release type label names applied when the "labels" block, or one
+	// of its keys, is left out.
+	DefaultAlphaLabel = "release: alpha"
+	DefaultBetaLabel  = "release: beta"
+	DefaultRcLabel    = "release: rc"
 )
 
 // DefaultHiddenTypes is the hidden-types list applied when the key is left
@@ -54,11 +60,15 @@ type File struct {
 	Updater string
 }
 
-// Labels is the "labels" key: the two label names release-me expects on the
-// repository.
+// Labels is the "labels" key: the label names release-me expects on the
+// repository. Alpha, Beta and Rc select a pre-release type on the release
+// pull request; Pending and Tagged apply to every release, stable or not.
 type Labels struct {
 	Pending string
 	Tagged  string
+	Alpha   string
+	Beta    string
+	Rc      string
 }
 
 // Config is the release-me.yaml configuration.
@@ -176,6 +186,9 @@ type rawFile struct {
 type rawLabels struct {
 	Pending *string `yaml:"pending"`
 	Tagged  *string `yaml:"tagged"`
+	Alpha   *string `yaml:"alpha"`
+	Beta    *string `yaml:"beta"`
+	Rc      *string `yaml:"rc"`
 }
 
 // raw mirrors Config with pointer fields, so Load can tell a key left out of
@@ -215,7 +228,10 @@ func Default() Config {
 		FallbackType:   DefaultFallbackType,
 		TokenEnv:       DefaultTokenEnv,
 		ChangelogPath:  DefaultChangelogPath,
-		Labels:         Labels{Pending: DefaultPendingLabel, Tagged: DefaultTaggedLabel},
+		Labels: Labels{
+			Pending: DefaultPendingLabel, Tagged: DefaultTaggedLabel,
+			Alpha: DefaultAlphaLabel, Beta: DefaultBetaLabel, Rc: DefaultRcLabel,
+		},
 	}
 }
 
@@ -273,6 +289,15 @@ func Load(path string) (cfg Config, err error) {
 		}
 		if r.Labels.Tagged != nil {
 			cfg.Labels.Tagged = *r.Labels.Tagged
+		}
+		if r.Labels.Alpha != nil {
+			cfg.Labels.Alpha = *r.Labels.Alpha
+		}
+		if r.Labels.Beta != nil {
+			cfg.Labels.Beta = *r.Labels.Beta
+		}
+		if r.Labels.Rc != nil {
+			cfg.Labels.Rc = *r.Labels.Rc
 		}
 	}
 	if r.Files != nil {

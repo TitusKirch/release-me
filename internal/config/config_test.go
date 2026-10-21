@@ -41,7 +41,10 @@ func TestDefaultSetsTheChangelogPathAndLabels(t *testing.T) {
 	if got.ChangelogPath != "CHANGELOG.md" {
 		t.Fatalf("ChangelogPath = %q, want %q", got.ChangelogPath, "CHANGELOG.md")
 	}
-	want := config.Labels{Pending: "release: pending", Tagged: "release: tagged"}
+	want := config.Labels{
+		Pending: "release: pending", Tagged: "release: tagged",
+		Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc",
+	}
 	if got.Labels != want {
 		t.Fatalf("Labels = %+v, want %+v", got.Labels, want)
 	}
@@ -63,7 +66,10 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				FallbackType:   config.DefaultFallbackType,
 				TokenEnv:       config.DefaultTokenEnv,
 				ChangelogPath:  config.DefaultChangelogPath,
-				Labels:         config.Labels{Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel},
+				Labels: config.Labels{
+					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
+					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
+				},
 			},
 		},
 		{
@@ -77,6 +83,9 @@ changelog: HISTORY.md
 labels:
   pending: needs-release
   tagged: released
+  alpha: needs-alpha
+  beta: needs-beta
+  rc: needs-rc
 files:
   - path: cmd/cli/version.go
   - path: deploy/values.yaml
@@ -89,7 +98,10 @@ files:
 				FallbackType:      "misc",
 				TokenEnv:          "RELEASE_TOKEN",
 				ChangelogPath:     "HISTORY.md",
-				Labels:            config.Labels{Pending: "needs-release", Tagged: "released"},
+				Labels: config.Labels{
+					Pending: "needs-release", Tagged: "released",
+					Alpha: "needs-alpha", Beta: "needs-beta", Rc: "needs-rc",
+				},
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
 					{Path: "deploy/values.yaml", Updater: "marker"},
@@ -105,7 +117,10 @@ files:
 				FallbackType:   "misc",
 				TokenEnv:       config.DefaultTokenEnv,
 				ChangelogPath:  config.DefaultChangelogPath,
-				Labels:         config.Labels{Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel},
+				Labels: config.Labels{
+					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
+					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
+				},
 			},
 		},
 		{
@@ -117,7 +132,10 @@ files:
 				FallbackType:   config.DefaultFallbackType,
 				TokenEnv:       config.DefaultTokenEnv,
 				ChangelogPath:  config.DefaultChangelogPath,
-				Labels:         config.Labels{Pending: "needs-release", Tagged: config.DefaultTaggedLabel},
+				Labels: config.Labels{
+					Pending: "needs-release", Tagged: config.DefaultTaggedLabel,
+					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
+				},
 			},
 		},
 	}

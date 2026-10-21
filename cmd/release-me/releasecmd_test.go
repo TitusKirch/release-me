@@ -98,6 +98,40 @@ func TestDoReleasePrintsNothingToReleaseWithoutAMergedPendingPullRequest(t *test
 	}
 }
 
+func TestDoReleaseMarksAPreReleaseVersionAsAPreReleaseAndSwapsItsTypeLabel(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	commitEntry(t, dir, "chore: initial commit")
+
+	pr := forge.PullRequest{
+		Number: 9, Title: "chore(main): release v0.1.0-rc.1",
+		Body:   "Release v0.1.0-rc.1\n\n<details>\n<summary>Changelog</summary>\n\n## v0.1.0-rc.1 (2026-01-02)\n\n### Features\n\n- add the thing\n\n</details>\n",
+		Labels: []string{"release: pending", "release: rc"}, Merged: true,
+	}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: mainBranch, State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending", "release: rc"}},
+	}
+	var stdout bytes.Buffer
+
+	if err := doRelease(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doRelease() error = %v", err)
+	}
+
+	if len(f.CreatedTags) != 1 || f.CreatedTags[0].Tag != "v0.1.0-rc.1" {
+		t.Fatalf("CreatedTags = %+v", f.CreatedTags)
+	}
+	if len(f.CreatedReleases) != 1 || !f.CreatedReleases[0].Prerelease {
+		t.Fatalf("CreatedReleases = %+v, want a pre-release", f.CreatedReleases)
+	}
+	want := []string{"release: tagged"}
+	if len(f.SetLabelsCalls) != 1 || !equalStrings(f.SetLabelsCalls[0].Labels, want) {
+		t.Fatalf("SetLabelsCalls = %+v, want the pending and rc labels both swapped for %v", f.SetLabelsCalls, want)
+	}
+}
+
 func TestDoReleaseDryRunWritesNothing(t *testing.T) {
 	dir, _ := newPRRepo(t)
 	commitEntry(t, dir, "chore: initial commit")

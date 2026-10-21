@@ -54,6 +54,13 @@ func TestVersionFromTitle(t *testing.T) {
 // exercised.
 var mainComponent = release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v"}
 
+// testLabels are the labels release.Run reads and writes in a test that
+// does not exercise a pre-release.
+var testLabels = release.Labels{
+	Pending: "release: pending", Tagged: "release: tagged",
+	Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc",
+}
+
 func TestRunTagsReleasesAndSwapsTheLabel(t *testing.T) {
 	t.Parallel()
 	pr := forge.PullRequest{
@@ -69,7 +76,7 @@ func TestRunTagsReleasesAndSwapsTheLabel(t *testing.T) {
 		PRLabels:     map[int][]string{9: {"release: pending"}},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -104,7 +111,7 @@ func TestRunStillReleasesAndSwapsTheLabelWhenTheTagAlreadyExists(t *testing.T) {
 		PRLabels:     map[int][]string{9: {"release: pending"}},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -134,7 +141,7 @@ func TestRunToleratesAReleaseThatAlreadyExistsTooWhenTheTagDoes(t *testing.T) {
 		PRLabels:         map[int][]string{9: {"release: pending"}},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -155,7 +162,7 @@ func TestRunIgnoresAPullRequestWithoutThePendingLabel(t *testing.T) {
 		},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -173,7 +180,7 @@ func TestRunIgnoresAnUnmergedPullRequest(t *testing.T) {
 		},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -198,7 +205,7 @@ func TestRunTagsAndNamesTheReleaseForAConfiguredComponent(t *testing.T) {
 	}
 	comp := release.Component{Name: "frontend", Branch: "release-me/frontend", TagPrefix: "frontend/v", Multi: true}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", comp, "release: pending", "release: tagged", false, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", comp, testLabels, false, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -223,7 +230,7 @@ func TestRunIgnoresAPullRequestTitledForADifferentComponent(t *testing.T) {
 	}
 	comp := release.Component{Name: "frontend", Branch: "release-me/frontend", TagPrefix: "frontend/v", Multi: true}
 
-	_, err := release.Run(context.Background(), f, "owner", "repo", comp, "release: pending", "release: tagged", false, discardLogger())
+	_, err := release.Run(context.Background(), f, "owner", "repo", comp, testLabels, false, discardLogger())
 	if err == nil {
 		t.Fatal("Run() error = nil, want an error naming the mismatched title")
 	}
@@ -239,7 +246,7 @@ func TestRunDryRunChangesNothing(t *testing.T) {
 		MergeCommits: map[int]string{9: "deadbeef"},
 	}
 
-	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, "release: pending", "release: tagged", true, discardLogger())
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, true, discardLogger())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -248,5 +255,62 @@ func TestRunDryRunChangesNothing(t *testing.T) {
 	}
 	if len(f.CreatedTags) != 0 || len(f.CreatedReleases) != 0 || len(f.SetLabelsCalls) != 0 {
 		t.Fatalf("dry run wrote something: tags=%+v releases=%+v labels=%+v", f.CreatedTags, f.CreatedReleases, f.SetLabelsCalls)
+	}
+}
+
+func TestRunMarksAPreReleaseVersionAsAPreReleaseAndSwapsItsTypeLabel(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{
+		Number: 9, Title: "chore(main): release v0.2.0-alpha.1",
+		Labels: []string{"release: pending", "release: alpha"}, Merged: true,
+	}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending", "release: alpha"}},
+	}
+
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, false, discardLogger())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].Tag != "v0.2.0-alpha.1" {
+		t.Fatalf("Run() = %+v", results)
+	}
+	if len(f.CreatedReleases) != 1 || !f.CreatedReleases[0].Prerelease {
+		t.Fatalf("CreatedReleases = %+v, want a pre-release", f.CreatedReleases)
+	}
+	want := []string{"release: tagged"}
+	if len(f.SetLabelsCalls) != 1 || !reflect.DeepEqual(f.SetLabelsCalls[0].Labels, want) {
+		t.Fatalf("SetLabelsCalls = %+v, want the pending and alpha labels both swapped for %v", f.SetLabelsCalls, want)
+	}
+}
+
+func TestRunKeepsAHumanAddedLabelWhenSwappingAPreReleaseType(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{
+		Number: 9, Title: "chore(main): release v0.2.0-rc.2",
+		Labels: []string{"release: pending", "release: rc", "priority: high"}, Merged: true,
+	}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending", "release: rc", "priority: high"}},
+	}
+
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, false, discardLogger())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].Tag != "v0.2.0-rc.2" {
+		t.Fatalf("Run() = %+v", results)
+	}
+	want := []string{"priority: high", "release: tagged"}
+	if len(f.SetLabelsCalls) != 1 || !reflect.DeepEqual(f.SetLabelsCalls[0].Labels, want) {
+		t.Fatalf("SetLabelsCalls = %+v, want %v", f.SetLabelsCalls, want)
 	}
 }

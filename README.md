@@ -57,9 +57,9 @@ itself is still forked from whatever commit is checked out, which must be the de
 tip, same as `next` and `changelog`. The branch is written in a temporary checkout, never in
 your working copy.
 
-`pr` checks that the `pending` and `tagged` labels exist before it writes anything, the same
-check `check` runs. The labels are shared across every component; the default branch is
-resolved once and shared too.
+`pr` checks that the `pending`, `tagged`, `alpha`, `beta` and `rc` labels exist before it writes
+anything, the same check `check` runs. The labels are shared across every component; the
+default branch is resolved once and shared too.
 
 Rerunning `pr` is judged on content, not on the rendered pull request body: the changelog
 entries for the version, without the heading's date, and every configured file's bumped
@@ -80,13 +80,33 @@ the implicit `main` component. Its body starts with `Release vX.Y.Z`, then the n
 `<details>` section. When every entry is a hidden type, the changelog carries one explicit
 line, `- Version bump without user facing changes.`, instead of an empty heading.
 
+### Pre-releases
+
+A pre-release type label on the open release pull request, `release: alpha`, `release: beta`
+or `release: rc` by default, turns its next run into a pre-release: version `X.Y.Z-alpha.N`,
+`X.Y.Z-beta.N` or `X.Y.Z-rc.N`. `X.Y.Z` is the version a stable release would get from the
+entries since the last stable tag; pre-release tags never move that base. Exactly one of the
+three labels may be present at a time; two at once is an error naming both.
+
+`N` starts at `1` for a type and counts up from the highest `N` an earlier pre-release tag of
+that same type and base version already carries. Switching the label to a different type does
+not inherit the previous type's counter: it starts at `1` again, even when tags for the other
+type already exist.
+
+The changelog a pre-release renders depends on what came before it: the first pre-release since
+the last stable tag collects the same entries a stable release would, since that stable tag; a
+pre-release that follows another one collects only the entries since that previous pre-release
+tag. Removing the label from the open pull request returns it to the stable version on the next
+run, branch content, title and body updated accordingly.
+
 ### release
 
 Tags and releases every merged pull request on a component's release branch that still carries
 the `pending` label: a tag on the merge commit, a GitHub release with the pull request's notes
-and changelog, draft and prerelease both false, then the label swapped from `pending` to
-`tagged`. The implicit `main` component tags `vX.Y.Z` and names the release after the tag,
-today's shape; a configured component tags `<name>/vX.Y.Z` and names the release
+and changelog, draft always false and prerelease true for a pre-release version. The label
+swap removes `pending`, and the matching pre-release type label when the version carries one,
+replacing both with `tagged`. The implicit `main` component tags `vX.Y.Z` and names the release
+after the tag, today's shape; a configured component tags `<name>/vX.Y.Z` and names the release
 `<name> vX.Y.Z`. A tag that already exists, left over from an earlier, interrupted run, is not
 an error: the release and the label swap still happen, so the pull request does not stay
 pending forever, and the run reports it as already tagged.
@@ -98,11 +118,11 @@ updating every release pull request and releasing whatever merged since the last
 
 ### check
 
-Validates `release-me.yaml`, including an unknown `--component` name, that the `pending` and
-`tagged` labels exist on the repository, and that the token environment variable is both set
-and accepted by the forge: a rejected token is reported as such, not as a missing label, since
-the symptom from the forge is the same 401 either way. Prints every missing or invalid item and
-exits 1 when anything is missing, 0 otherwise.
+Validates `release-me.yaml`, including an unknown `--component` name, that the `pending`,
+`tagged`, `alpha`, `beta` and `rc` labels exist on the repository, and that the token
+environment variable is both set and accepted by the forge: a rejected token is reported as
+such, not as a missing label, since the symptom from the forge is the same 401 either way.
+Prints every missing or invalid item and exits 1 when anything is missing, 0 otherwise.
 
 ### Notes block
 
@@ -145,6 +165,9 @@ changelog: CHANGELOG.md
 labels:
   pending: "release: pending"
   tagged: "release: tagged"
+  alpha: "release: alpha"
+  beta: "release: beta"
+  rc: "release: rc"
 files:
   - path: cmd/cli/version.go
     updater: marker
@@ -165,8 +188,11 @@ files:
 - `changelog`: the changelog file path, default `CHANGELOG.md`. `pr` prepends the new version's
   section to it, creating the file when it does not exist yet.
 - `labels.pending` and `labels.tagged`: the label names `pr`, `release` and `check` use,
-  default `release: pending` and `release: tagged`. `check` reports a missing label by name,
-  it never creates one.
+  default `release: pending` and `release: tagged`.
+- `labels.alpha`, `labels.beta` and `labels.rc`: the pre-release type labels `pr`, `release`
+  and `check` use, default `release: alpha`, `release: beta` and `release: rc`. See
+  [Pre-releases](#pre-releases). `check` reports any of the five missing labels by name, it
+  never creates one.
 - `files`: files `pr` bumps to the next version, each a `path` and an optional `updater`,
   default `marker`. The `marker` updater replaces the version on a line ending in
   `# release-me: version` or `// release-me: version`, keeping the rest of the line, including
