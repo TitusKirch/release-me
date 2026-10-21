@@ -18,11 +18,12 @@ type Entry struct {
 	// component, through Touches.
 	SHA string
 	// PullRequestNumber is the pull request number the entry belongs to,
-	// 0 when it belongs to none: parsed from a "Merge pull request #N
-	// from ..." merge subject for Walk, from a trailing "(#N)" on the
-	// commit subject for WalkSquash, or inherited from the first parent
-	// merge that introduced the commit for AllEntries. SubCommits never
-	// sets it: a sub commit is never itself a pull request.
+	// 0 when it belongs to none: parsed from a GitHub "Merge pull request
+	// #N from ..." subject or a GitLab "See merge request group/project!N"
+	// body for Walk, from a trailing "(#N)" on the commit subject for
+	// WalkSquash, or inherited from the first parent merge that introduced
+	// the commit for AllEntries. SubCommits never sets it: a sub commit
+	// is never itself a pull request.
 	PullRequestNumber int
 	// Subject is the commit subject, the merge subject for a Walk merge
 	// commit, stripped of its trailing "(#N)" for a WalkSquash commit
@@ -42,7 +43,18 @@ type Entry struct {
 	Squashed bool
 }
 
+// mergeSubject matches GitHub's merge commit subject, naming the pull
+// request number directly.
 var mergeSubject = regexp.MustCompile(`^Merge pull request #(\d+) from `)
+
+// gitlabMergeSubject matches GitLab's merge commit subject, which names
+// neither the source nor the merge request; the number is read from the
+// body instead, through gitlabMergeRequest.
+var gitlabMergeSubject = regexp.MustCompile(`^Merge branch '.+' into '.+'$`)
+
+// gitlabMergeRequest matches the merge request reference GitLab appends to
+// the merge commit body, "See merge request group/project!N".
+var gitlabMergeRequest = regexp.MustCompile(`See merge request \S*!(\d+)`)
 
 const (
 	recordSep = "\x1e"
@@ -88,6 +100,12 @@ func Walk(ctx context.Context, dir, since string) ([]Entry, error) {
 		if m := mergeSubject.FindStringSubmatch(r.Subject); m != nil {
 			if number, err := strconv.Atoi(m[1]); err == nil {
 				entry.PullRequestNumber = number
+			}
+		} else if gitlabMergeSubject.MatchString(r.Subject) {
+			if m := gitlabMergeRequest.FindStringSubmatch(r.Body); m != nil {
+				if number, err := strconv.Atoi(m[1]); err == nil {
+					entry.PullRequestNumber = number
+				}
 			}
 		}
 		entries = append(entries, entry)
