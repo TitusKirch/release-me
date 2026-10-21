@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package config loads release-me.yaml: initial-version,
-// bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
-// changelog, changelog-source, labels, author, major-tag, versioning,
-// draft-until-assets-attach, comment-mention and components.
+// bump-minor-pre-major, hidden-types, fallback-type, token-env, forge,
+// base-url, files, changelog, changelog-source, labels, author, major-tag,
+// versioning, draft-until-assets-attach, comment-mention and components.
 package config
 
 import (
@@ -178,6 +178,11 @@ var changelogSources = []string{
 // never move the version.
 var bumpingTypes = map[string]bool{"feat": true, "fix": true, "perf": true, "revert": true}
 
+// validForges are the values accepted for the "forge" key, besides the
+// empty string, which leaves the forge to be guessed from the origin
+// remote.
+var validForges = map[string]bool{"github": true, "gitlab": true}
+
 // File is one entry of the "files" key: a file release-me bumps the version
 // in, through the named updater. Key is the dotted path, identifier or
 // other locator the updater needs to find the value, empty for an updater
@@ -219,6 +224,8 @@ type Config struct {
 	HiddenTypes       []string
 	FallbackType      string
 	TokenEnv          string
+	Forge             string
+	BaseURL           string
 	Files             []File
 	ChangelogPath     string
 	// ChangelogSource is the top-level "changelog-source" key: which
@@ -459,6 +466,8 @@ type raw struct {
 	HiddenTypes              *[]string  `yaml:"hidden-types"`
 	FallbackType             *string    `yaml:"fallback-type"`
 	TokenEnv                 *string    `yaml:"token-env"`
+	Forge                    *string    `yaml:"forge"`
+	BaseURL                  *string    `yaml:"base-url"`
 	Files                    *[]rawFile `yaml:"files"`
 	Changelog                *string    `yaml:"changelog"`
 	ChangelogSource          *string    `yaml:"changelog-source"`
@@ -575,6 +584,15 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.TokenEnv != nil {
 		cfg.TokenEnv = *r.TokenEnv
+	}
+	if r.Forge != nil {
+		cfg.Forge = *r.Forge
+	}
+	if cfg.Forge != "" && !validForges[cfg.Forge] {
+		return Config{}, fmt.Errorf("config: parse %s: forge %q is neither %q nor %q", path, cfg.Forge, "github", "gitlab")
+	}
+	if r.BaseURL != nil {
+		cfg.BaseURL = *r.BaseURL
 	}
 	if r.Changelog != nil {
 		cfg.ChangelogPath = *r.Changelog

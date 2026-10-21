@@ -117,6 +117,8 @@ bump-minor-pre-major: true
 hidden-types: [chore, docs]
 fallback-type: misc
 token-env: RELEASE_TOKEN
+forge: gitlab
+base-url: https://gitlab.example.com
 changelog: HISTORY.md
 changelog-source: all
 labels:
@@ -147,6 +149,8 @@ files:
 				HiddenTypes:       []string{"chore", "docs"},
 				FallbackType:      "misc",
 				TokenEnv:          "RELEASE_TOKEN",
+				Forge:             "gitlab",
+				BaseURL:           "https://gitlab.example.com",
 				ChangelogPath:     "HISTORY.md",
 				ChangelogSource:   "all",
 				Labels: config.Labels{
@@ -339,6 +343,7 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			content: "components:\n  web:\n    path: web\n    changelog: api/CHANGELOG.md\n  api:\n    path: api\n",
 		},
 		{name: "rejects a changelog path with a backslash", content: "components:\n  web:\n    path: web\n    changelog: 'web\\CHANGELOG.md'\n"},
+		{name: "rejects a forge that is neither github nor gitlab", content: "forge: bitbucket\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
