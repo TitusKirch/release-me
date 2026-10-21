@@ -303,6 +303,64 @@ func TestDoPRBumpsAConfiguredMarkerFileOnTheReleaseBranch(t *testing.T) {
 	}
 }
 
+func TestDoPRBumpsATypedUpdaterFileOnTheReleaseBranch(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeAndCommit(t, dir, "Chart.yaml", "apiVersion: v2\nname: chart\nversion: 0.0.0\n", "chore: add the chart")
+	commitEntry(t, dir, "feat: add the next command")
+
+	cfg := config.Default()
+	cfg.Files = []config.File{{Path: "Chart.yaml", Updater: "helm"}}
+	f := newFake()
+	var stdout bytes.Buffer
+
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	got := showBareBranchFile(t, origin, "Chart.yaml")
+	want := "apiVersion: v2\nname: chart\nversion: 0.1.0\n"
+	if got != want {
+		t.Fatalf("Chart.yaml on the release branch = %q, want %q", got, want)
+	}
+}
+
+func TestDoPRFailsNamingThePathWhenAConfiguredFileIsMissing(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	commitEntry(t, dir, "feat: add the next command")
+
+	cfg := config.Default()
+	cfg.Files = []config.File{{Path: "does-not-exist.go", Updater: "marker"}}
+	f := newFake()
+	var stdout bytes.Buffer
+
+	err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout)
+	if err == nil {
+		t.Fatal("doPR() error = nil, want an error naming the missing file")
+	}
+	if !strings.Contains(err.Error(), "does-not-exist.go") {
+		t.Fatalf("doPR() error = %q, want it to name the path", err)
+	}
+}
+
+func TestDoPRFailsNamingThePathAndKeyWhenTheKeyIsNotFound(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	writeAndCommit(t, dir, "values.yaml", "replicaCount: 1\n", "chore: add the values file")
+	commitEntry(t, dir, "feat: add the next command")
+
+	cfg := config.Default()
+	cfg.Files = []config.File{{Path: "values.yaml", Updater: "yaml", Key: "image.tag"}}
+	f := newFake()
+	var stdout bytes.Buffer
+
+	err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout)
+	if err == nil {
+		t.Fatal("doPR() error = nil, want an error naming the path and key")
+	}
+	if !strings.Contains(err.Error(), "values.yaml") || !strings.Contains(err.Error(), "image.tag") {
+		t.Fatalf("doPR() error = %q, want it to name the path and key", err)
+	}
+}
+
 func TestDoPRDetectsAFilesConfigChangeEvenWithTheSameTitleAndBody(t *testing.T) {
 	dir, origin := newPRRepo(t)
 	writeAndCommit(t, dir, "version.go", "package main\n\nconst Version = \"0.0.0\" // release-me: version\n", "chore: add the version file")

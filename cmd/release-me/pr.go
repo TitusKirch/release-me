@@ -307,14 +307,17 @@ func planReleaseBranch(ctx context.Context, dir, version, entriesBody, changelog
 			plan.cleanup()
 			return nil, fmt.Errorf("release-me: read %s: %w", file.Path, err)
 		}
-		up, ok := updater.Updaters[file.Updater]
+		entry, ok := updater.Updaters[file.Updater]
 		if !ok {
 			plan.cleanup()
 			return nil, fmt.Errorf("release-me: file %s: unknown updater %q", file.Path, file.Updater)
 		}
-		newContent, err := up(string(content), version)
+		newContent, err := entry.Update(string(content), file.Key, version)
 		if err != nil {
 			plan.cleanup()
+			if file.Key != "" {
+				return nil, fmt.Errorf("release-me: file %s: key %s: %w", file.Path, file.Key, err)
+			}
 			return nil, fmt.Errorf("release-me: file %s: %w", file.Path, err)
 		}
 		plan.desiredFiles[file.Path] = newContent

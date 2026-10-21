@@ -3,8 +3,7 @@
 
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
-// changelog, labels and components. major-tag stays unknown until
-// milestone 5 reads it.
+// changelog, labels, major-tag and components.
 package config
 
 import (
@@ -54,10 +53,13 @@ var DefaultHiddenTypes = []string{"chore", "docs", "ci", "style", "refactor", "t
 var bumpingTypes = map[string]bool{"feat": true, "fix": true, "perf": true, "revert": true}
 
 // File is one entry of the "files" key: a file release-me bumps the version
-// in, through the named updater.
+// in, through the named updater. Key is the dotted path, identifier or
+// other locator the updater needs to find the value, empty for an updater
+// that takes none.
 type File struct {
 	Path    string
 	Updater string
+	Key     string
 }
 
 // Labels is the "labels" key: the label names release-me expects on the
@@ -81,6 +83,10 @@ type Config struct {
 	Files             []File
 	ChangelogPath     string
 	Labels            Labels
+	// MajorTag is the top-level "major-tag" key: when true, a stable
+	// release moves the major tag "vX" to the release commit. A component
+	// overrides it through its own "major-tag" key.
+	MajorTag bool
 	// Components is the "components" key, in the order release-me.yaml
 	// declares them, or nil when the key is absent: a repository without
 	// it is one component at the repository root, as Resolve reports.
@@ -89,10 +95,10 @@ type Config struct {
 
 // Component is one entry of the "components" key: a name mapped to a path
 // and optional overrides of the top-level initial-version,
-// bump-minor-pre-major, hidden-types and files. A nil field was left out of
-// release-me.yaml and falls back to the top-level value, the same
-// left-out-versus-zero-value distinction Load applies to the top level
-// itself.
+// bump-minor-pre-major, hidden-types, files and major-tag. A nil field was
+// left out of release-me.yaml and falls back to the top-level value, the
+// same left-out-versus-zero-value distinction Load applies to the top
+// level itself.
 type Component struct {
 	Name              string
 	Path              string
@@ -100,6 +106,7 @@ type Component struct {
 	BumpMinorPreMajor *bool
 	HiddenTypes       *[]string
 	Files             *[]File
+	MajorTag          *bool
 }
 
 // ResolvedComponent is one component ready for a command to release: its
@@ -122,6 +129,7 @@ type ResolvedComponent struct {
 	BumpMinorPreMajor bool
 	HiddenTypes       []string
 	Files             []File
+	MajorTag          bool
 }
 
 // Resolve returns the components a command should loop over, in
@@ -141,6 +149,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			BumpMinorPreMajor: cfg.BumpMinorPreMajor,
 			HiddenTypes:       cfg.HiddenTypes,
 			Files:             cfg.Files,
+			MajorTag:          cfg.MajorTag,
 		}}
 	}
 
@@ -157,6 +166,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			BumpMinorPreMajor: cfg.BumpMinorPreMajor,
 			HiddenTypes:       cfg.HiddenTypes,
 			Files:             cfg.Files,
+			MajorTag:          cfg.MajorTag,
 		}
 		if c.InitialVersion != nil {
 			rc.InitialVersion = *c.InitialVersion
@@ -170,6 +180,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		if c.Files != nil {
 			rc.Files = *c.Files
 		}
+		if c.MajorTag != nil {
+			rc.MajorTag = *c.MajorTag
+		}
 		out = append(out, rc)
 	}
 	return out
@@ -179,6 +192,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 type rawFile struct {
 	Path    string  `yaml:"path"`
 	Updater *string `yaml:"updater"`
+	Key     *string `yaml:"key"`
 }
 
 // rawLabels mirrors Labels with pointer fields, so Load can tell a key left
@@ -202,6 +216,7 @@ type raw struct {
 	Files             *[]rawFile `yaml:"files"`
 	Changelog         *string    `yaml:"changelog"`
 	Labels            *rawLabels `yaml:"labels"`
+	MajorTag          *bool      `yaml:"major-tag"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -218,6 +233,7 @@ type rawComponent struct {
 	BumpMinorPreMajor *bool      `yaml:"bump-minor-pre-major"`
 	HiddenTypes       *[]string  `yaml:"hidden-types"`
 	Files             *[]rawFile `yaml:"files"`
+	MajorTag          *bool      `yaml:"major-tag"`
 }
 
 // Default is the configuration applied when release-me.yaml is absent.
@@ -307,6 +323,9 @@ func Load(path string) (cfg Config, err error) {
 		}
 		cfg.Files = files
 	}
+	if r.MajorTag != nil {
+		cfg.MajorTag = *r.MajorTag
+	}
 	if r.Components.Kind != 0 {
 		components, err := decodeComponents(path, &r.Components)
 		if err != nil {
@@ -322,7 +341,8 @@ func Load(path string) (cfg Config, err error) {
 
 // decodeFiles converts the yaml shape of a "files" key into []File,
 // defaulting a left-out updater to the marker updater and rejecting one
-// that names no known updater.
+// that names no known updater, that is missing a key it requires, or that
+// carries a key it takes none of.
 func decodeFiles(path string, raw []rawFile) ([]File, error) {
 	files := make([]File, 0, len(raw))
 	for _, rf := range raw {
@@ -330,10 +350,21 @@ func decodeFiles(path string, raw []rawFile) ([]File, error) {
 		if rf.Updater != nil {
 			name = *rf.Updater
 		}
-		if _, ok := updater.Updaters[name]; !ok {
+		entry, ok := updater.Updaters[name]
+		if !ok {
 			return nil, fmt.Errorf("config: parse %s: file %s: unknown updater %q", path, rf.Path, name)
 		}
-		files = append(files, File{Path: rf.Path, Updater: name})
+		key := ""
+		if rf.Key != nil {
+			key = *rf.Key
+		}
+		if entry.NeedsKey && key == "" {
+			return nil, fmt.Errorf("config: parse %s: file %s: updater %q requires a key", path, rf.Path, name)
+		}
+		if !entry.NeedsKey && key != "" {
+			return nil, fmt.Errorf("config: parse %s: file %s: updater %q takes no key", path, rf.Path, name)
+		}
+		files = append(files, File{Path: rf.Path, Updater: name, Key: key})
 	}
 	return files, nil
 }
@@ -366,7 +397,10 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			return nil, fmt.Errorf("config: parse %s: component %s: path is required", path, name)
 		}
 
-		c := Component{Name: name, Path: *rc.Path, InitialVersion: rc.InitialVersion, BumpMinorPreMajor: rc.BumpMinorPreMajor, HiddenTypes: rc.HiddenTypes}
+		c := Component{
+			Name: name, Path: *rc.Path, InitialVersion: rc.InitialVersion,
+			BumpMinorPreMajor: rc.BumpMinorPreMajor, HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag,
+		}
 		if rc.Files != nil {
 			files, err := decodeFiles(path, *rc.Files)
 			if err != nil {
