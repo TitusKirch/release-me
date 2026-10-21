@@ -68,3 +68,38 @@ func hasBreakingFooter(body string) bool {
 	}
 	return false
 }
+
+// Override is the parsed "release-me" override block from an ordinary pull
+// request body. Present is false when the body carries no such block.
+// Present with no Entries is an explicit empty block: it hides the pull
+// request from the history entirely.
+type Override struct {
+	Present bool
+	Entries []string
+}
+
+// overrideBlock matches a fenced block with info string "release-me",
+// exactly, so it never matches the differently named "release-me-notes"
+// block of a release pull request. Both fences are anchored to the start of
+// their own line, so a stray "```release-me" inside a sentence never
+// matches.
+var overrideBlock = regexp.MustCompile("(?sm)^```release-me[ \t]*$\n(.*?)^```[ \t]*$")
+
+// ParseOverride extracts the "release-me" fenced block from a pull request
+// body, one Conventional Commits line per entry.
+func ParseOverride(body string) Override {
+	m := overrideBlock.FindStringSubmatch(body)
+	if m == nil {
+		return Override{}
+	}
+
+	var entries []string
+	for _, line := range strings.Split(m[1], "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		entries = append(entries, line)
+	}
+	return Override{Present: true, Entries: entries}
+}
