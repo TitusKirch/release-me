@@ -12,10 +12,10 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 )
 
-// missingLabels returns the configured pending and tagged labels that do
-// not exist on the repository, the check doCheck and doPR both apply
-// before writing anything. unauthorized is true when the forge rejected
-// the credentials rather than failing for any other reason.
+// missingLabels returns the configured pending, tagged and pre-release type
+// labels that do not exist on the repository, the check doCheck and doPR
+// both apply before writing anything. unauthorized is true when the forge
+// rejected the credentials rather than failing for any other reason.
 func missingLabels(ctx context.Context, f forge.Forge, owner, repoName string, cfg config.Config) (missing []string, unauthorized bool, err error) {
 	repoLabels, err := f.RepositoryLabels(ctx, owner, repoName)
 	if err != nil {
@@ -24,7 +24,8 @@ func missingLabels(ctx context.Context, f forge.Forge, owner, repoName string, c
 		}
 		return nil, false, err
 	}
-	for _, want := range []string{cfg.Labels.Pending, cfg.Labels.Tagged} {
+	wanted := []string{cfg.Labels.Pending, cfg.Labels.Tagged, cfg.Labels.Alpha, cfg.Labels.Beta, cfg.Labels.Rc}
+	for _, want := range wanted {
 		if !slices.Contains(repoLabels, want) {
 			missing = append(missing, want)
 		}

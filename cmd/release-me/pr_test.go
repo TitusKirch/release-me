@@ -86,7 +86,7 @@ func discardLogger() *slog.Logger {
 // branch, so tests only need to override what they actually exercise.
 func newFake() *forgetest.Fake {
 	return &forgetest.Fake{
-		RepoLabels:        []string{"release: pending", "release: tagged"},
+		RepoLabels:        []string{"release: pending", "release: tagged", "release: alpha", "release: beta", "release: rc"},
 		DefaultBranchName: "main",
 	}
 }
@@ -463,6 +463,99 @@ func TestDoPRKeepsAHumanAddedLabelOnUpdate(t *testing.T) {
 	want := []string{"release: pending", "needs human"}
 	if !equalStrings(got, want) {
 		t.Fatalf("Labels() = %v, want %v, the human-added label kept", got, want)
+	}
+}
+
+// TestDoPRFollowsThePreReleaseLabelThroughATypeChangeBackToStableAndToRC
+// walks a single release pull request through a label alpha, then beta,
+// then no pre-release label at all, then rc, exercising "pr reads the
+// label and renders the pre-release version", "removing the label returns
+// it to the stable version" and "the counter counts up from the last
+// pre-release tag of that type".
+func TestDoPRFollowsThePreReleaseLabelThroughATypeChangeBackToStableAndToRC(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	commitEntry(t, dir, "feat: add the next command")
+
+	f := newFake()
+	var out bytes.Buffer
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &out); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	pr := f.CreatedPullRequests[0]
+	if pr.Title != "chore(main): release v0.1.0" {
+		t.Fatalf("created title = %q, want the stable version", pr.Title)
+	}
+
+	setLabel := func(label string) {
+		labels := []string{"release: pending"}
+		if label != "" {
+			labels = append(labels, label)
+		}
+		f.ListResponses = []forgetest.ListResponse{
+			{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+				{Number: 1, Title: pr.Title, Body: pr.Body, Labels: labels, HeadSHA: bareBranchSHA(t, origin)},
+			}},
+		}
+	}
+	runAndCheck := func(step, wantTitle string) {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &buf); err != nil {
+			t.Fatalf("doPR() %s error = %v", step, err)
+		}
+		if len(f.UpdatedPullRequests) == 0 {
+			t.Fatalf("%s: no update recorded", step)
+		}
+		updated := f.UpdatedPullRequests[len(f.UpdatedPullRequests)-1]
+		if updated.Title != wantTitle {
+			t.Fatalf("%s: title = %q, want %q", step, updated.Title, wantTitle)
+		}
+		pr.Body = updated.Body
+	}
+
+	setLabel("release: alpha")
+	runAndCheck("alpha", "chore(main): release v0.1.0-alpha.1")
+
+	setLabel("release: beta")
+	runAndCheck("beta", "chore(main): release v0.1.0-beta.1")
+
+	setLabel("")
+	runAndCheck("label removed", "chore(main): release v0.1.0")
+
+	setLabel("release: rc")
+	runAndCheck("first rc", "chore(main): release v0.1.0-rc.1")
+
+	// Simulate release having tagged the first rc: the next one for the
+	// same base version and type counts up from it.
+	runGit(t, dir, "tag", "v0.1.0-rc.1")
+	runAndCheck("second rc", "chore(main): release v0.1.0-rc.2")
+}
+
+func TestDoPRRejectsTwoPreReleaseLabelsAtOnce(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	commitEntry(t, dir, "feat: add the next command")
+
+	f := newFake()
+	var out bytes.Buffer
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &out); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	pr := f.CreatedPullRequests[0]
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+			{
+				Number: 1, Title: pr.Title, Body: pr.Body,
+				Labels: []string{"release: pending", "release: beta", "release: rc"}, HeadSHA: bareBranchSHA(t, origin),
+			},
+		}},
+	}
+
+	err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, io.Discard)
+	if err == nil {
+		t.Fatal("doPR() error = nil, want an error naming both pre-release labels")
+	}
+	if !strings.Contains(err.Error(), "release: beta") || !strings.Contains(err.Error(), "release: rc") {
+		t.Fatalf("error = %v, want it to name both labels", err)
 	}
 }
 

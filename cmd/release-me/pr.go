@@ -131,12 +131,27 @@ func doPRComponent(
 		}
 	}
 
-	entriesBody := changelog.Sections(rel.entries, rel.hiddenTypes)
+	versionStr := rel.version.Version
+	entries := rel.entries
+	if existing != nil {
+		preType, isPre, err := selectPreReleaseType(existing.Labels, cfg.Labels)
+		if err != nil {
+			return fmt.Errorf("release-me: component %s: pull request #%d: %w", comp.Name, existing.Number, err)
+		}
+		if isPre {
+			versionStr, entries, err = preReleaseEntries(ctx, f, dir, cfg, comp, owner, repoName, rel, preType)
+			if err != nil {
+				return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
+			}
+		}
+	}
+
+	entriesBody := changelog.Sections(entries, rel.hiddenTypes)
 	if entriesBody == "" {
 		entriesBody = noUserFacingChangesLine
 	}
 
-	plan, err := planReleaseBranch(ctx, dir, rel.version.Version, entriesBody, comp.ChangelogPath, comp.Files, comp.Branch)
+	plan, err := planReleaseBranch(ctx, dir, versionStr, entriesBody, comp.ChangelogPath, comp.Files, comp.Branch)
 	if err != nil {
 		return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
@@ -153,10 +168,10 @@ func doPRComponent(
 			date = d
 		}
 	}
-	section := fmt.Sprintf("## v%s (%s)\n\n%s\n", rel.version.Version, date.Format("2006-01-02"), entriesBody)
+	section := fmt.Sprintf("## v%s (%s)\n\n%s\n", versionStr, date.Format("2006-01-02"), entriesBody)
 
-	title := releasepr.Title(comp.Name, rel.version.Version)
-	body := releasepr.Body(rel.version.Version, notes, section)
+	title := releasepr.Title(comp.Name, versionStr)
+	body := releasepr.Body(versionStr, notes, section)
 
 	switch {
 	case existing != nil && !plan.changed && body == existing.Body:

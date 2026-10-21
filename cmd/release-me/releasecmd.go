@@ -58,7 +58,11 @@ func doRelease(ctx context.Context, dir string, cfg config.Config, component str
 		results, err := tagrelease.Run(
 			ctx, f, owner, repoName,
 			tagrelease.Component{Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi},
-			cfg.Labels.Pending, cfg.Labels.Tagged, dryRun, logger,
+			tagrelease.Labels{
+				Pending: cfg.Labels.Pending, Tagged: cfg.Labels.Tagged,
+				Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc,
+			},
+			dryRun, logger,
 		)
 		if err != nil {
 			return fmt.Errorf("release-me: %w", err)
