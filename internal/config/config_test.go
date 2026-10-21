@@ -35,6 +35,18 @@ func TestLoadReturnsDefaultsWhenTheFileIsMissing(t *testing.T) {
 	}
 }
 
+func TestDefaultSetsTheChangelogPathAndLabels(t *testing.T) {
+	t.Parallel()
+	got := config.Default()
+	if got.ChangelogPath != "CHANGELOG.md" {
+		t.Fatalf("ChangelogPath = %q, want %q", got.ChangelogPath, "CHANGELOG.md")
+	}
+	want := config.Labels{Pending: "release: pending", Tagged: "release: tagged"}
+	if got.Labels != want {
+		t.Fatalf("Labels = %+v, want %+v", got.Labels, want)
+	}
+}
+
 func TestLoadReadsConfiguredKeys(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -50,6 +62,8 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				HiddenTypes:    config.DefaultHiddenTypes,
 				FallbackType:   config.DefaultFallbackType,
 				TokenEnv:       config.DefaultTokenEnv,
+				ChangelogPath:  config.DefaultChangelogPath,
+				Labels:         config.Labels{Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel},
 			},
 		},
 		{
@@ -59,6 +73,14 @@ bump-minor-pre-major: true
 hidden-types: [chore, docs]
 fallback-type: misc
 token-env: RELEASE_TOKEN
+changelog: HISTORY.md
+labels:
+  pending: needs-release
+  tagged: released
+files:
+  - path: cmd/cli/version.go
+  - path: deploy/values.yaml
+    updater: marker
 `,
 			want: config.Config{
 				InitialVersion:    "0.2.0",
@@ -66,6 +88,12 @@ token-env: RELEASE_TOKEN
 				HiddenTypes:       []string{"chore", "docs"},
 				FallbackType:      "misc",
 				TokenEnv:          "RELEASE_TOKEN",
+				ChangelogPath:     "HISTORY.md",
+				Labels:            config.Labels{Pending: "needs-release", Tagged: "released"},
+				Files: []config.File{
+					{Path: "cmd/cli/version.go", Updater: "marker"},
+					{Path: "deploy/values.yaml", Updater: "marker"},
+				},
 			},
 		},
 		{
@@ -76,6 +104,20 @@ token-env: RELEASE_TOKEN
 				HiddenTypes:    config.DefaultHiddenTypes,
 				FallbackType:   "misc",
 				TokenEnv:       config.DefaultTokenEnv,
+				ChangelogPath:  config.DefaultChangelogPath,
+				Labels:         config.Labels{Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel},
+			},
+		},
+		{
+			name:    "defaults a label left out of the labels block",
+			content: "labels:\n  pending: needs-release\n",
+			want: config.Config{
+				InitialVersion: config.DefaultInitialVersion,
+				HiddenTypes:    config.DefaultHiddenTypes,
+				FallbackType:   config.DefaultFallbackType,
+				TokenEnv:       config.DefaultTokenEnv,
+				ChangelogPath:  config.DefaultChangelogPath,
+				Labels:         config.Labels{Pending: "needs-release", Tagged: config.DefaultTaggedLabel},
 			},
 		},
 	}
@@ -117,6 +159,7 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 		{name: "rejects an unknown key", content: "major-tag: true\n"},
 		{name: "rejects malformed YAML", content: "initial-version: [0.1.0\n"},
 		{name: "rejects a fallback type that bumps the version", content: "fallback-type: feat\n"},
+		{name: "rejects an unknown updater", content: "files:\n  - path: cmd/cli/version.go\n    updater: go\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
