@@ -467,6 +467,9 @@ func Load(path string) (cfg Config, err error) {
 		if r.Labels.Rc != nil {
 			cfg.Labels.Rc = *r.Labels.Rc
 		}
+		if err := validateLabels(path, cfg.Labels); err != nil {
+			return Config{}, err
+		}
 	}
 	if r.Author != nil {
 		if r.Author.Name != nil {
@@ -701,6 +704,25 @@ func validateChangelogPaths(path string, components []Component) error {
 			if pa, pb := a.changelogPath(), b.changelogPath(); pa == pb {
 				return fmt.Errorf("config: parse %s: component %q and %q write the same changelog %q",
 					path, a.Name, b.Name, pa)
+			}
+		}
+	}
+	return nil
+}
+
+// validateLabels rejects one label name configured for two roles: a pull
+// request carrying it would select both, and the error release-me reports
+// then names the same label twice and points at no fix. Turned-off
+// pre-release types, configured empty, are not compared.
+func validateLabels(path string, l Labels) error {
+	roles := []struct{ key, name string }{
+		{"pending", l.Pending}, {"tagged", l.Tagged}, {"alpha", l.Alpha}, {"beta", l.Beta}, {"rc", l.Rc},
+	}
+	for i := 0; i < len(roles); i++ {
+		for j := i + 1; j < len(roles); j++ {
+			if roles[i].name != "" && roles[i].name == roles[j].name {
+				return fmt.Errorf("config: parse %s: labels.%s and labels.%s are both %q",
+					path, roles[i].key, roles[j].key, roles[i].name)
 			}
 		}
 	}

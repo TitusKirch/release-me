@@ -242,6 +242,8 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 		},
 		{name: "rejects an empty pending label", content: "labels:\n  pending: \"\"\n"},
 		{name: "rejects an empty tagged label", content: "labels:\n  tagged: \"\"\n"},
+		{name: "rejects one label for two pre-release types", content: "labels:\n  alpha: \"release: pre\"\n  rc: \"release: pre\"\n"},
+		{name: "rejects a pre-release label equal to a default one", content: "labels:\n  alpha: \"release: rc\"\n"},
 		{name: "rejects a component without a path", content: "components:\n  frontend:\n    initial-version: 0.1.0\n"},
 		{name: "rejects an unknown key inside a component", content: "components:\n  frontend:\n    path: frontend\n    release-tag: v1\n"},
 		{
@@ -592,5 +594,15 @@ func TestLoadTurnsAPreReleaseTypeOffWithAnEmptyLabel(t *testing.T) {
 	}
 	if got.Labels.Alpha != "" || got.Labels.Beta != "" || got.Labels.Rc != config.DefaultRcLabel {
 		t.Fatalf("Labels = %+v, want alpha and beta off and rc at its default", got.Labels)
+	}
+}
+
+func TestLoadAcceptsSeveralPreReleaseTypesTurnedOff(t *testing.T) {
+	t.Parallel()
+	// Two empty labels are two types turned off, not one name used twice.
+	path := writeFile(t, "labels:\n  alpha: \"\"\n  beta: \"\"\n  rc: \"\"\n")
+
+	if _, err := config.Load(path); err != nil {
+		t.Fatalf("Load() error = %v, want nil", err)
 	}
 }
