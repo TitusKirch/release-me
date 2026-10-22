@@ -59,6 +59,17 @@ in place. `source` only builds this repository's own code: it is `go build`'s wo
 directory for `uses: ./action` from inside this repository, not the caller's checkout for
 `uses: ostendorf-cloud/release-me/action@ref`.
 
+Trigger the calling workflow on `push` to the default branch, and also on `pull_request` with
+types `labeled` and `unlabeled`. The labeled trigger reruns `release-me run` right away when a
+release label changes, instead of waiting for the next push. Guard the job so the label run
+only fires for a release pull request: the pull request from the repository itself rather than
+a fork, head branch under `release-me/`, and the changed label one of the five release labels,
+`release: pending`, `release: tagged`, `release: alpha`, `release: beta` or `release: rc` by
+default. A repository that renames its labels through `labels` in `release-me.yaml` names the
+renamed ones in that guard instead: the workflow condition is plain text, it does not read the
+configuration. Check out the pull request's base branch on a label event, not the merge ref,
+so the action computes against the default branch.
+
 As a container image, for runners with an image cache:
 
 ```sh
