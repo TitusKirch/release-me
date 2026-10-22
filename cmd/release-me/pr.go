@@ -630,6 +630,11 @@ func (p *releasePlan) write(
 	for _, c := range p.changelogs {
 		section := fmt.Sprintf("## v%s (%s)\n\n%s\n", version, date.Format("2006-01-02"), c.entriesBody)
 		fullChangelogPath := filepath.Join(p.tmp, c.path)
+		// A configured changelog may name a directory that does not exist
+		// yet; os.WriteFile creates the file only.
+		if err := os.MkdirAll(filepath.Dir(fullChangelogPath), 0o755); err != nil {
+			return fmt.Errorf("release-me: write %s: %w", c.path, err)
+		}
 		if err := os.WriteFile(fullChangelogPath, []byte(changelog.Prepend(c.baseline, section)), 0o644); err != nil {
 			return fmt.Errorf("release-me: write %s: %w", c.path, err)
 		}

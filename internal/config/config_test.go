@@ -269,6 +269,22 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			name:    "rejects a tag prefix equal to another component's derived one",
 			content: "components:\n  web:\n    path: web\n    tag-prefix: api/v\n  api:\n    path: api\n",
 		},
+		{name: "rejects an empty changelog path", content: "components:\n  web:\n    path: web\n    changelog: \"\"\n"},
+		{name: "rejects an absolute changelog path", content: "components:\n  web:\n    path: web\n    changelog: /tmp/CHANGELOG.md\n"},
+		{
+			name:    "rejects a changelog path outside the repository",
+			content: "components:\n  web:\n    path: web\n    changelog: web/../../CHANGELOG.md\n",
+		},
+		{name: "rejects the repository root as a changelog path", content: "components:\n  web:\n    path: web\n    changelog: ./\n"},
+		{
+			name:    "rejects two components configured with the same changelog",
+			content: "components:\n  web:\n    path: web\n    changelog: CHANGELOG.md\n  api:\n    path: api\n    changelog: ./CHANGELOG.md\n",
+		},
+		{
+			name:    "rejects a changelog equal to another component's derived one",
+			content: "components:\n  web:\n    path: web\n    changelog: api/CHANGELOG.md\n  api:\n    path: api\n",
+		},
+		{name: "rejects a changelog path with a backslash", content: "components:\n  web:\n    path: web\n    changelog: 'web\\CHANGELOG.md'\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

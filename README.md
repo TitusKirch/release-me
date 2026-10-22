@@ -429,7 +429,8 @@ files:
   [Versioning modes](#versioning-modes). There is no per-component override: it applies to the
   whole family.
 - `components`: maps a name to a `path` and optional overrides of `initial-version`,
-  `bump-minor-pre-major`, `hidden-types`, `files`, `major-tag` and `changelog-source`. A key
+  `bump-minor-pre-major`, `hidden-types`, `files`, `major-tag`, `changelog-source` and
+  `changelog`. A key
   left out of a component falls back to the top-level setting above. A repository without
   `components` is
   one component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the shape
@@ -440,11 +441,14 @@ files:
   starting over at `initial-version`. The version is appended to the prefix as it is. A prefix
   that is empty, holds whitespace or one of `~ ^ : ? * [ \`, contains `..`, `@{` or `//`, or
   starts with `/`, `-` or `.` is a configuration error, as are two components with the same
-  prefix. `changelog` replaces the derived changelog path, relative to the repository root, for a
-  component whose changelog lives outside its own path, such as one kept at the root while the
-  code sits in `packages/<name>`. A changelog path that is empty, absolute, or not a file
-  inside the repository is a configuration error, as are two components writing the same
-  changelog:
+  prefix. The prefix is how a component finds its history: adding, changing or removing
+  `tag-prefix` once a component has tags under its previous prefix restarts it at
+  `initial-version`, the same way renaming the component would. `changelog` replaces the
+  derived changelog path, relative to the repository root, for a component whose changelog
+  lives outside its own path, such as one kept at the root while the code sits in
+  `packages/<name>`; a directory it names that does not exist yet is created. A changelog path
+  that is empty, absolute, holds a backslash, or is not a file inside the repository is a
+  configuration error, as are two components writing the same changelog:
 
   ```yaml
   components:
