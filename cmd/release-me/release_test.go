@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/changelog"
+	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/forge/forgetest"
 	"github.com/ostendorf-cloud/release-me/internal/history"
@@ -103,7 +104,7 @@ func TestAssembleEntries(t *testing.T) {
 			t.Parallel()
 			f := &forgetest.Fake{Responses: tc.responses}
 
-			changes, entries, err := assembleEntries(context.Background(), f, "owner", "repo", tc.raw, "other")
+			changes, entries, err := assembleEntries(context.Background(), f, "owner", "repo", tc.raw, "other", config.ChangelogSourceFirstParent, "")
 			if err != nil {
 				t.Fatalf("assembleEntries() error = %v", err)
 			}
@@ -122,7 +123,7 @@ func TestAssembleEntriesUsesTheGivenFallbackType(t *testing.T) {
 	raw := []history.Entry{{Subject: "quick hack before the demo"}}
 	f := &forgetest.Fake{}
 
-	_, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "misc")
+	_, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "misc", config.ChangelogSourceFirstParent, "")
 	if err != nil {
 		t.Fatalf("assembleEntries() error = %v", err)
 	}
@@ -130,6 +131,113 @@ func TestAssembleEntriesUsesTheGivenFallbackType(t *testing.T) {
 	want := []changelog.Entry{{Type: "misc", Description: "quick hack before the demo"}}
 	if !reflect.DeepEqual(entries, want) {
 		t.Fatalf("entries = %+v, want %+v", entries, want)
+	}
+}
+
+func TestAssembleEntriesInSquashModeKeepsTheSubjectAsTitleWhenTheForgeCannotResolveIt(t *testing.T) {
+	t.Parallel()
+	// WalkSquash already stripped the trailing "(#12)" and put the number
+	// in PullRequestNumber: the subject left behind is the real title and
+	// must survive a 404, unlike a merge commit's boilerplate subject.
+	raw := []history.Entry{{PullRequestNumber: 12, Subject: "feat: add thing", Squashed: true}}
+	f := &forgetest.Fake{}
+
+	changes, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceSquash, "")
+	if err != nil {
+		t.Fatalf("assembleEntries() error = %v", err)
+	}
+
+	wantChanges := []version.Change{{Type: "feat"}}
+	wantEntries := []changelog.Entry{{Type: "feat", Description: "add thing", PullRequestNumber: 12}}
+	if !reflect.DeepEqual(changes, wantChanges) {
+		t.Fatalf("changes = %+v, want %+v", changes, wantChanges)
+	}
+	if !reflect.DeepEqual(entries, wantEntries) {
+		t.Fatalf("entries = %+v, want %+v", entries, wantEntries)
+	}
+}
+
+func TestAssembleEntriesInSquashModeAddsOnlyTheLinkAndBodyWhenTheForgeResolves(t *testing.T) {
+	t.Parallel()
+	raw := []history.Entry{{PullRequestNumber: 12, Subject: "feat: add thing", Squashed: true}}
+	f := &forgetest.Fake{Responses: map[int]forgetest.Response{
+		12: {PullRequest: forge.PullRequest{
+			// a different title on the forge is still never used: the
+			// commit's own cleaned subject is the title in squash mode.
+			Title: "feat: a retitled pull request",
+			Body:  "BREAKING CHANGE: also breaking",
+			URL:   "https://github.com/owner/repo/pull/12",
+		}},
+	}}
+
+	_, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceSquash, "")
+	if err != nil {
+		t.Fatalf("assembleEntries() error = %v", err)
+	}
+
+	want := []changelog.Entry{{
+		Type: "feat", Description: "add thing", Breaking: true,
+		PullRequestNumber: 12, URL: "https://github.com/owner/repo/pull/12",
+	}}
+	if !reflect.DeepEqual(entries, want) {
+		t.Fatalf("entries = %+v, want %+v", entries, want)
+	}
+}
+
+func TestAssembleEntriesAppliesTheOverrideBlockInSquashMode(t *testing.T) {
+	t.Parallel()
+	raw := []history.Entry{{PullRequestNumber: 12, Subject: "feat: add thing", Squashed: true}}
+	f := &forgetest.Fake{Responses: map[int]forgetest.Response{
+		12: {PullRequest: forge.PullRequest{
+			Body: "```release-me\nfix: the override wins over the squash title\n```",
+			URL:  "https://github.com/owner/repo/pull/12",
+		}},
+	}}
+
+	_, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceSquash, "")
+	if err != nil {
+		t.Fatalf("assembleEntries() error = %v", err)
+	}
+
+	want := []changelog.Entry{{
+		Type: "fix", Description: "the override wins over the squash title",
+		PullRequestNumber: 12, URL: "https://github.com/owner/repo/pull/12",
+	}}
+	if !reflect.DeepEqual(entries, want) {
+		t.Fatalf("entries = %+v, want %+v", entries, want)
+	}
+}
+
+func TestAssembleAllEntriesAppliesTheOverrideBlockToTheWholeGroup(t *testing.T) {
+	t.Parallel()
+	raw := []history.Entry{
+		{SHA: "a", PullRequestNumber: 5, Subject: "feat(widget): add the widget"},
+		{SHA: "b", PullRequestNumber: 5, Subject: "fix(widget): correct a bug"},
+		{SHA: "c", Subject: "fix: direct hotfix"},
+	}
+	f := &forgetest.Fake{Responses: map[int]forgetest.Response{
+		5: {PullRequest: forge.PullRequest{
+			Title: "ignored: all mode never uses the pull request title anyway",
+			Body:  "```release-me\nfeat: the override replaces both commits\n```",
+			URL:   "https://github.com/owner/repo/pull/5",
+		}},
+	}}
+
+	changes, entries, err := assembleAllEntries(context.Background(), f, "owner", "repo", raw, "other")
+	if err != nil {
+		t.Fatalf("assembleAllEntries() error = %v", err)
+	}
+
+	wantChanges := []version.Change{{Type: "feat"}, {Type: "fix"}}
+	wantEntries := []changelog.Entry{
+		{Type: "feat", Description: "the override replaces both commits", PullRequestNumber: 5, URL: "https://github.com/owner/repo/pull/5"},
+		{Type: "fix", Description: "direct hotfix"},
+	}
+	if !reflect.DeepEqual(changes, wantChanges) {
+		t.Fatalf("changes = %+v, want %+v", changes, wantChanges)
+	}
+	if !reflect.DeepEqual(entries, wantEntries) {
+		t.Fatalf("entries = %+v, want %+v, want the override replacing both commits #5 introduced, the direct commit untouched", entries, wantEntries)
 	}
 }
 
@@ -142,7 +250,7 @@ func TestAssembleEntriesPropagatesAForgeError(t *testing.T) {
 		1: {Err: context.DeadlineExceeded},
 	}}
 
-	_, _, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other")
+	_, _, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceFirstParent, "")
 	if err == nil {
 		t.Fatal("assembleEntries() error = nil, want an error")
 	}

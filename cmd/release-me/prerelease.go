@@ -106,7 +106,7 @@ func preReleaseEntries(
 		return preVersion.String(), rel.entries, nil
 	}
 
-	raw, err := history.Walk(ctx, dir, since)
+	raw, err := walkEntries(ctx, dir, since, comp.ChangelogSource)
 	if err != nil {
 		return "", nil, fmt.Errorf("history since %s: %w", since, err)
 	}
@@ -114,7 +114,7 @@ func preReleaseEntries(
 	if err != nil {
 		return "", nil, err
 	}
-	_, restricted, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType)
+	_, restricted, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType, comp.ChangelogSource, dir)
 	if err != nil {
 		return "", nil, err
 	}

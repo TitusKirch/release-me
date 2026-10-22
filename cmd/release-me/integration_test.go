@@ -122,6 +122,37 @@ func TestRunNextLogsDebugOnStderrWhenVerbose(t *testing.T) {
 	}
 }
 
+func TestRunNextLogsTheChangelogSourceWhenVerbose(t *testing.T) {
+	dir := newRepo(t)
+	commitEntry(t, dir, "feat: add the next command")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"next", "--verbose"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "source=first-parent") {
+		t.Fatalf("stderr = %q, want the resolved changelog source logged", stderr.String())
+	}
+}
+
+func TestRunChangelogLogsAConfiguredChangelogSourceWhenVerbose(t *testing.T) {
+	dir := newRepo(t)
+	writeConfig(t, dir, "changelog-source: all\n")
+	commitEntry(t, dir, "feat: add the changelog command")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"changelog", "--verbose"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "source=all") {
+		t.Fatalf("stderr = %q, want the configured changelog source logged", stderr.String())
+	}
+}
+
 func TestRunNextFailsWithoutAnOriginRemote(t *testing.T) {
 	dir := t.TempDir()
 	runGit(t, dir, "init", "-q", "-b", "main")
