@@ -429,7 +429,12 @@ files:
   `components` is
   one component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the shape
   every example above already is. A configured component gets tag prefix `<name>/v`, branch
-  `release-me/<name>`, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`:
+  `release-me/<name>`, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`.
+  `changelog` replaces the derived changelog path, relative to the repository root, for a
+  component whose changelog lives outside its own path, such as one kept at the root while the
+  code sits in `packages/<name>`. A changelog path that is empty, absolute, or not a file
+  inside the repository is a configuration error, as are two components writing the same
+  changelog:
 
   ```yaml
   components:
@@ -441,6 +446,7 @@ files:
     backend:
       path: services/backend
       hidden-types: [chore, docs, test]
+      changelog: CHANGELOG.md
   ```
 
   A first parent entry belongs to every component whose path it touches, through the files a
