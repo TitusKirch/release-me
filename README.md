@@ -5,8 +5,10 @@ pull request, versions from Conventional Commits, a release pull request, a tag 
 
 ## What it does
 
-- Reads the first parent history since the last tag. A merge commit is one entry, its pull
-  request title is the text. A commit directly on the default branch is its own entry.
+- Reads commit history since the last tag in a configurable changelog mode, the first parent
+  history by default: a merge commit is one entry, its pull request title is the text, a
+  commit directly on the default branch is its own entry. See
+  [Changelog modes](#changelog-modes).
 - Computes the next version from the entry types. Pre-releases through a label on the release
   pull request.
 - Opens and updates one release pull request per component with the changelog, bumps the
@@ -220,6 +222,59 @@ fix: stop the panic on empty history
 An empty block hides the pull request from the changelog and the version computation
 entirely.
 
+### Changelog modes
+
+`changelog-source` selects which commits become changelog entries, top level and per
+component, default `first-parent`. In every mode, a pull request's
+[override block](#override-block) replaces its entries, the merge's or the individual
+commits' alike.
+
+- `first-parent`: today's behaviour. The first parent history since the last tag: a merge
+  commit is one entry, its pull request title is the text; a commit directly on the default
+  branch is its own entry.
+
+  ```text
+  Merge pull request #42 from owner/add-widget
+  ```
+
+  renders as one entry, its description read from pull request #42's title.
+
+- `squash`: every commit on the default branch is one entry, the shape a repository that
+  squash merges leaves behind: it has no merge commits of its own. The pull request number
+  comes from a trailing `(#N)` on the commit subject, the title is the subject with that
+  suffix removed, and the commit body is the fallback text for the override block, the same
+  role a merge commit's body plays in `first-parent`. A genuine merge commit is still one
+  entry.
+
+  ```text
+  feat(cli): add the next command (#42)
+  ```
+
+  renders as pull request #42, description "add the next command".
+
+- `all`: every commit reachable since the last tag, merge commits excluded, each its own
+  entry, parsed as a conventional commit from its own subject, never a pull request title. A
+  commit a merge introduced carries that merge's pull request link, resolved through the
+  forge once per merge commit, not once per commit it introduced; a commit directly on the
+  default branch carries none. A rebase merge leaves no merge commit either, so it already
+  reads the way `all` reads any other commit: its own entry.
+
+- `nested`: the first parent entry as today, with the commits the merge introduced rendered
+  as indented list items under it, each parsed as a conventional commit on its own; a hidden
+  type is dropped from that list the same way it is from the top level.
+
+  ```markdown
+  - add the widget ([#42](https://example.com/pull/42))
+    - wire up the flag
+    - handle the empty case
+  ```
+
+  The version bump considers the sub items too: a merge whose own title is a hidden type,
+  `chore`, say, still bumps the version when one of the commits it introduced is a `feat` or a
+  `fix`.
+
+`next` and `changelog --verbose` log the resolved mode as `source`.
+
 ## Configuration
 
 `release-me.yaml` at the repository root. A repository without `components` is one component.
@@ -257,6 +312,9 @@ files:
   credentials the checkout's `origin` remote already carries, the same as any other push.
 - `changelog`: the changelog file path, default `CHANGELOG.md`. `pr` prepends the new version's
   section to it, creating the file when it does not exist yet.
+- `changelog-source`: which commits become changelog entries, default `first-parent`. See
+  [Changelog modes](#changelog-modes) for `first-parent`, `squash`, `all` and `nested`. A
+  component overrides it through its own `changelog-source` key.
 - `labels.pending` and `labels.tagged`: the label names `pr`, `release` and `check` use,
   default `release: pending` and `release: tagged`.
 - `labels.alpha`, `labels.beta` and `labels.rc`: the pre-release type labels `pr`, `release`
@@ -306,8 +364,9 @@ files:
 - `major-tag`: moves the major tag on every stable release, default `false`. See `release`
   above. A component overrides it through its own `major-tag` key.
 - `components`: maps a name to a `path` and optional overrides of `initial-version`,
-  `bump-minor-pre-major`, `hidden-types`, `files` and `major-tag`. A key left out of a
-  component falls back to the top-level setting above. A repository without `components` is
+  `bump-minor-pre-major`, `hidden-types`, `files`, `major-tag` and `changelog-source`. A key
+  left out of a component falls back to the top-level setting above. A repository without
+  `components` is
   one component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the shape
   every example above already is. A configured component gets tag prefix `<name>/v`, branch
   `release-me/<name>`, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`:
