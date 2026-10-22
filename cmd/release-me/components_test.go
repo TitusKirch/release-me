@@ -359,3 +359,38 @@ func TestDoReleaseTagsEachComponentWithItsOwnPrefixAndReleaseName(t *testing.T) 
 		t.Fatalf("stdout = %q, want both component names as prefixes", stdout.String())
 	}
 }
+
+// TestDoPRWritesAComponentsConfiguredChangelog exercises the changelog key
+// through doPR: a component whose changelog lives outside its own path, at
+// the repository root, gets its section prepended there and nowhere else.
+func TestDoPRWritesAComponentsConfiguredChangelog(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeFiles(t, dir, "chore: scaffold the layer", map[string]string{
+		"packages/duxt/README.md": "duxt\n",
+		"CHANGELOG.md":            "# Changelog\n",
+	})
+	mergePullRequest(t, dir, 2, "layer-fix", map[string]string{"packages/duxt/sections.ts": "export {}\n"})
+	writeConfig(t, dir, "components:\n  duxt:\n    path: packages/duxt\n    changelog: CHANGELOG.md\n")
+
+	f := newFake()
+	f.Responses = map[int]forgetest.Response{
+		2: {PullRequest: forge.PullRequest{Title: "fix: hide sections an edition does not have"}},
+	}
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &bytes.Buffer{}); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	changelog := showBareFile(t, origin, "release-me/duxt", "CHANGELOG.md")
+	if !strings.Contains(changelog, "hide sections an edition does not have") {
+		t.Fatalf("root CHANGELOG.md = %q, want the component's section", changelog)
+	}
+	cmd := exec.CommandContext(t.Context(), "git", "--git-dir", origin, "cat-file", "-e", "release-me/duxt:packages/duxt/CHANGELOG.md")
+	if cmd.Run() == nil {
+		t.Fatal("packages/duxt/CHANGELOG.md exists on the release branch, want only the configured changelog written")
+	}
+}

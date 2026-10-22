@@ -254,6 +254,21 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			name:    "rejects a root component alongside another",
 			content: "components:\n  main:\n    path: .\n  frontend:\n    path: frontend\n",
 		},
+		{name: "rejects an empty changelog path", content: "components:\n  web:\n    path: web\n    changelog: \"\"\n"},
+		{name: "rejects an absolute changelog path", content: "components:\n  web:\n    path: web\n    changelog: /tmp/CHANGELOG.md\n"},
+		{
+			name:    "rejects a changelog path outside the repository",
+			content: "components:\n  web:\n    path: web\n    changelog: web/../../CHANGELOG.md\n",
+		},
+		{name: "rejects the repository root as a changelog path", content: "components:\n  web:\n    path: web\n    changelog: ./\n"},
+		{
+			name:    "rejects two components configured with the same changelog",
+			content: "components:\n  web:\n    path: web\n    changelog: CHANGELOG.md\n  api:\n    path: api\n    changelog: ./CHANGELOG.md\n",
+		},
+		{
+			name:    "rejects a changelog equal to another component's derived one",
+			content: "components:\n  web:\n    path: web\n    changelog: api/CHANGELOG.md\n  api:\n    path: api\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -496,5 +511,26 @@ components:
 		if c.Branch != want[i] {
 			t.Fatalf("component %s Branch = %q, want %q", c.Name, c.Branch, want[i])
 		}
+	}
+}
+
+func TestResolveUsesAConfiguredChangelogAndDerivesTheRest(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, `components:
+  duxt:
+    path: packages/duxt
+    changelog: ./CHANGELOG.md
+  duxt-typesense:
+    path: packages/duxt-typesense
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got := cfg.Resolve()
+	want := []string{"CHANGELOG.md", "packages/duxt-typesense/CHANGELOG.md"}
+	if got[0].ChangelogPath != want[0] || got[1].ChangelogPath != want[1] {
+		t.Fatalf("ChangelogPath = [%q, %q], want %q", got[0].ChangelogPath, got[1].ChangelogPath, want)
 	}
 }
