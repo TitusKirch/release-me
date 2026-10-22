@@ -86,3 +86,13 @@ func PreReleaseTags(ctx context.Context, dir, prefix string, base version.Semver
 	})
 	return tags, nil
 }
+
+// TagExists reports whether a tag named exactly tag exists in the
+// repository, reachable from HEAD or not.
+func TagExists(ctx context.Context, dir, tag string) (bool, error) {
+	out, err := run(ctx, dir, "tag", "--list", tag)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(strings.Split(out, "\n"), tag), nil
+}

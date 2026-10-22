@@ -196,3 +196,28 @@ func TestPreReleaseTags(t *testing.T) {
 		})
 	}
 }
+
+func TestTagExists(t *testing.T) {
+	t.Parallel()
+	dir := newRepo(t)
+	commitEntry(t, dir, "chore: initial commit", "")
+	tag(t, dir, "duxt@v0.8.1")
+	tag(t, dir, "duxt@v0.8.10")
+
+	for _, tc := range []struct {
+		tag  string
+		want bool
+	}{
+		{tag: "duxt@v0.8.1", want: true},
+		{tag: "duxt@v0.8", want: false},
+		{tag: "duxt-typesense@v0.1.0", want: false},
+	} {
+		got, err := history.TagExists(context.Background(), dir, tc.tag)
+		if err != nil {
+			t.Fatalf("TagExists(%q) error = %v", tc.tag, err)
+		}
+		if got != tc.want {
+			t.Fatalf("TagExists(%q) = %v, want %v", tc.tag, got, tc.want)
+		}
+	}
+}
