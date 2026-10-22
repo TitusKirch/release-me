@@ -70,11 +70,12 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 			name:    "applies defaults for keys left out",
 			content: "initial-version: 0.5.0\n",
 			want: config.Config{
-				InitialVersion: "0.5.0",
-				HiddenTypes:    config.DefaultHiddenTypes,
-				FallbackType:   config.DefaultFallbackType,
-				TokenEnv:       config.DefaultTokenEnv,
-				ChangelogPath:  config.DefaultChangelogPath,
+				InitialVersion:  "0.5.0",
+				HiddenTypes:     config.DefaultHiddenTypes,
+				FallbackType:    config.DefaultFallbackType,
+				TokenEnv:        config.DefaultTokenEnv,
+				ChangelogPath:   config.DefaultChangelogPath,
+				ChangelogSource: config.DefaultChangelogSource,
 				Labels: config.Labels{
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
@@ -90,6 +91,7 @@ hidden-types: [chore, docs]
 fallback-type: misc
 token-env: RELEASE_TOKEN
 changelog: HISTORY.md
+changelog-source: all
 labels:
   pending: needs-release
   tagged: released
@@ -115,6 +117,7 @@ files:
 				FallbackType:      "misc",
 				TokenEnv:          "RELEASE_TOKEN",
 				ChangelogPath:     "HISTORY.md",
+				ChangelogSource:   "all",
 				Labels: config.Labels{
 					Pending: "needs-release", Tagged: "released",
 					Alpha: "needs-alpha", Beta: "needs-beta", Rc: "needs-rc",
@@ -132,11 +135,12 @@ files:
 			name:    "reads the fallback type alone",
 			content: "fallback-type: misc\n",
 			want: config.Config{
-				InitialVersion: config.DefaultInitialVersion,
-				HiddenTypes:    config.DefaultHiddenTypes,
-				FallbackType:   "misc",
-				TokenEnv:       config.DefaultTokenEnv,
-				ChangelogPath:  config.DefaultChangelogPath,
+				InitialVersion:  config.DefaultInitialVersion,
+				HiddenTypes:     config.DefaultHiddenTypes,
+				FallbackType:    "misc",
+				TokenEnv:        config.DefaultTokenEnv,
+				ChangelogPath:   config.DefaultChangelogPath,
+				ChangelogSource: config.DefaultChangelogSource,
 				Labels: config.Labels{
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
@@ -148,11 +152,12 @@ files:
 			name:    "defaults a label left out of the labels block",
 			content: "labels:\n  pending: needs-release\n",
 			want: config.Config{
-				InitialVersion: config.DefaultInitialVersion,
-				HiddenTypes:    config.DefaultHiddenTypes,
-				FallbackType:   config.DefaultFallbackType,
-				TokenEnv:       config.DefaultTokenEnv,
-				ChangelogPath:  config.DefaultChangelogPath,
+				InitialVersion:  config.DefaultInitialVersion,
+				HiddenTypes:     config.DefaultHiddenTypes,
+				FallbackType:    config.DefaultFallbackType,
+				TokenEnv:        config.DefaultTokenEnv,
+				ChangelogPath:   config.DefaultChangelogPath,
+				ChangelogSource: config.DefaultChangelogSource,
 				Labels: config.Labels{
 					Pending: "needs-release", Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
@@ -164,11 +169,12 @@ files:
 			name:    "defaults the author email left out of the author block",
 			content: "author:\n  name: renovate\n",
 			want: config.Config{
-				InitialVersion: config.DefaultInitialVersion,
-				HiddenTypes:    config.DefaultHiddenTypes,
-				FallbackType:   config.DefaultFallbackType,
-				TokenEnv:       config.DefaultTokenEnv,
-				ChangelogPath:  config.DefaultChangelogPath,
+				InitialVersion:  config.DefaultInitialVersion,
+				HiddenTypes:     config.DefaultHiddenTypes,
+				FallbackType:    config.DefaultFallbackType,
+				TokenEnv:        config.DefaultTokenEnv,
+				ChangelogPath:   config.DefaultChangelogPath,
+				ChangelogSource: config.DefaultChangelogSource,
 				Labels: config.Labels{
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
@@ -215,6 +221,11 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 		{name: "rejects an unknown key", content: "release-tag: v1\n"},
 		{name: "rejects malformed YAML", content: "initial-version: [0.1.0\n"},
 		{name: "rejects a fallback type that bumps the version", content: "fallback-type: feat\n"},
+		{name: "rejects an unknown changelog source", content: "changelog-source: rebase\n"},
+		{
+			name:    "rejects an unknown changelog source on a component",
+			content: "components:\n  frontend:\n    path: frontend\n    changelog-source: rebase\n",
+		},
 		{name: "rejects an unknown updater", content: "files:\n  - path: cmd/cli/version.go\n    updater: xml\n"},
 		{
 			name:    "rejects a file whose updater requires a key but carries none",
@@ -289,6 +300,7 @@ func TestResolveReturnsTheImplicitMainComponentWithoutAComponentsKey(t *testing.
 		Name: "main", Path: ".", TagPrefix: "v", Branch: "release-me/main",
 		ChangelogPath: "CHANGELOG.md", Multi: false,
 		InitialVersion: config.DefaultInitialVersion, HiddenTypes: config.DefaultHiddenTypes,
+		ChangelogSource: config.DefaultChangelogSource,
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resolve() = %+v, want %+v", got, want)
@@ -322,12 +334,14 @@ components:
 			Name: "backend", Path: "backend", TagPrefix: "backend/v", Branch: "release-me/backend",
 			ChangelogPath: "backend/CHANGELOG.md", Multi: true,
 			InitialVersion: "0.5.0", BumpMinorPreMajor: true, HiddenTypes: []string{"chore", "docs"},
+			ChangelogSource: config.DefaultChangelogSource,
 		},
 		{
 			Name: "frontend", Path: "frontend", TagPrefix: "frontend/v", Branch: "release-me/frontend",
 			ChangelogPath: "frontend/CHANGELOG.md", Multi: true,
 			InitialVersion: "0.2.0", BumpMinorPreMajor: false, HiddenTypes: []string{"chore"},
-			Files: []config.File{{Path: "frontend/package.json", Updater: "marker"}},
+			Files:           []config.File{{Path: "frontend/package.json", Updater: "marker"}},
+			ChangelogSource: config.DefaultChangelogSource,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -359,5 +373,32 @@ components:
 	}
 	if got[1].MajorTag {
 		t.Fatalf("frontend MajorTag = %v, want false from its own override", got[1].MajorTag)
+	}
+}
+
+func TestResolveAppliesChangelogSourceFromTheTopLevelAndPerComponentOverride(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, `changelog-source: squash
+components:
+  backend:
+    path: backend
+  frontend:
+    path: frontend
+    changelog-source: nested
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got := cfg.Resolve()
+	if len(got) != 2 || got[0].Name != "backend" || got[1].Name != "frontend" {
+		t.Fatalf("Resolve() = %+v, want [backend, frontend]", got)
+	}
+	if got[0].ChangelogSource != "squash" {
+		t.Fatalf("backend ChangelogSource = %q, want %q from the top level", got[0].ChangelogSource, "squash")
+	}
+	if got[1].ChangelogSource != "nested" {
+		t.Fatalf("frontend ChangelogSource = %q, want %q from its own override", got[1].ChangelogSource, "nested")
 	}
 }

@@ -3,7 +3,7 @@
 
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
-// changelog, labels, major-tag and components.
+// changelog, changelog-source, labels, major-tag and components.
 package config
 
 import (
@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	stdpath "path"
+	"slices"
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
@@ -32,6 +33,9 @@ const (
 	// DefaultChangelogPath is the changelog file path applied when the
 	// "changelog" key is left out of release-me.yaml.
 	DefaultChangelogPath = "CHANGELOG.md"
+	// DefaultChangelogSource is the changelog source mode applied when
+	// the "changelog-source" key is left out of release-me.yaml.
+	DefaultChangelogSource = ChangelogSourceFirstParent
 	// DefaultPendingLabel and DefaultTaggedLabel are the label names
 	// applied when the "labels" block, or one of its keys, is left out.
 	DefaultPendingLabel = "release: pending"
@@ -51,6 +55,34 @@ const (
 // DefaultHiddenTypes is the hidden-types list applied when the key is left
 // out of release-me.yaml. DefaultFallbackType is hidden by default.
 var DefaultHiddenTypes = []string{"chore", "docs", "ci", "style", "refactor", "test", "build", DefaultFallbackType}
+
+// The changelog source modes "changelog-source" accepts, top level and per
+// component. See internal/history for what each mode reads and
+// cmd/release-me for how each is assembled into changelog entries.
+const (
+	// ChangelogSourceFirstParent reads the first parent history: a merge
+	// commit is one entry with its pull request title, a direct commit
+	// is its own entry. The default.
+	ChangelogSourceFirstParent = "first-parent"
+	// ChangelogSourceSquash reads the first parent history too, but
+	// resolves the pull request number from a trailing "(#N)" on a
+	// commit's own subject, the shape a squash merge leaves behind.
+	ChangelogSourceSquash = "squash"
+	// ChangelogSourceAll reads every commit since the last tag, merge
+	// commits excluded, each its own entry, with a pull request link
+	// resolved through the forge once per merge commit.
+	ChangelogSourceAll = "all"
+	// ChangelogSourceNested reads the first parent history like
+	// ChangelogSourceFirstParent, with the commits of each merge
+	// rendered as indented sub items under it.
+	ChangelogSourceNested = "nested"
+)
+
+// changelogSources lists every value "changelog-source" accepts, in the
+// order check and config errors report them.
+var changelogSources = []string{
+	ChangelogSourceFirstParent, ChangelogSourceSquash, ChangelogSourceAll, ChangelogSourceNested,
+}
 
 // bumpingTypes are refused as fallback-type: text that does not parse must
 // never move the version.
@@ -95,8 +127,13 @@ type Config struct {
 	TokenEnv          string
 	Files             []File
 	ChangelogPath     string
-	Labels            Labels
-	Author            Author
+	// ChangelogSource is the top-level "changelog-source" key: which
+	// commits become changelog entries. See the ChangelogSource*
+	// constants. A component overrides it through its own
+	// "changelog-source" key.
+	ChangelogSource string
+	Labels          Labels
+	Author          Author
 	// MajorTag is the top-level "major-tag" key: when true, a stable
 	// release moves the major tag "vX" to the release commit. A component
 	// overrides it through its own "major-tag" key.
@@ -109,10 +146,10 @@ type Config struct {
 
 // Component is one entry of the "components" key: a name mapped to a path
 // and optional overrides of the top-level initial-version,
-// bump-minor-pre-major, hidden-types, files and major-tag. A nil field was
-// left out of release-me.yaml and falls back to the top-level value, the
-// same left-out-versus-zero-value distinction Load applies to the top
-// level itself.
+// bump-minor-pre-major, hidden-types, files, major-tag and
+// changelog-source. A nil field was left out of release-me.yaml and falls
+// back to the top-level value, the same left-out-versus-zero-value
+// distinction Load applies to the top level itself.
 type Component struct {
 	Name              string
 	Path              string
@@ -121,6 +158,7 @@ type Component struct {
 	HiddenTypes       *[]string
 	Files             *[]File
 	MajorTag          *bool
+	ChangelogSource   *string
 }
 
 // ResolvedComponent is one component ready for a command to release: its
@@ -144,6 +182,9 @@ type ResolvedComponent struct {
 	HiddenTypes       []string
 	Files             []File
 	MajorTag          bool
+	// ChangelogSource is one of the ChangelogSource* constants: which
+	// commits become this component's changelog entries.
+	ChangelogSource string
 }
 
 // Resolve returns the components a command should loop over, in
@@ -164,6 +205,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			HiddenTypes:       cfg.HiddenTypes,
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
+			ChangelogSource:   cfg.ChangelogSource,
 		}}
 	}
 
@@ -181,6 +223,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			HiddenTypes:       cfg.HiddenTypes,
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
+			ChangelogSource:   cfg.ChangelogSource,
 		}
 		if c.InitialVersion != nil {
 			rc.InitialVersion = *c.InitialVersion
@@ -196,6 +239,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.MajorTag != nil {
 			rc.MajorTag = *c.MajorTag
+		}
+		if c.ChangelogSource != nil {
+			rc.ChangelogSource = *c.ChangelogSource
 		}
 		out = append(out, rc)
 	}
@@ -236,6 +282,7 @@ type raw struct {
 	TokenEnv          *string    `yaml:"token-env"`
 	Files             *[]rawFile `yaml:"files"`
 	Changelog         *string    `yaml:"changelog"`
+	ChangelogSource   *string    `yaml:"changelog-source"`
 	Labels            *rawLabels `yaml:"labels"`
 	Author            *rawAuthor `yaml:"author"`
 	MajorTag          *bool      `yaml:"major-tag"`
@@ -256,16 +303,18 @@ type rawComponent struct {
 	HiddenTypes       *[]string  `yaml:"hidden-types"`
 	Files             *[]rawFile `yaml:"files"`
 	MajorTag          *bool      `yaml:"major-tag"`
+	ChangelogSource   *string    `yaml:"changelog-source"`
 }
 
 // Default is the configuration applied when release-me.yaml is absent.
 func Default() Config {
 	return Config{
-		InitialVersion: DefaultInitialVersion,
-		HiddenTypes:    DefaultHiddenTypes,
-		FallbackType:   DefaultFallbackType,
-		TokenEnv:       DefaultTokenEnv,
-		ChangelogPath:  DefaultChangelogPath,
+		InitialVersion:  DefaultInitialVersion,
+		HiddenTypes:     DefaultHiddenTypes,
+		FallbackType:    DefaultFallbackType,
+		TokenEnv:        DefaultTokenEnv,
+		ChangelogPath:   DefaultChangelogPath,
+		ChangelogSource: DefaultChangelogSource,
 		Labels: Labels{
 			Pending: DefaultPendingLabel, Tagged: DefaultTaggedLabel,
 			Alpha: DefaultAlphaLabel, Beta: DefaultBetaLabel, Rc: DefaultRcLabel,
@@ -321,6 +370,15 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.Changelog != nil {
 		cfg.ChangelogPath = *r.Changelog
+	}
+	if r.ChangelogSource != nil {
+		if !slices.Contains(changelogSources, *r.ChangelogSource) {
+			return Config{}, fmt.Errorf(
+				"config: parse %s: changelog-source %q is none of %s",
+				path, *r.ChangelogSource, strings.Join(changelogSources, ", "),
+			)
+		}
+		cfg.ChangelogSource = *r.ChangelogSource
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {
@@ -427,10 +485,17 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 		if rc.Path == nil {
 			return nil, fmt.Errorf("config: parse %s: component %s: path is required", path, name)
 		}
+		if rc.ChangelogSource != nil && !slices.Contains(changelogSources, *rc.ChangelogSource) {
+			return nil, fmt.Errorf(
+				"config: parse %s: component %s: changelog-source %q is none of %s",
+				path, name, *rc.ChangelogSource, strings.Join(changelogSources, ", "),
+			)
+		}
 
 		c := Component{
 			Name: name, Path: *rc.Path, InitialVersion: rc.InitialVersion,
 			BumpMinorPreMajor: rc.BumpMinorPreMajor, HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag,
+			ChangelogSource: rc.ChangelogSource,
 		}
 		if rc.Files != nil {
 			files, err := decodeFiles(path, *rc.Files)
