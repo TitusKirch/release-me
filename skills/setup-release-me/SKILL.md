@@ -23,9 +23,9 @@ Read the repository; every row below comes from a command or a file, never from 
   A repository off GitHub ends the run here: release-me releases through the GitHub API.
 - **Release tooling already present:** a `release-please-config.json` hands the run to the
   `migrate-release-please-to-release-me` skill, an optional call: where it is not installed,
-  the run ends here and names the release-please setup as the reason. Any other tool (`.releaserc*`, `.changeset/`, a
-  workflow running semantic-release) is named in the plan and removed in the same change,
-  because two tools tagging one history race each other.
+  the run ends here and names the release-please setup as the reason. Any other tool
+  (`.releaserc*`, `.changeset/`, a workflow running semantic-release) is named in the plan and
+  removed in the same change, because two tools tagging one history race each other.
 - **Existing tags:** `git tag --list --sort=-v:refname | head -20`. Their scheme becomes the tag
   prefix, so release-me continues from the last one: `vX.Y.Z` is the implicit main component,
   `name@vX.Y.Z` a component with `tag-prefix: name@v`.
