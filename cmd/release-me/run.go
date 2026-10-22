@@ -23,6 +23,10 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	if err := rejectComponentForLocked(cfg, component); err != nil {
+		fmt.Fprintf(stderr, "release-me: %v\n", err)
+		return 2
+	}
 
 	if err := doPR(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)

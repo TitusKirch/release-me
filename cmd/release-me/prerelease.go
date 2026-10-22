@@ -60,27 +60,33 @@ func selectPreReleaseType(prLabels []string, lbl config.Labels) (preType string,
 
 // preReleaseVersion computes the pre-release version for preType on top of
 // base, the version a stable release would get, together with the history
-// tag to collect changelog entries since. since is "" when base carries no
-// earlier pre-release tag yet: the caller then keeps the entries it
-// already collected since the last stable tag. N starts at 1 for preType
-// and counts up from the highest N an earlier pre-release tag of that same
-// type and base already carries; a type change does not inherit the
-// counter of the type it replaces.
-func preReleaseVersion(ctx context.Context, dir, tagPrefix string, base version.Semver, preType string) (v version.Semver, since string, err error) {
-	tags, err := history.PreReleaseTags(ctx, dir, tagPrefix, base)
-	if err != nil {
-		return version.Semver{}, "", fmt.Errorf("release-me: pre-release tags: %w", err)
-	}
-
+// tag to collect changelog entries since. since is "" when ownTagPrefix
+// carries no earlier pre-release tag yet for base: the caller then keeps
+// the entries it already collected since the last stable tag. N starts at
+// 1 for preType and counts up from the highest N an earlier pre-release
+// tag of that same type and base already carries, scanning every prefix
+// in familyTagPrefixes: the counter is shared across the whole family in a
+// linked or locked run, ownTagPrefix on its own, as the only entry of
+// familyTagPrefixes, for an independent component. A type change does not
+// inherit the counter of the type it replaces.
+func preReleaseVersion(
+	ctx context.Context, dir, ownTagPrefix string, familyTagPrefixes []string, base version.Semver, preType string,
+) (v version.Semver, since string, err error) {
 	n := 1
-	for _, t := range tags {
-		typ, num, ok := t.Version.PreReleaseType()
-		if ok && typ == preType && num+1 > n {
-			n = num + 1
+	for _, prefix := range familyTagPrefixes {
+		tags, err := history.PreReleaseTags(ctx, dir, prefix, base)
+		if err != nil {
+			return version.Semver{}, "", fmt.Errorf("release-me: pre-release tags: %w", err)
 		}
-	}
-	if len(tags) > 0 {
-		since = tags[len(tags)-1].Tag
+		for _, t := range tags {
+			typ, num, ok := t.Version.PreReleaseType()
+			if ok && typ == preType && num+1 > n {
+				n = num + 1
+			}
+		}
+		if prefix == ownTagPrefix && len(tags) > 0 {
+			since = tags[len(tags)-1].Tag
+		}
 	}
 	return base.WithPreRelease(preType, n), since, nil
 }
@@ -91,14 +97,15 @@ func preReleaseVersion(ctx context.Context, dir, tagPrefix string, base version.
 // base version when one exists, rel's own entries, already collected since
 // the last stable tag, otherwise.
 func preReleaseEntries(
-	ctx context.Context, f forge.Forge, dir string, cfg config.Config, comp config.ResolvedComponent, owner, repoName string, rel release, preType string,
+	ctx context.Context, f forge.Forge, dir string, cfg config.Config, comp config.ResolvedComponent, familyTagPrefixes []string,
+	owner, repoName string, rel release, preType string,
 ) (versionStr string, entries []changelog.Entry, err error) {
 	base, ok := version.ParseTag("v" + rel.version.Version)
 	if !ok {
 		return "", nil, fmt.Errorf("next version %q does not parse", rel.version.Version)
 	}
 
-	preVersion, since, err := preReleaseVersion(ctx, dir, comp.TagPrefix, base, preType)
+	preVersion, since, err := preReleaseVersion(ctx, dir, comp.TagPrefix, familyTagPrefixes, base, preType)
 	if err != nil {
 		return "", nil, err
 	}

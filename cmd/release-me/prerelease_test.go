@@ -61,7 +61,7 @@ func TestPreReleaseVersionCountsPerTypeAndResetsOnAChange(t *testing.T) {
 	commitEntry(t, dir, "chore: initial commit")
 	base := version.Semver{Minor: 1}
 
-	v, since, err := preReleaseVersion(t.Context(), dir, "v", base, "alpha")
+	v, since, err := preReleaseVersion(t.Context(), dir, "v", []string{"v"}, base, "alpha")
 	if err != nil {
 		t.Fatalf("preReleaseVersion() error = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestPreReleaseVersionCountsPerTypeAndResetsOnAChange(t *testing.T) {
 	}
 	runGit(t, dir, "tag", "v0.1.0-alpha.1")
 
-	v, since, err = preReleaseVersion(t.Context(), dir, "v", base, "alpha")
+	v, since, err = preReleaseVersion(t.Context(), dir, "v", []string{"v"}, base, "alpha")
 	if err != nil {
 		t.Fatalf("preReleaseVersion() error = %v", err)
 	}
@@ -80,11 +80,43 @@ func TestPreReleaseVersionCountsPerTypeAndResetsOnAChange(t *testing.T) {
 
 	// A type change does not inherit alpha's counter: beta starts at 1,
 	// even though an alpha tag for the same base already exists.
-	v, since, err = preReleaseVersion(t.Context(), dir, "v", base, "beta")
+	v, since, err = preReleaseVersion(t.Context(), dir, "v", []string{"v"}, base, "beta")
 	if err != nil {
 		t.Fatalf("preReleaseVersion() error = %v", err)
 	}
 	if v.String() != "0.1.0-beta.1" || since != "v0.1.0-alpha.1" {
 		t.Fatalf("first beta = (%q, %q), want (%q, %q)", v.String(), since, "0.1.0-beta.1", "v0.1.0-alpha.1")
+	}
+}
+
+// TestPreReleaseVersionSharesTheCounterAcrossTheFamily reproduces a linked
+// or locked family's shared pre-release counter: component b's own tag
+// prefix carries no pre-release tag yet, but the counter still advances
+// past component a's, because familyTagPrefixes scans both.
+func TestPreReleaseVersionSharesTheCounterAcrossTheFamily(t *testing.T) {
+	dir := newRepo(t)
+	commitEntry(t, dir, "chore: initial commit")
+	runGit(t, dir, "tag", "a/v0.9.0-alpha.1")
+	base := version.Semver{Minor: 9}
+
+	v, since, err := preReleaseVersion(t.Context(), dir, "b/v", []string{"a/v", "b/v"}, base, "alpha")
+	if err != nil {
+		t.Fatalf("preReleaseVersion() error = %v", err)
+	}
+	if v.String() != "0.9.0-alpha.2" {
+		t.Fatalf("component b's shared alpha = %q, want %q: the family counter must see a's existing tag", v.String(), "0.9.0-alpha.2")
+	}
+	if since != "" {
+		t.Fatalf("since = %q, want empty: b carries no pre-release tag of its own yet", since)
+	}
+
+	// component a's own since still comes from its own prefix, unaffected
+	// by the shared counter.
+	_, sinceA, err := preReleaseVersion(t.Context(), dir, "a/v", []string{"a/v", "b/v"}, base, "alpha")
+	if err != nil {
+		t.Fatalf("preReleaseVersion() error = %v", err)
+	}
+	if sinceA != "a/v0.9.0-alpha.1" {
+		t.Fatalf("since = %q, want %q", sinceA, "a/v0.9.0-alpha.1")
 	}
 }

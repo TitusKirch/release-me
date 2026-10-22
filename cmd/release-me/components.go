@@ -4,12 +4,31 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
 )
+
+// errComponentNotAllowedForLocked is returned when --component names a
+// component while versioning is locked: locked always releases every
+// component together, so limiting to one is not a meaningful
+// restriction. Every command that loops over components is a usage error
+// in that combination, exit code 2.
+var errComponentNotAllowedForLocked = errors.New("locked versioning releases the family, --component is not allowed")
+
+// rejectComponentForLocked returns errComponentNotAllowedForLocked when
+// cfg.Versioning is locked and component names one. Every command checks
+// this once, right after loading release-me.yaml, before resolving which
+// components to act on.
+func rejectComponentForLocked(cfg config.Config, component string) error {
+	if cfg.Versioning == config.VersioningLocked && component != "" {
+		return errComponentNotAllowedForLocked
+	}
+	return nil
+}
 
 // resolveComponents returns the components a command should loop over:
 // every configured component, in release-me.yaml's order, or the single

@@ -20,8 +20,10 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/history"
+	tagrelease "github.com/ostendorf-cloud/release-me/internal/release"
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
+	"github.com/ostendorf-cloud/release-me/internal/version"
 )
 
 // noUserFacingChangesLine is rendered under the changelog heading when a
@@ -48,6 +50,10 @@ func runPR(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
+	}
+	if err := rejectComponentForLocked(cfg, component); err != nil {
+		fmt.Fprintf(stderr, "release-me: %v\n", err)
+		return 2
 	}
 
 	if err := doPR(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
@@ -91,8 +97,53 @@ func doPR(ctx context.Context, dir string, cfg config.Config, component string, 
 		return err
 	}
 
+	switch cfg.Versioning {
+	case config.VersioningLocked:
+		return doPRLocked(ctx, dir, cfg, owner, repoName, base, f, logger, dryRun, stdout)
+	case config.VersioningLinked:
+		return doPRLinked(ctx, dir, cfg, components, owner, repoName, base, f, logger, dryRun, multi, stdout)
+	default:
+		for _, comp := range components {
+			rel, released, err := computeRelease(ctx, dir, cfg, comp, owner, repoName, f, logger)
+			if err != nil {
+				return err
+			}
+			if !released {
+				printLine(stdout, comp.Name, multi, "nothing to release")
+				continue
+			}
+			if err := doPRComponent(ctx, dir, cfg, comp, []string{comp.TagPrefix}, rel, owner, repoName, base, f, logger, dryRun, multi, stdout); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+// doPRLinked creates or updates the release pull request for every
+// component that has its own entries since its own last tag, at the
+// family's shared version: the highest version any component in the
+// family carries, bumped by the highest bump type among the changed
+// components. An unchanged component is left untouched, same as
+// VersioningIndependent reports "nothing to release" for one.
+func doPRLinked(
+	ctx context.Context, dir string, cfg config.Config, components []config.ResolvedComponent, owner, repoName, base string,
+	f forge.Forge, logger *slog.Logger, dryRun, multi bool, stdout io.Writer,
+) error {
+	members, err := gatherFamily(ctx, dir, cfg, owner, repoName, f, logger)
+	if err != nil {
+		return err
+	}
+	releases, released := familyReleases(cfg, members)
+	prefixes := familyTagPrefixes(members)
+
 	for _, comp := range components {
-		if err := doPRComponent(ctx, dir, cfg, comp, owner, repoName, base, f, logger, dryRun, multi, stdout); err != nil {
+		rel, ok := releases[comp.Name]
+		if !released || !ok {
+			printLine(stdout, comp.Name, multi, "nothing to release")
+			continue
+		}
+		if err := doPRComponent(ctx, dir, cfg, comp, prefixes, rel, owner, repoName, base, f, logger, dryRun, multi, stdout); err != nil {
 			return err
 		}
 	}
@@ -106,18 +157,9 @@ func doPR(ctx context.Context, dir string, cfg config.Config, component string, 
 // Equal content changes nothing, not even the pull request body, unless
 // the notes block itself changed, which updates the body alone, no push.
 func doPRComponent(
-	ctx context.Context, dir string, cfg config.Config, comp config.ResolvedComponent, owner, repoName, base string,
-	f forge.Forge, logger *slog.Logger, dryRun, multi bool, stdout io.Writer,
+	ctx context.Context, dir string, cfg config.Config, comp config.ResolvedComponent, familyTagPrefixes []string, rel release,
+	owner, repoName, base string, f forge.Forge, logger *slog.Logger, dryRun, multi bool, stdout io.Writer,
 ) error {
-	rel, released, err := computeRelease(ctx, dir, cfg, comp, owner, repoName, f, logger)
-	if err != nil {
-		return err
-	}
-	if !released {
-		printLine(stdout, comp.Name, multi, "nothing to release")
-		return nil
-	}
-
 	existingList, err := f.PullRequests(ctx, owner, repoName, comp.Branch, "open")
 	if err != nil {
 		return fmt.Errorf("release-me: component %s: list release pull requests: %w", comp.Name, err)
@@ -139,7 +181,7 @@ func doPRComponent(
 			return fmt.Errorf("release-me: component %s: pull request #%d: %w", comp.Name, existing.Number, err)
 		}
 		if isPre {
-			versionStr, entries, err = preReleaseEntries(ctx, f, dir, cfg, comp, owner, repoName, rel, preType)
+			versionStr, entries, err = preReleaseEntries(ctx, f, dir, cfg, comp, familyTagPrefixes, owner, repoName, rel, preType)
 			if err != nil {
 				return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 			}
@@ -151,7 +193,7 @@ func doPRComponent(
 		entriesBody = noUserFacingChangesLine
 	}
 
-	plan, err := planReleaseBranch(ctx, dir, versionStr, entriesBody, comp.ChangelogPath, comp.Files, comp.Branch)
+	plan, err := planReleaseBranch(ctx, dir, versionStr, []changelogUpdate{{path: comp.ChangelogPath, entriesBody: entriesBody}}, comp.Files, comp.Branch)
 	if err != nil {
 		return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
@@ -212,7 +254,7 @@ func doPRComponent(
 			return nil
 		}
 
-		if err := plan.write(ctx, cfg, existing, comp.Branch, comp.ChangelogPath, section, title); err != nil {
+		if err := plan.write(ctx, cfg, existing, comp.Branch, versionStr, date, title); err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
 
@@ -238,6 +280,195 @@ func doPRComponent(
 		printLine(stdout, comp.Name, multi, fmt.Sprintf("updated %s", title))
 		return nil
 	}
+}
+
+// doPRLocked creates or updates the one release pull request a locked
+// family shares, branch "release-me/main": every configured component
+// bumped to the family's shared version and released together, changed or
+// not, each with its own CHANGELOG.md section and its own named section
+// inside the combined pull request body.
+func doPRLocked(
+	ctx context.Context, dir string, cfg config.Config, owner, repoName, base string,
+	f forge.Forge, logger *slog.Logger, dryRun bool, stdout io.Writer,
+) error {
+	members, err := gatherFamily(ctx, dir, cfg, owner, repoName, f, logger)
+	if err != nil {
+		return err
+	}
+	releases, released := familyReleases(cfg, members)
+	if !released {
+		fmt.Fprintln(stdout, "nothing to release")
+		return nil
+	}
+
+	branch := members[0].comp.Branch
+	names := make([]string, 0, len(members))
+	for _, m := range members {
+		names = append(names, m.comp.Name)
+	}
+
+	existingList, err := f.PullRequests(ctx, owner, repoName, branch, "open")
+	if err != nil {
+		return fmt.Errorf("release-me: locked family: list release pull requests: %w", err)
+	}
+	var existing *forge.PullRequest
+	if len(existingList) > 0 {
+		existing = &existingList[0]
+		if len(existingList) > 1 {
+			logger.Warn("more than one open locked release pull request, using the first",
+				"head", branch, "count", len(existingList), "number", existing.Number)
+		}
+	}
+
+	versionStr := ""
+	for _, rel := range releases {
+		versionStr = rel.version.Version
+		break
+	}
+
+	if existing != nil {
+		preType, isPre, err := selectPreReleaseType(existing.Labels, cfg.Labels)
+		if err != nil {
+			return fmt.Errorf("release-me: locked family: pull request #%d: %w", existing.Number, err)
+		}
+		if isPre {
+			versionStr, releases, err = lockedPreReleaseEntries(ctx, f, dir, cfg, members, owner, repoName, releases, preType)
+			if err != nil {
+				return fmt.Errorf("release-me: locked family: %w", err)
+			}
+		}
+	}
+
+	changelogs := make([]changelogUpdate, 0, len(members))
+	bodyParts := make([]string, 0, len(members))
+	var files []config.File
+	for _, m := range members {
+		var entries []changelog.Entry
+		if rel, ok := releases[m.comp.Name]; ok {
+			entries = rel.entries
+		}
+		entriesBody := changelog.Sections(entries, m.comp.HiddenTypes)
+		if entriesBody == "" {
+			entriesBody = noUserFacingChangesLine
+		}
+		changelogs = append(changelogs, changelogUpdate{path: m.comp.ChangelogPath, entriesBody: entriesBody})
+		bodyParts = append(bodyParts, fmt.Sprintf("#### %s\n\n%s", m.comp.Name, entriesBody))
+		files = append(files, m.comp.Files...)
+	}
+
+	plan, err := planReleaseBranch(ctx, dir, versionStr, changelogs, files, branch)
+	if err != nil {
+		return fmt.Errorf("release-me: locked family: %w", err)
+	}
+	defer plan.cleanup()
+
+	notes := ""
+	if existing != nil {
+		notes, _ = releasepr.ExtractNotes(existing.Body)
+	}
+	date := time.Now()
+	if existing != nil && !plan.changed {
+		if d, ok := releasepr.ExtractDate(existing.Body); ok {
+			date = d
+		}
+	}
+	section := fmt.Sprintf("## v%s (%s)\n\n%s\n", versionStr, date.Format("2006-01-02"), strings.Join(bodyParts, "\n\n"))
+
+	tags := make([]string, 0, len(members))
+	for _, m := range members {
+		tags = append(tags, m.comp.TagPrefix+versionStr)
+	}
+
+	title := tagrelease.LockedTitle(versionStr, names)
+	guideLabels := releasepr.GuideLabels{
+		Tagged: cfg.Labels.Tagged,
+		Alpha:  cfg.Labels.Alpha,
+		Beta:   cfg.Labels.Beta,
+		Rc:     cfg.Labels.Rc,
+	}
+	body := releasepr.Body(versionStr, strings.Join(tags, ", "), guideLabels, notes, section)
+
+	switch {
+	case existing != nil && !plan.changed && body == existing.Body:
+		fmt.Fprintln(stdout, "release pull request up to date")
+		return nil
+
+	case existing != nil && !plan.changed:
+		if dryRun {
+			fmt.Fprintf(stdout, "would update %s\n", title)
+			return nil
+		}
+		if _, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body); err != nil {
+			return fmt.Errorf("release-me: locked family: update release pull request #%d: %w", existing.Number, err)
+		}
+		if err := ensurePendingLabel(ctx, f, owner, repoName, existing.Number, existing.Labels, cfg.Labels.Pending); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "updated %s\n", title)
+		return nil
+
+	default:
+		action := "create"
+		if existing != nil {
+			action = "update"
+		}
+		if dryRun {
+			fmt.Fprintf(stdout, "would %s %s\n", action, title)
+			return nil
+		}
+
+		if err := plan.write(ctx, cfg, existing, branch, versionStr, date, title); err != nil {
+			return fmt.Errorf("release-me: locked family: %w", err)
+		}
+
+		if existing == nil {
+			if _, err := f.CreatePullRequest(ctx, owner, repoName, base, branch, title, body, []string{cfg.Labels.Pending}); err != nil {
+				return fmt.Errorf(
+					"release-me: locked family: create release pull request: pushed branch %s but the pull request failed: %w", branch, err,
+				)
+			}
+			fmt.Fprintf(stdout, "created %s\n", title)
+			return nil
+		}
+		if _, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body); err != nil {
+			return fmt.Errorf(
+				"release-me: locked family: update release pull request #%d: pushed branch %s but the update failed: %w",
+				existing.Number, branch, err,
+			)
+		}
+		if err := ensurePendingLabel(ctx, f, owner, repoName, existing.Number, existing.Labels, cfg.Labels.Pending); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "updated %s\n", title)
+		return nil
+	}
+}
+
+// lockedPreReleaseEntries recomputes, for a locked family's open pull
+// request carrying a pre-release type label, the pre-release version
+// shared by every component and the entries each one renders: the shared
+// counter scans every component's own tag prefix, and each component's own
+// entries are restricted to those since its own previous pre-release tag,
+// the same rule preReleaseEntries applies to one component.
+func lockedPreReleaseEntries(
+	ctx context.Context, f forge.Forge, dir string, cfg config.Config, members []familyMember, owner, repoName string,
+	releases map[string]release, preType string,
+) (versionStr string, out map[string]release, err error) {
+	prefixes := familyTagPrefixes(members)
+	out = make(map[string]release, len(releases))
+	for _, m := range members {
+		rel, ok := releases[m.comp.Name]
+		if !ok {
+			continue
+		}
+		vStr, entries, err := preReleaseEntries(ctx, f, dir, cfg, m.comp, prefixes, owner, repoName, rel, preType)
+		if err != nil {
+			return "", nil, fmt.Errorf("component %s: %w", m.comp.Name, err)
+		}
+		versionStr = vStr
+		out[m.comp.Name] = release{version: version.Result{Version: vStr, Bump: rel.version.Bump, Reason: rel.version.Reason}, entries: entries, hiddenTypes: m.comp.HiddenTypes}
+	}
+	return versionStr, out, nil
 }
 
 // resolveBaseBranch reads the repository's default branch from the forge,
@@ -272,23 +503,34 @@ func ensurePendingLabel(ctx context.Context, f forge.Forge, owner, repoName stri
 	return nil
 }
 
+// changelogUpdate is one component's changelog file path and the entries
+// body (without the heading's date) doPR would prepend to it, one per
+// component of a locked family's combined branch, exactly one for
+// VersioningIndependent and VersioningLinked.
+type changelogUpdate struct {
+	path        string
+	entriesBody string
+	baseline    string
+}
+
 // releasePlan is the release branch content doPR would write, computed
 // against a temporary worktree checked out at dir's HEAD, together with
 // whether it differs from what the release branch currently carries.
 type releasePlan struct {
-	dir               string
-	tmp               string
-	baselineChangelog string
-	desiredFiles      map[string]string
-	changed           bool
-	cleanedUp         bool
+	dir          string
+	tmp          string
+	changelogs   []changelogUpdate
+	desiredFiles map[string]string
+	changed      bool
+	cleanedUp    bool
 }
 
 // planReleaseBranch computes the release branch content doPR would write
-// for version and entriesBody, and compares it against branch's current
-// tip, fetched into compareRef. A branch that does not exist on the remote
-// yet is always "changed": there is nothing to compare it against.
-func planReleaseBranch(ctx context.Context, dir, version, entriesBody, changelogPath string, files []config.File, branch string) (*releasePlan, error) {
+// for every entry of changelogs and files, and compares it against
+// branch's current tip, fetched into compareRef. A branch that does not
+// exist on the remote yet is always "changed": there is nothing to compare
+// it against.
+func planReleaseBranch(ctx context.Context, dir, version string, changelogs []changelogUpdate, files []config.File, branch string) (*releasePlan, error) {
 	tmp, err := os.MkdirTemp("", "release-me-pr-")
 	if err != nil {
 		return nil, fmt.Errorf("release-me: temporary worktree: %w", err)
@@ -300,12 +542,16 @@ func planReleaseBranch(ctx context.Context, dir, version, entriesBody, changelog
 		return nil, fmt.Errorf("release-me: add worktree: %w", err)
 	}
 
-	baseline, err := os.ReadFile(filepath.Join(tmp, changelogPath))
-	if err != nil && !os.IsNotExist(err) {
-		plan.cleanup()
-		return nil, fmt.Errorf("release-me: read %s: %w", changelogPath, err)
+	plan.changelogs = make([]changelogUpdate, len(changelogs))
+	for i, c := range changelogs {
+		baseline, err := os.ReadFile(filepath.Join(tmp, c.path))
+		if err != nil && !os.IsNotExist(err) {
+			plan.cleanup()
+			return nil, fmt.Errorf("release-me: read %s: %w", c.path, err)
+		}
+		c.baseline = string(baseline)
+		plan.changelogs[i] = c
 	}
-	plan.baselineChangelog = string(baseline)
 
 	plan.desiredFiles = make(map[string]string, len(files))
 	for _, file := range files {
@@ -330,15 +576,15 @@ func planReleaseBranch(ctx context.Context, dir, version, entriesBody, changelog
 		plan.desiredFiles[file.Path] = newContent
 	}
 
-	plan.changed = !sameAsReleaseBranch(ctx, tmp, entriesBody, plan.desiredFiles, changelogPath, branch)
+	plan.changed = !sameAsReleaseBranch(ctx, tmp, plan.changelogs, plan.desiredFiles, branch)
 	return plan, nil
 }
 
-// sameAsReleaseBranch reports whether entriesBody and desiredFiles already
-// match branch's current tip. It fetches the branch into compareRef to
-// read it; a branch that does not exist remotely yet, or any read
-// failure, is reported as not matching.
-func sameAsReleaseBranch(ctx context.Context, tmp, entriesBody string, desiredFiles map[string]string, changelogPath, branch string) bool {
+// sameAsReleaseBranch reports whether every changelogs entry and every
+// desiredFiles entry already match branch's current tip. It fetches the
+// branch into compareRef to read it; a branch that does not exist remotely
+// yet, or any read failure, is reported as not matching.
+func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelogUpdate, desiredFiles map[string]string, branch string) bool {
 	pushURL, err := gitOutput(ctx, tmp, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return false
@@ -347,13 +593,15 @@ func sameAsReleaseBranch(ctx context.Context, tmp, entriesBody string, desiredFi
 		return false
 	}
 
-	changelogContent, ok := gitShowFile(ctx, tmp, compareRef, changelogPath)
-	if !ok {
-		return false
-	}
-	existingBody, ok := changelog.TopSection(changelogContent)
-	if !ok || existingBody != entriesBody {
-		return false
+	for _, c := range changelogs {
+		changelogContent, ok := gitShowFile(ctx, tmp, compareRef, c.path)
+		if !ok {
+			return false
+		}
+		existingBody, ok := changelog.TopSection(changelogContent)
+		if !ok || existingBody != c.entriesBody {
+			return false
+		}
 	}
 
 	for path, want := range desiredFiles {
@@ -372,14 +620,19 @@ func sameAsReleaseBranch(ctx context.Context, tmp, entriesBody string, desiredFi
 // the forge, not a locally fetched ref, so a concurrent fetch can never
 // defeat it. The commit carries cfg's configured author and committer,
 // never written into any git config, only passed to that one subprocess.
-func (p *releasePlan) write(ctx context.Context, cfg config.Config, existing *forge.PullRequest, branch, changelogPath, section, commitMessage string) error {
+func (p *releasePlan) write(
+	ctx context.Context, cfg config.Config, existing *forge.PullRequest, branch, version string, date time.Time, commitMessage string,
+) error {
 	if err := gitRun(ctx, p.tmp, "checkout", "--quiet", "-B", branch); err != nil {
 		return fmt.Errorf("release-me: checkout %s: %w", branch, err)
 	}
 
-	fullChangelogPath := filepath.Join(p.tmp, changelogPath)
-	if err := os.WriteFile(fullChangelogPath, []byte(changelog.Prepend(p.baselineChangelog, section)), 0o644); err != nil {
-		return fmt.Errorf("release-me: write %s: %w", changelogPath, err)
+	for _, c := range p.changelogs {
+		section := fmt.Sprintf("## v%s (%s)\n\n%s\n", version, date.Format("2006-01-02"), c.entriesBody)
+		fullChangelogPath := filepath.Join(p.tmp, c.path)
+		if err := os.WriteFile(fullChangelogPath, []byte(changelog.Prepend(c.baseline, section)), 0o644); err != nil {
+			return fmt.Errorf("release-me: write %s: %w", c.path, err)
+		}
 	}
 	for path, content := range p.desiredFiles {
 		if err := os.WriteFile(filepath.Join(p.tmp, path), []byte(content), 0o644); err != nil {
