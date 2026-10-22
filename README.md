@@ -436,11 +436,13 @@ files:
   starting over at `initial-version`. The version is appended to the prefix as it is. A prefix
   that is empty, holds whitespace or one of `~ ^ : ? * [ \`, contains `..`, `@{` or `//`, or
   starts with `/`, `-` or `.` is a configuration error, as are two components with the same
-  prefix. `changelog` replaces the derived changelog path, relative to the repository root, for a
-  component whose changelog lives outside its own path, such as one kept at the root while the
-  code sits in `packages/<name>`. A changelog path that is empty, absolute, or not a file
-  inside the repository is a configuration error, as are two components writing the same
-  changelog:
+  prefix. The prefix is how a component finds its history: adding, changing or removing
+  `tag-prefix` once a component has tags under its previous prefix restarts it at
+  `initial-version`, the same way renaming the component would. `changelog` replaces the
+  derived changelog path, relative to the repository root, for a component whose changelog
+  lives outside its own path, such as one kept at the root while the code sits in
+  `packages/<name>`. A changelog path that is empty, absolute, or not a file inside the
+  repository is a configuration error, as are two components writing the same changelog:
 
   ```yaml
   components:
