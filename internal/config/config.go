@@ -187,9 +187,10 @@ type Config struct {
 // Component is one entry of the "components" key: a name mapped to a path
 // and optional overrides of the top-level initial-version,
 // bump-minor-pre-major, hidden-types, files, major-tag and
-// changelog-source, plus its own changelog path. A nil field was left out of release-me.yaml and falls
-// back to the top-level value, the same left-out-versus-zero-value
-// distinction Load applies to the top level itself.
+// changelog-source, plus its own changelog path. A nil field was left out
+// of release-me.yaml and falls back to the top-level value, the same
+// left-out-versus-zero-value distinction Load applies to the top level
+// itself.
 type Component struct {
 	Name              string
 	Path              string
@@ -206,8 +207,8 @@ type Component struct {
 
 // ResolvedComponent is one component ready for a command to release: its
 // name and path, the tag prefix and release branch derived from them, the
-// changelog path configured or derived from the path, and its settings with the top-level ones applied where it
-// carries no override of its own.
+// changelog path configured or derived from the path, and its settings
+// with the top-level ones applied where it carries no override of its own.
 type ResolvedComponent struct {
 	Name          string
 	Path          string
