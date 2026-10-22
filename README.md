@@ -275,6 +275,52 @@ commits' alike.
 
 `next` and `changelog --verbose` log the resolved mode as `source`.
 
+## Versioning modes
+
+The top-level `versioning` key chooses how a repository's configured components' versions
+relate to each other: `independent` (default), `locked` or `linked`.
+
+`independent` versions every component on its own: its own tag line, its own bump, its own
+release pull request, the shape every example above already is.
+
+`locked` bumps every component to the same new version and releases all of them together,
+changed or not: one release pull request, branch `release-me/main`, with one changelog section
+per component, each updating its own `CHANGELOG.md`. Its title names the version and every
+component it covers, `chore: release vX.Y.Z (a, b, c)`. On merge, every component is tagged
+`<name>/vX.Y.Z` with the same version and released the same way an independent component is.
+`locked` always releases the whole family, so `--component` naming one of them is a usage
+error for `next`, `changelog`, `pr`, `release` and `run` alike.
+
+`linked` shares one version line across every component, but releases only a component with
+entries since its own last tag, at the family's next version: one release pull request per
+changed component, as `independent` already opens, the shared version applied to each. An
+unchanged component keeps its version and gets no release.
+
+In both `locked` and `linked`, the next version is `bump(highest version in the family, highest
+bump type among the changed components)`: the highest version any component in the family
+carries, bumped by the highest bump type among the components with something to release. Every
+changed component in a run gets that version, even one already behind the family's highest.
+Pre-release counters are shared across the family in both modes: `N` counts up from the highest
+`N` any component's own pre-release tag of that type and base version already carries.
+
+`next` prints the family version and which components move; `changelog` prints only the changed
+ones, nothing for a component with nothing to release, even in `locked`, where it still gets
+tagged and released.
+
+The example below is `linked` with a family on `0.8.0` and a fix landing in one or two
+components per release:
+
+| Step  | Change         | a     | b     | c     |
+| ----- | -------------- | ----- | ----- | ----- |
+| start |                | 0.8.0 | 0.8.0 | 0.8.0 |
+| 1     | fix in a       | 0.8.1 | 0.8.0 | 0.8.0 |
+| 2     | fix in c       | 0.8.1 | 0.8.0 | 0.8.2 |
+| 3     | fix in a       | 0.8.3 | 0.8.0 | 0.8.2 |
+| 4     | fix in b and c | 0.8.3 | 0.8.4 | 0.8.4 |
+
+`locked` for the same family releases every component at every step: a fix anywhere still
+bumps and releases a, b and c together, even the ones without an entry of their own.
+
 ## Configuration
 
 `release-me.yaml` at the repository root. A repository without `components` is one component.
@@ -363,6 +409,9 @@ files:
 
 - `major-tag`: moves the major tag on every stable release, default `false`. See `release`
   above. A component overrides it through its own `major-tag` key.
+- `versioning`: `independent` (default), `locked` or `linked`. See
+  [Versioning modes](#versioning-modes). There is no per-component override: it applies to the
+  whole family.
 - `components`: maps a name to a `path` and optional overrides of `initial-version`,
   `bump-minor-pre-major`, `hidden-types`, `files`, `major-tag` and `changelog-source`. A key
   left out of a component falls back to the top-level setting above. A repository without
