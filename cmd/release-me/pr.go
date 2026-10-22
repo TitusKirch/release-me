@@ -171,7 +171,14 @@ func doPRComponent(
 	section := fmt.Sprintf("## v%s (%s)\n\n%s\n", versionStr, date.Format("2006-01-02"), entriesBody)
 
 	title := releasepr.Title(comp.Name, versionStr)
-	body := releasepr.Body(versionStr, notes, section)
+	tag := comp.TagPrefix + versionStr
+	guideLabels := releasepr.GuideLabels{
+		Tagged: cfg.Labels.Tagged,
+		Alpha:  cfg.Labels.Alpha,
+		Beta:   cfg.Labels.Beta,
+		Rc:     cfg.Labels.Rc,
+	}
+	body := releasepr.Body(versionStr, tag, guideLabels, notes, section)
 
 	switch {
 	case existing != nil && !plan.changed && body == existing.Body:

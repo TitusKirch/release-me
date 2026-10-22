@@ -133,10 +133,13 @@ Updating an existing pull request never replaces its labels: a label added by ha
 the `pending` label is added back if it is ever missing, never set by replacing the full list.
 
 The pull request title is `chore(<name>): release vX.Y.Z`, `chore(main): release vX.Y.Z` for
-the implicit `main` component. Its body starts with `Release vX.Y.Z`, then the notes block
-(below) when one is present, then the full changelog for the version inside a collapsed
-`<details>` section. When every entry is a hidden type, the changelog carries one explicit
-line, `- Version bump without user facing changes.`, instead of an empty heading.
+the implicit `main` component. Its body starts with `Release vX.Y.Z`, then a collapsed
+`<details><summary>How this release works</summary>` guide naming the tag merging creates and
+the configured labels for pre-releases and tagging, then the notes block (below) when one is
+present, then the full changelog for the version inside a collapsed `<details>` section. When
+every entry is a hidden type, the changelog carries one explicit line,
+`- Version bump without user facing changes.`, instead of an empty heading. The guide never
+reaches the changelog file or the GitHub release.
 
 ### Pre-releases
 

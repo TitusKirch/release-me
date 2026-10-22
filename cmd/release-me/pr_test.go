@@ -315,6 +315,23 @@ func addNotesBlock(body, notes string) (string, bool) {
 	return firstLine + "\n\n```release-me-notes\n" + notes + "\n```\n" + rest, true
 }
 
+// stripGuideBlock removes the "How this release works" guide from a
+// rendered body, leaving the version line directly followed by the
+// changelog block: the shape a release pull request opened before this
+// guide existed still carries.
+func stripGuideBlock(t *testing.T, body string) string {
+	t.Helper()
+	firstLine, _, found := strings.Cut(body, "\n")
+	if !found {
+		t.Fatalf("body has no first line: %q", body)
+	}
+	idx := strings.Index(body, "<details>\n<summary>Changelog</summary>")
+	if idx < 0 {
+		t.Fatalf("body has no changelog details block: %q", body)
+	}
+	return firstLine + "\n\n" + body[idx:]
+}
+
 func TestDoPRChangesNothingWhenAlreadyUpToDate(t *testing.T) {
 	dir, _ := newPRRepo(t)
 	commitEntry(t, dir, "feat: add the next command")
@@ -342,6 +359,85 @@ func TestDoPRChangesNothingWhenAlreadyUpToDate(t *testing.T) {
 	}
 	if !strings.Contains(second.String(), "release pull request up to date") {
 		t.Fatalf("stdout = %q", second.String())
+	}
+}
+
+// TestDoPRRendersTheGuideWithTheRealTagAndConfiguredLabelNames confirms the
+// "How this release works" guide names the tag this pull request's merge
+// would actually create, and the configured label names, never the
+// defaults, when release-me.yaml overrides them.
+func TestDoPRRendersTheGuideWithTheRealTagAndConfiguredLabelNames(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	commitEntry(t, dir, "feat: add the next command")
+
+	cfg := config.Default()
+	cfg.Labels.Tagged = "status: released"
+	cfg.Labels.Alpha = "pre: alpha"
+	cfg.Labels.Beta = "pre: beta"
+	cfg.Labels.Rc = "pre: rc"
+
+	f := &forgetest.Fake{
+		RepoLabels:        []string{"release: pending", "status: released", "pre: alpha", "pre: beta", "pre: rc"},
+		DefaultBranchName: "main",
+	}
+	var stdout bytes.Buffer
+
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	body := f.CreatedPullRequests[0].Body
+	for _, want := range []string{"tags `v0.1.0`", "`status: released`", "`pre: alpha`", "`pre: beta`", "`pre: rc`"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body = %q, want it to contain %q", body, want)
+		}
+	}
+}
+
+// TestDoPRAddsTheGuideToAnExistingPullRequestWithoutAPush covers a release
+// pull request opened before the "How this release works" guide existed:
+// its body lacks the guide, but the changelog entries and the bumped
+// files already match the release branch's tip. The body must gain the
+// guide on this run, through an update alone, with nothing pushed.
+func TestDoPRAddsTheGuideToAnExistingPullRequestWithoutAPush(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	commitEntry(t, dir, "feat: add the next command")
+
+	f := newFake()
+	var first bytes.Buffer
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &first); err != nil {
+		t.Fatalf("doPR() first run error = %v", err)
+	}
+	created := f.CreatedPullRequests[0]
+
+	legacyBody := stripGuideBlock(t, created.Body)
+	if strings.Contains(legacyBody, "How this release works") {
+		t.Fatalf("legacy body still carries the guide: %q", legacyBody)
+	}
+
+	headSHA := bareBranchSHA(t, origin)
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+			{Number: 1, Title: created.Title, Body: legacyBody, HeadSHA: headSHA},
+		}},
+	}
+
+	var second bytes.Buffer
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &second); err != nil {
+		t.Fatalf("doPR() second run error = %v", err)
+	}
+
+	if len(f.UpdatedPullRequests) != 1 {
+		t.Fatalf("UpdatedPullRequests = %+v, want one", f.UpdatedPullRequests)
+	}
+	if !strings.Contains(f.UpdatedPullRequests[0].Body, "How this release works") {
+		t.Fatalf("updated body = %q, want the guide added", f.UpdatedPullRequests[0].Body)
+	}
+	if !strings.Contains(second.String(), "updated chore(main): release v0.1.0") {
+		t.Fatalf("stdout = %q", second.String())
+	}
+	if got := bareBranchSHA(t, origin); got != headSHA {
+		t.Fatalf("release branch tip changed from %q to %q, want no push", headSHA, got)
 	}
 }
 
