@@ -132,15 +132,20 @@ your working copy.
 anything, the same check `check` runs. The labels are shared across every component; the
 default branch is resolved once and shared too.
 
-Rerunning `pr` is judged on content, not on the rendered pull request body: the changelog
-entries for the version, without the heading's date, and every configured file's bumped
-content are compared against the release branch's current tip. Equal content changes nothing,
-not even the pull request body, and nothing is pushed. A change pushes the branch and sets the
-heading to today's date; the push carries a `--force-with-lease` whose expected value is the
-existing pull request's head SHA from the forge, not a locally fetched ref, so nothing can
-quietly defeat it. A fresh branch, with no existing pull request to lease against, pushes
-without force. Editing only the notes block of an open pull request updates its body, with no
-push: the content that would land on the branch did not change.
+Rerunning `pr` is judged on content, not on the rendered pull request body: the version in the
+changelog heading, the changelog entries for that version without the heading's date, and every
+configured file's bumped content are compared against the release branch's current tip. A version
+that differs from the one already on the branch, a pre-release label added, changed or removed,
+counts as changed even when the entries underneath read the same. A heading the comparison cannot
+read, a hand edit or one from before this tool wrote it, counts as changed too, and pushes; the
+push rewrites it to this tool's own shape, so it settles after that one push. Equal content
+changes nothing, not even the pull request body, and nothing is pushed. A change pushes the
+branch and sets the heading to today's date; the push carries a `--force-with-lease` whose
+expected value is the existing pull request's head SHA from the forge, not a locally fetched
+ref, so nothing can quietly defeat it. A fresh branch, with no existing pull request to lease
+against, pushes without force.
+Editing only the notes block of an open pull request updates its body, with no push: the content
+that would land on the branch did not change.
 
 Updating an existing pull request never replaces its labels: a label added by hand stays, and
 the `pending` label is added back if it is ever missing, never set by replacing the full list.
