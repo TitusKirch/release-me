@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ostendorf-cloud/release-me/internal/changelog"
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/forge/forgetest"
@@ -333,7 +334,7 @@ func stripGuideBlock(t *testing.T, body string) string {
 }
 
 func TestDoPRChangesNothingWhenAlreadyUpToDate(t *testing.T) {
-	dir, _ := newPRRepo(t)
+	dir, origin := newPRRepo(t)
 	commitEntry(t, dir, "feat: add the next command")
 
 	f := newFake()
@@ -342,10 +343,11 @@ func TestDoPRChangesNothingWhenAlreadyUpToDate(t *testing.T) {
 		t.Fatalf("doPR() first run error = %v", err)
 	}
 	created := f.CreatedPullRequests[0]
+	firstSHA := bareBranchSHA(t, origin)
 
 	f.ListResponses = []forgetest.ListResponse{
 		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
-			{Number: 1, Title: created.Title, Body: created.Body},
+			{Number: 1, Title: created.Title, Body: created.Body, HeadSHA: firstSHA},
 		}},
 	}
 
@@ -359,6 +361,9 @@ func TestDoPRChangesNothingWhenAlreadyUpToDate(t *testing.T) {
 	}
 	if !strings.Contains(second.String(), "release pull request up to date") {
 		t.Fatalf("stdout = %q", second.String())
+	}
+	if got := bareBranchSHA(t, origin); got != firstSHA {
+		t.Fatalf("release branch SHA = %s, want it unchanged at %s", got, firstSHA)
 	}
 }
 
@@ -783,8 +788,12 @@ func TestDoPRFollowsThePreReleaseLabelThroughATypeChangeBackToStableAndToRC(t *t
 	runAndCheck("first rc", "chore(main): release v0.1.0-rc.1")
 
 	// Simulate release having tagged the first rc: the next one for the
-	// same base version and type counts up from it.
+	// same base version and type counts up from it. The label itself did
+	// not change, but the branch moved under the first rc, so the head
+	// SHA the forge reports has to be refreshed the same way a real list
+	// call would before the next run leases against it.
 	runGit(t, dir, "tag", "v0.1.0-rc.1")
+	setLabel("release: rc")
 	runAndCheck("second rc", "chore(main): release v0.1.0-rc.2")
 }
 
@@ -813,6 +822,214 @@ func TestDoPRRejectsTwoPreReleaseLabelsAtOnce(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "release: beta") || !strings.Contains(err.Error(), "release: rc") {
 		t.Fatalf("error = %v, want it to name both labels", err)
+	}
+}
+
+// TestDoPRPushesTheReleaseBranchOnEveryPreReleaseLabelTransition
+// reproduces issue #28: removing or changing a pre-release label must push
+// the release branch, so its changelog heading carries the version the
+// label asks for, not only rewrite the pull request title. It uses
+// config.Default() with no "files" configured, the shape that let the bug
+// through undetected: with no bumped file whose updater embeds the
+// version, nothing but the changelog heading differs when only the
+// version changes.
+func TestDoPRPushesTheReleaseBranchOnEveryPreReleaseLabelTransition(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	commitEntry(t, dir, "feat: add the next command")
+
+	cfg := config.Default()
+	f := newFake()
+	var out bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	created := f.CreatedPullRequests[0]
+	lastSHA := bareBranchSHA(t, origin)
+	if got, ok := changelog.HeadingVersion(showBareBranchFile(t, origin, "CHANGELOG.md")); !ok || got != "0.1.0" {
+		t.Fatalf("created branch heading version = (%q, %v), want (%q, true)", got, ok, "0.1.0")
+	}
+
+	title, body := created.Title, created.Body
+	steps := []struct {
+		name  string
+		label string
+		want  string
+	}{
+		{name: "add alpha", label: "release: alpha", want: "0.1.0-alpha.1"},
+		{name: "switch to beta", label: "release: beta", want: "0.1.0-beta.1"},
+		{name: "switch to rc", label: "release: rc", want: "0.1.0-rc.1"},
+		{name: "remove the label", label: "", want: "0.1.0"},
+		{name: "add rc again", label: "release: rc", want: "0.1.0-rc.1"},
+	}
+
+	for _, step := range steps {
+		labels := []string{"release: pending"}
+		if step.label != "" {
+			labels = append(labels, step.label)
+		}
+		f.ListResponses = []forgetest.ListResponse{
+			{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+				{Number: 1, Title: title, Body: body, Labels: labels, HeadSHA: lastSHA},
+			}},
+		}
+
+		var buf bytes.Buffer
+		if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &buf); err != nil {
+			t.Fatalf("%s: doPR() error = %v", step.name, err)
+		}
+
+		newSHA := bareBranchSHA(t, origin)
+		if newSHA == lastSHA {
+			t.Fatalf("%s: release branch SHA did not move, want a push for version %s", step.name, step.want)
+		}
+		lastSHA = newSHA
+
+		changelogFile := showBareBranchFile(t, origin, "CHANGELOG.md")
+		if got, ok := changelog.HeadingVersion(changelogFile); !ok || got != step.want {
+			t.Fatalf("%s: changelog heading version = (%q, %v), want (%q, true)", step.name, got, ok, step.want)
+		}
+
+		if len(f.UpdatedPullRequests) == 0 {
+			t.Fatalf("%s: no update recorded", step.name)
+		}
+		body = f.UpdatedPullRequests[len(f.UpdatedPullRequests)-1].Body
+	}
+}
+
+// bareBranchPushCount counts the reflog entries mainBranch carries in a
+// bare repository, the number of times something actually moved its ref
+// there, core.logAllRefUpdates enabled. Counting these, instead of
+// comparing the branch's current SHA to an earlier one, still catches a
+// push whose commit ends up byte identical to the one already there,
+// which would otherwise leave the SHA looking unchanged.
+func bareBranchPushCount(t *testing.T, bareDir string) int {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", "--git-dir", bareDir, "reflog", "show", "--format=%H", "refs/heads/"+mainBranch)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git reflog show refs/heads/%s: %v", mainBranch, err)
+	}
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" {
+		return 0
+	}
+	return len(strings.Split(trimmed, "\n"))
+}
+
+// TestDoPRPushesOnlyOnceForAnInitialVersionWithBuildMetadata reproduces the
+// build metadata finding: initial-version is unvalidated and stays in
+// effect verbatim until the first tag exists, so a value such as
+// "1.2.3+build.5" reaches the changelog heading. Before the fix,
+// HeadingVersion could not parse that shape, so sameAsReleaseBranch always
+// reported the branch as changed and a rerun with nothing new pushed the
+// branch again, producing the exact same tree every time. That rerun's
+// commit is then byte identical to the one already on the branch except
+// for its timestamp, which a fast rerun can share down to the second,
+// leaving the branch SHA, and even the bare origin's reflog, exactly as
+// unchanged as a rerun that never pushed at all: a before/after SHA or
+// reflog comparison could miss the very push it is meant to catch. The
+// test pins GIT_AUTHOR_DATE and GIT_COMMITTER_DATE a second apart across
+// the two runs to rule that coincidence out, so counting pushes through
+// the reflog reliably tells the fixed rerun, which never calls git push,
+// apart from the buggy one, which does.
+func TestDoPRPushesOnlyOnceForAnInitialVersionWithBuildMetadata(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	runGit(t, origin, "config", "core.logAllRefUpdates", "true")
+	commitEntry(t, dir, "feat: add the next command")
+
+	cfg := config.Default()
+	cfg.InitialVersion = "1.2.3+build.5"
+	f := newFake()
+
+	t.Setenv("GIT_AUTHOR_DATE", "2026-01-01T00:00:00+00:00")
+	t.Setenv("GIT_COMMITTER_DATE", "2026-01-01T00:00:00+00:00")
+
+	var out bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	created := f.CreatedPullRequests[0]
+	if got, ok := changelog.HeadingVersion(showBareBranchFile(t, origin, "CHANGELOG.md")); !ok || got != "1.2.3+build.5" {
+		t.Fatalf("created branch heading version = (%q, %v), want (%q, true)", got, ok, "1.2.3+build.5")
+	}
+	pushesAfterCreate := bareBranchPushCount(t, origin)
+
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+			{Number: 1, Title: created.Title, Body: created.Body, HeadSHA: bareBranchSHA(t, origin)},
+		}},
+	}
+
+	t.Setenv("GIT_AUTHOR_DATE", "2026-01-01T00:00:01+00:00")
+	t.Setenv("GIT_COMMITTER_DATE", "2026-01-01T00:00:01+00:00")
+
+	var rerun bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &rerun); err != nil {
+		t.Fatalf("doPR() rerun error = %v", err)
+	}
+
+	if got := bareBranchPushCount(t, origin); got != pushesAfterCreate {
+		t.Fatalf("release branch pushes = %d, want %d (no push for a build metadata version that already settled)", got, pushesAfterCreate)
+	}
+	if !strings.Contains(rerun.String(), "release pull request up to date") {
+		t.Fatalf("stdout = %q, want it to report up to date", rerun.String())
+	}
+}
+
+// TestDoPRPushesNothingWhenRerunWithThePreReleaseLabelStillOn guards the
+// fix above against the opposite mistake: comparing the heading's version
+// must not turn every rerun into a push merely because the version
+// carries a pre-release suffix. With the label unchanged, the entries
+// unchanged and the branch already at that pre-release version, a rerun
+// must change nothing, the same way a rerun of a stable version does.
+func TestDoPRPushesNothingWhenRerunWithThePreReleaseLabelStillOn(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	commitEntry(t, dir, "feat: add the next command")
+
+	cfg := config.Default()
+	f := newFake()
+	var out bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	created := f.CreatedPullRequests[0]
+
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+			{Number: 1, Title: created.Title, Body: created.Body, Labels: []string{"release: pending", "release: rc"}, HeadSHA: bareBranchSHA(t, origin)},
+		}},
+	}
+
+	var addRC bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &addRC); err != nil {
+		t.Fatalf("doPR() add rc error = %v", err)
+	}
+	afterRC := f.UpdatedPullRequests[len(f.UpdatedPullRequests)-1]
+	rcSHA := bareBranchSHA(t, origin)
+	if got, ok := changelog.HeadingVersion(showBareBranchFile(t, origin, "CHANGELOG.md")); !ok || got != "0.1.0-rc.1" {
+		t.Fatalf("branch heading version = (%q, %v), want (%q, true)", got, ok, "0.1.0-rc.1")
+	}
+
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+			{Number: 1, Title: afterRC.Title, Body: afterRC.Body, Labels: []string{"release: pending", "release: rc"}, HeadSHA: rcSHA},
+		}},
+	}
+
+	updatesBeforeRerun := len(f.UpdatedPullRequests)
+	var rerun bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &rerun); err != nil {
+		t.Fatalf("doPR() rerun error = %v", err)
+	}
+
+	if got := bareBranchSHA(t, origin); got != rcSHA {
+		t.Fatalf("release branch SHA = %s, want it unchanged at %s", got, rcSHA)
+	}
+	if len(f.UpdatedPullRequests) != updatesBeforeRerun {
+		t.Fatalf("UpdatedPullRequests = %+v, want no further update", f.UpdatedPullRequests)
+	}
+	if !strings.Contains(rerun.String(), "release pull request up to date") {
+		t.Fatalf("stdout = %q, want it to report up to date", rerun.String())
 	}
 }
 

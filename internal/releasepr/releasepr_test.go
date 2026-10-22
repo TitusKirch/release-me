@@ -251,6 +251,14 @@ func TestExtractDate(t *testing.T) {
 			wantOK: true,
 			want:   "2026-03-14",
 		},
+		{
+			name: "reads the heading date of a pre-release version",
+			body: releasepr.Body(
+				"1.2.3-rc.1", "v1.2.3-rc.1", testLabels, "", "## v1.2.3-rc.1 (2026-03-14)\n\n### Features\n\n- add the thing\n",
+			),
+			wantOK: true,
+			want:   "2026-03-14",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

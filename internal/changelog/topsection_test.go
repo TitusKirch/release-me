@@ -66,3 +66,72 @@ func TestTopSectionMatchesSectionsForARoundTrippedEntry(t *testing.T) {
 		t.Fatalf("TopSection() = (%q, %v), want (%q, true)", got, ok, body)
 	}
 }
+
+func TestHeadingVersion(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		content string
+		wantOK  bool
+		want    string
+	}{
+		{name: "no heading at all", content: "# Changelog\n", wantOK: false},
+		{name: "empty file", content: "", wantOK: false},
+		{
+			name:    "a stable version",
+			content: "# Changelog\n\n## v0.1.0 (2026-01-02)\n\n### Features\n\n- add the thing\n",
+			wantOK:  true,
+			want:    "0.1.0",
+		},
+		{
+			name:    "a pre-release version",
+			content: "# Changelog\n\n## v0.1.0-rc.2 (2026-01-02)\n\n### Features\n\n- add the thing\n",
+			wantOK:  true,
+			want:    "0.1.0-rc.2",
+		},
+		{
+			name:    "a version with build metadata",
+			content: "# Changelog\n\n## v1.2.3+build.5 (2026-01-02)\n\n### Features\n\n- add the thing\n",
+			wantOK:  true,
+			want:    "1.2.3+build.5",
+		},
+		{
+			name:    "a pre-release version with build metadata",
+			content: "# Changelog\n\n## v1.2.3-rc.1+build.5 (2026-01-02)\n\n### Features\n\n- add the thing\n",
+			wantOK:  true,
+			want:    "1.2.3-rc.1+build.5",
+		},
+		{
+			name: "reads the first heading, not a later one",
+			content: "# Changelog\n\n## v0.2.0 (2026-02-03)\n\n### Bug Fixes\n\n- stop the panic\n\n" +
+				"## v0.1.0 (2026-01-02)\n\n### Features\n\n- add the thing\n",
+			wantOK: true,
+			want:   "0.2.0",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := changelog.HeadingVersion(tc.content)
+			if ok != tc.wantOK {
+				t.Fatalf("HeadingVersion() ok = %v, want %v", ok, tc.wantOK)
+			}
+			if got != tc.want {
+				t.Fatalf("HeadingVersion() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHeadingVersionMatchesTheVersionRenderPrepended(t *testing.T) {
+	t.Parallel()
+	entries := []changelog.Entry{{Type: "feat", Description: "add the next command"}}
+
+	rendered := changelog.Render("0.1.0-alpha.1", fixtureDate, entries, nil)
+	changelogFile := changelog.Prepend("", rendered)
+
+	got, ok := changelog.HeadingVersion(changelogFile)
+	if !ok || got != "0.1.0-alpha.1" {
+		t.Fatalf("HeadingVersion() = (%q, %v), want (%q, true)", got, ok, "0.1.0-alpha.1")
+	}
+}

@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/ostendorf-cloud/release-me/internal/changelog"
 )
 
 // Title renders the release pull request title for one component's
@@ -105,8 +107,10 @@ func ExtractChangelog(body string) string {
 }
 
 // headingDate matches the date in a changelog section's heading line,
-// "## vX.Y.Z (YYYY-MM-DD)".
-var headingDate = regexp.MustCompile(`^## v\d+\.\d+\.\d+ \((\d{4}-\d{2}-\d{2})\)`)
+// "## vX.Y.Z (YYYY-MM-DD)", skipping over the version with the same
+// shape changelog.HeadingVersion reads it in, pre-release and build
+// metadata suffixes included.
+var headingDate = regexp.MustCompile(`^## v` + changelog.HeadingVersionPattern + ` \((\d{4}-\d{2}-\d{2})\)`)
 
 // ExtractDate returns the date rendered in the changelog heading inside the
 // <details> block of a release pull request body. ok is false when body
