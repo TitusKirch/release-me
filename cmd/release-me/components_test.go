@@ -360,6 +360,30 @@ func TestDoReleaseTagsEachComponentWithItsOwnPrefixAndReleaseName(t *testing.T) 
 	}
 }
 
+// TestRunNextReadsTheLastTagThroughAConfiguredTagPrefix exercises
+// tag-prefix through run(): a component whose releases were tagged
+// "duxt@vX.Y.Z" by another tool continues from its last such tag instead of
+// starting over at the initial version.
+func TestRunNextReadsTheLastTagThroughAConfiguredTagPrefix(t *testing.T) {
+	dir := newRepo(t)
+	writeConfig(t, dir, "components:\n  duxt:\n    path: packages/duxt\n    tag-prefix: duxt@v\n")
+	writeFiles(t, dir, "chore: scaffold the layer", map[string]string{"packages/duxt/README.md": "duxt\n"})
+	runGit(t, dir, "tag", "duxt@v0.8.1")
+	writeFiles(t, dir, "fix: hide sections an edition does not have", map[string]string{
+		"packages/duxt/sections.ts": "export {}\n",
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"next"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+	}
+	if want := "0.8.2 (fix)\n"; stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+}
+
 // TestDoPRWritesAComponentsConfiguredChangelog exercises the changelog key
 // through doPR: a component whose changelog lives outside its own path, at
 // the repository root, gets its section prepended there and nowhere else.

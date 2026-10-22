@@ -254,20 +254,18 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			name:    "rejects a root component alongside another",
 			content: "components:\n  main:\n    path: .\n  frontend:\n    path: frontend\n",
 		},
-		{name: "rejects an empty changelog path", content: "components:\n  web:\n    path: web\n    changelog: \"\"\n"},
-		{name: "rejects an absolute changelog path", content: "components:\n  web:\n    path: web\n    changelog: /tmp/CHANGELOG.md\n"},
+		{name: "rejects an empty tag prefix", content: "components:\n  web:\n    path: web\n    tag-prefix: \"\"\n"},
+		{name: "rejects a tag prefix with a glob character", content: "components:\n  web:\n    path: web\n    tag-prefix: web*v\n"},
+		{name: "rejects a tag prefix with whitespace", content: "components:\n  web:\n    path: web\n    tag-prefix: \"web v\"\n"},
+		{name: "rejects a tag prefix with a double dot", content: "components:\n  web:\n    path: web\n    tag-prefix: web..v\n"},
+		{name: "rejects a tag prefix starting with a dash", content: "components:\n  web:\n    path: web\n    tag-prefix: -web@v\n"},
 		{
-			name:    "rejects a changelog path outside the repository",
-			content: "components:\n  web:\n    path: web\n    changelog: web/../../CHANGELOG.md\n",
-		},
-		{name: "rejects the repository root as a changelog path", content: "components:\n  web:\n    path: web\n    changelog: ./\n"},
-		{
-			name:    "rejects two components configured with the same changelog",
-			content: "components:\n  web:\n    path: web\n    changelog: CHANGELOG.md\n  api:\n    path: api\n    changelog: ./CHANGELOG.md\n",
+			name:    "rejects two components configured with the same tag prefix",
+			content: "components:\n  web:\n    path: web\n    tag-prefix: app@v\n  api:\n    path: api\n    tag-prefix: app@v\n",
 		},
 		{
-			name:    "rejects a changelog equal to another component's derived one",
-			content: "components:\n  web:\n    path: web\n    changelog: api/CHANGELOG.md\n  api:\n    path: api\n",
+			name:    "rejects a tag prefix equal to another component's derived one",
+			content: "components:\n  web:\n    path: web\n    tag-prefix: api/v\n  api:\n    path: api\n",
 		},
 	}
 	for _, tc := range cases {
@@ -511,6 +509,37 @@ components:
 		if c.Branch != want[i] {
 			t.Fatalf("component %s Branch = %q, want %q", c.Name, c.Branch, want[i])
 		}
+	}
+}
+
+func TestResolveUsesAConfiguredTagPrefixAndDerivesTheRest(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, `components:
+  duxt:
+    path: packages/duxt
+    tag-prefix: duxt@v
+  duxt-typesense:
+    path: packages/duxt-typesense
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got := cfg.Resolve()
+	if got[0].TagPrefix != "duxt@v" || got[1].TagPrefix != "duxt-typesense/v" {
+		t.Fatalf("TagPrefix = [%q, %q], want [%q, %q]", got[0].TagPrefix, got[1].TagPrefix, "duxt@v", "duxt-typesense/v")
+	}
+}
+
+func TestLoadAcceptsATagPrefixThatStartsWithAnother(t *testing.T) {
+	t.Parallel()
+	// "web/v" and "web/v2/v" share a start, but a "web/v2/v1.0.0" tag never
+	// parses as a version of web, so the two cannot read each other's tags.
+	path := writeFile(t, "components:\n  web:\n    path: web\n  web/v2:\n    path: web-v2\n")
+
+	if _, err := config.Load(path); err != nil {
+		t.Fatalf("Load() error = %v, want nil", err)
 	}
 }
 
