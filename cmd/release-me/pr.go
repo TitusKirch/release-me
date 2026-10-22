@@ -205,7 +205,7 @@ func doPRComponent(
 			return nil
 		}
 
-		if err := plan.write(ctx, existing, comp.Branch, comp.ChangelogPath, section, title); err != nil {
+		if err := plan.write(ctx, cfg, existing, comp.Branch, comp.ChangelogPath, section, title); err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
 
@@ -363,8 +363,9 @@ func sameAsReleaseBranch(ctx context.Context, tmp, entriesBody string, desiredFi
 // with no existing pull request to lease against, is pushed without
 // force; otherwise the lease is the existing pull request's head SHA from
 // the forge, not a locally fetched ref, so a concurrent fetch can never
-// defeat it.
-func (p *releasePlan) write(ctx context.Context, existing *forge.PullRequest, branch, changelogPath, section, commitMessage string) error {
+// defeat it. The commit carries cfg's configured author and committer,
+// never written into any git config, only passed to that one subprocess.
+func (p *releasePlan) write(ctx context.Context, cfg config.Config, existing *forge.PullRequest, branch, changelogPath, section, commitMessage string) error {
 	if err := gitRun(ctx, p.tmp, "checkout", "--quiet", "-B", branch); err != nil {
 		return fmt.Errorf("release-me: checkout %s: %w", branch, err)
 	}
@@ -382,7 +383,7 @@ func (p *releasePlan) write(ctx context.Context, existing *forge.PullRequest, br
 	if err := gitRun(ctx, p.tmp, "add", "-A"); err != nil {
 		return fmt.Errorf("release-me: stage release branch: %w", err)
 	}
-	if err := gitRun(ctx, p.tmp, "commit", "--quiet", "-m", commitMessage); err != nil {
+	if _, err := gitOutputEnv(ctx, p.tmp, commitEnv(cfg), "commit", "--quiet", "-m", commitMessage); err != nil {
 		return fmt.Errorf("release-me: commit release branch: %w", err)
 	}
 
@@ -420,8 +421,16 @@ func gitRun(ctx context.Context, dir string, args ...string) error {
 // stderr on failure. Use gitShowFile, not this, to read file content: a
 // trimmed read would silently drop a real trailing newline.
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
+	return gitOutputEnv(ctx, dir, nil, args...)
+}
+
+// gitOutputEnv runs git in dir with env as the subprocess environment,
+// nil meaning the process's own, and returns its trimmed stdout, surfacing
+// stderr on failure.
+func gitOutputEnv(ctx context.Context, dir string, env []string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.Env = env
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -429,6 +438,44 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+// commitEnv returns the environment for the commit subprocess: the
+// process environment, extended with GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL,
+// GIT_COMMITTER_NAME and GIT_COMMITTER_EMAIL from cfg.Author wherever the
+// process environment does not already carry one of them. The identity
+// never reaches git config, only this one subprocess's environment.
+func commitEnv(cfg config.Config) []string {
+	env := os.Environ()
+	for key, value := range map[string]string{
+		"GIT_AUTHOR_NAME":     cfg.Author.Name,
+		"GIT_AUTHOR_EMAIL":    cfg.Author.Email,
+		"GIT_COMMITTER_NAME":  cfg.Author.Name,
+		"GIT_COMMITTER_EMAIL": cfg.Author.Email,
+	} {
+		if _, ok := os.LookupEnv(key); !ok {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
+}
+
+// resolvedAuthorName and resolvedAuthorEmail report the git author name
+// and email the commit call would use: GIT_AUTHOR_NAME and
+// GIT_AUTHOR_EMAIL from the process environment when set, cfg.Author
+// otherwise, the same precedence commitEnv applies.
+func resolvedAuthorName(cfg config.Config) string {
+	if v, ok := os.LookupEnv("GIT_AUTHOR_NAME"); ok {
+		return v
+	}
+	return cfg.Author.Name
+}
+
+func resolvedAuthorEmail(cfg config.Config) string {
+	if v, ok := os.LookupEnv("GIT_AUTHOR_EMAIL"); ok {
+		return v
+	}
+	return cfg.Author.Email
 }
 
 // gitShowFile returns the exact, untrimmed content of path at ref in dir.

@@ -50,6 +50,15 @@ func TestDefaultSetsTheChangelogPathAndLabels(t *testing.T) {
 	}
 }
 
+func TestDefaultSetsTheAuthor(t *testing.T) {
+	t.Parallel()
+	got := config.Default().Author
+	want := config.Author{Name: "release-me", Email: "release-me[bot]@users.noreply.github.com"}
+	if got != want {
+		t.Fatalf("Author = %+v, want %+v", got, want)
+	}
+}
+
 func TestLoadReadsConfiguredKeys(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -70,6 +79,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
+				Author: config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
 			},
 		},
 		{
@@ -86,6 +96,9 @@ labels:
   alpha: needs-alpha
   beta: needs-beta
   rc: needs-rc
+author:
+  name: renovate
+  email: renovate@example.com
 major-tag: true
 files:
   - path: cmd/cli/version.go
@@ -106,6 +119,7 @@ files:
 					Pending: "needs-release", Tagged: "released",
 					Alpha: "needs-alpha", Beta: "needs-beta", Rc: "needs-rc",
 				},
+				Author:   config.Author{Name: "renovate", Email: "renovate@example.com"},
 				MajorTag: true,
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
@@ -127,6 +141,7 @@ files:
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
+				Author: config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
 			},
 		},
 		{
@@ -142,6 +157,23 @@ files:
 					Pending: "needs-release", Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
+				Author: config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+			},
+		},
+		{
+			name:    "defaults the author email left out of the author block",
+			content: "author:\n  name: renovate\n",
+			want: config.Config{
+				InitialVersion: config.DefaultInitialVersion,
+				HiddenTypes:    config.DefaultHiddenTypes,
+				FallbackType:   config.DefaultFallbackType,
+				TokenEnv:       config.DefaultTokenEnv,
+				ChangelogPath:  config.DefaultChangelogPath,
+				Labels: config.Labels{
+					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
+					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
+				},
+				Author: config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
 			},
 		},
 	}

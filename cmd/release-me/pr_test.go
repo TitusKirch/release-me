@@ -45,6 +45,38 @@ func newPRRepo(t *testing.T) (dir, origin string) {
 	return dir, origin
 }
 
+// newPRRepoWithoutIdentity is newPRRepo without a configured git identity
+// anywhere, local or global: the commit call under test must supply its
+// own, never rely on one already configured.
+func newPRRepoWithoutIdentity(t *testing.T) (dir, origin string) {
+	t.Helper()
+	origin = t.TempDir()
+	runGit(t, origin, "init", "-q", "--bare", "-b", "main")
+
+	dir = t.TempDir()
+	runGit(t, dir, "init", "-q", "-b", "main")
+	runGit(t, dir, "remote", "add", "origin", "git@github.com:owner/repo.git")
+	runGit(t, dir, "config", "url."+origin+".pushInsteadOf", "git@github.com:owner/repo.git")
+	return dir, origin
+}
+
+// commitWithIdentity creates an empty commit with subject in dir, with an
+// explicit author and committer passed through the subprocess environment
+// rather than configuration, so a repository a test deliberately leaves
+// without an identity of its own can still grow a commit history.
+func commitWithIdentity(t *testing.T, dir, subject string) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", "commit", "-q", "--allow-empty", "-m", subject)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=release-me tests", "GIT_AUTHOR_EMAIL=release-me-tests@example.com",
+		"GIT_COMMITTER_NAME=release-me tests", "GIT_COMMITTER_EMAIL=release-me-tests@example.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit %q: %v\n%s", subject, err, out)
+	}
+}
+
 // showBareBranchFile reads path at mainBranch from a bare
 // repository, failing the test when the git invocation fails.
 func showBareBranchFile(t *testing.T, bareDir, path string) string {
@@ -73,6 +105,18 @@ func bareBranchSHA(t *testing.T, bareDir string) string {
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("git rev-parse %s: %v", mainBranch, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// bareBranchAuthor returns "name <email>" of mainBranch's tip commit in a
+// bare repository, failing the test when the git invocation fails.
+func bareBranchAuthor(t *testing.T, bareDir string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", "--git-dir", bareDir, "log", "-1", "--format=%an <%ae>", mainBranch)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git log -1 %s: %v", mainBranch, err)
 	}
 	return strings.TrimSpace(string(out))
 }
@@ -119,6 +163,65 @@ func TestDoPRCreatesTheReleasePullRequest(t *testing.T) {
 	changelog := showBareBranchFile(t, origin, "CHANGELOG.md")
 	if !strings.Contains(changelog, "add the next command") {
 		t.Fatalf("CHANGELOG.md on the release branch = %q", changelog)
+	}
+}
+
+// TestDoPRCommitsTheReleaseBranchWithTheDefaultAuthorWhenNoIdentityExists
+// reproduces a runner with no git identity at all: HOME points at an empty
+// directory and GIT_CONFIG_GLOBAL and GIT_CONFIG_SYSTEM are both /dev/null,
+// so neither a global nor a system configuration can supply one, and the
+// repository itself carries none either. The commit on the release branch
+// must still succeed, carrying the default author.
+func TestDoPRCommitsTheReleaseBranchWithTheDefaultAuthorWhenNoIdentityExists(t *testing.T) {
+	dir, origin := newPRRepoWithoutIdentity(t)
+	commitWithIdentity(t, dir, "feat: add the next command")
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+
+	f := newFake()
+	var stdout bytes.Buffer
+
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	if !bareRefExists(t, origin, "refs/heads/"+mainBranch) {
+		t.Fatal("no commit landed on the release branch")
+	}
+	want := "release-me <release-me[bot]@users.noreply.github.com>"
+	if got := bareBranchAuthor(t, origin); got != want {
+		t.Fatalf("author = %q, want %q", got, want)
+	}
+}
+
+// TestDoPRLetsAnEnvironmentIdentityWinOverTheConfiguredAuthor exercises the
+// precedence rule: GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME
+// and GIT_COMMITTER_EMAIL already set in the process environment win over
+// the configured author, even though no other identity exists.
+func TestDoPRLetsAnEnvironmentIdentityWinOverTheConfiguredAuthor(t *testing.T) {
+	dir, origin := newPRRepoWithoutIdentity(t)
+	commitWithIdentity(t, dir, "feat: add the next command")
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+	t.Setenv("GIT_AUTHOR_NAME", "CI Runner")
+	t.Setenv("GIT_AUTHOR_EMAIL", "ci@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "CI Runner")
+	t.Setenv("GIT_COMMITTER_EMAIL", "ci@example.com")
+
+	f := newFake()
+	var stdout bytes.Buffer
+
+	if err := doPR(t.Context(), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	want := "CI Runner <ci@example.com>"
+	if got := bareBranchAuthor(t, origin); got != want {
+		t.Fatalf("author = %q, want %q", got, want)
 	}
 }
 

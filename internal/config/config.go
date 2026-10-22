@@ -42,6 +42,10 @@ const (
 	DefaultAlphaLabel = "release: alpha"
 	DefaultBetaLabel  = "release: beta"
 	DefaultRcLabel    = "release: rc"
+	// DefaultAuthorName and DefaultAuthorEmail are the git identity applied
+	// when the "author" block, or one of its keys, is left out.
+	DefaultAuthorName  = "release-me"
+	DefaultAuthorEmail = "release-me[bot]@users.noreply.github.com"
 )
 
 // DefaultHiddenTypes is the hidden-types list applied when the key is left
@@ -73,6 +77,15 @@ type Labels struct {
 	Rc      string
 }
 
+// Author is the "author" key: the git identity pr commits the release
+// branch as. A GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME or
+// GIT_COMMITTER_EMAIL already set in the process environment wins over
+// these values.
+type Author struct {
+	Name  string
+	Email string
+}
+
 // Config is the release-me.yaml configuration.
 type Config struct {
 	InitialVersion    string
@@ -83,6 +96,7 @@ type Config struct {
 	Files             []File
 	ChangelogPath     string
 	Labels            Labels
+	Author            Author
 	// MajorTag is the top-level "major-tag" key: when true, a stable
 	// release moves the major tag "vX" to the release commit. A component
 	// overrides it through its own "major-tag" key.
@@ -205,6 +219,13 @@ type rawLabels struct {
 	Rc      *string `yaml:"rc"`
 }
 
+// rawAuthor mirrors Author with pointer fields, so Load can tell a key left
+// out of the "author" block apart from one set to its zero value.
+type rawAuthor struct {
+	Name  *string `yaml:"name"`
+	Email *string `yaml:"email"`
+}
+
 // raw mirrors Config with pointer fields, so Load can tell a key left out of
 // the file apart from one set to its zero value.
 type raw struct {
@@ -216,6 +237,7 @@ type raw struct {
 	Files             *[]rawFile `yaml:"files"`
 	Changelog         *string    `yaml:"changelog"`
 	Labels            *rawLabels `yaml:"labels"`
+	Author            *rawAuthor `yaml:"author"`
 	MajorTag          *bool      `yaml:"major-tag"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
@@ -248,6 +270,7 @@ func Default() Config {
 			Pending: DefaultPendingLabel, Tagged: DefaultTaggedLabel,
 			Alpha: DefaultAlphaLabel, Beta: DefaultBetaLabel, Rc: DefaultRcLabel,
 		},
+		Author: Author{Name: DefaultAuthorName, Email: DefaultAuthorEmail},
 	}
 }
 
@@ -314,6 +337,14 @@ func Load(path string) (cfg Config, err error) {
 		}
 		if r.Labels.Rc != nil {
 			cfg.Labels.Rc = *r.Labels.Rc
+		}
+	}
+	if r.Author != nil {
+		if r.Author.Name != nil {
+			cfg.Author.Name = *r.Author.Name
+		}
+		if r.Author.Email != nil {
+			cfg.Author.Email = *r.Author.Email
 		}
 	}
 	if r.Files != nil {
