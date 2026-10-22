@@ -20,6 +20,15 @@ type Entry struct {
 	Breaking          bool
 	PullRequestNumber int
 	URL               string
+	// SubEntries renders as indented list items under this entry's line,
+	// in the nested changelog source mode: the commits of the pull
+	// request's merge, each parsed on its own. A sub entry's own
+	// SubEntries, if any, is never rendered: nesting goes one level
+	// deep. hiddenTypes drops a sub entry from rendering the same way it
+	// drops a top level one. A sub entry never renders under a section of
+	// its own: it always renders under its parent's line, but see
+	// Sections for the one case where it decides which section that is.
+	SubEntries []Entry
 }
 
 type section struct {
@@ -38,26 +47,18 @@ var sections = []section{
 // Sections renders the section bodies for one version's entries, with no
 // heading, so a caller can compare them independently of the version and
 // the date. It applies the same hiddenTypes and section rules as Render:
-// entries whose type is in hiddenTypes produce no line, and an entry that
-// belongs to none of the five sections, breaking already counted as one,
-// also produces no line. Sections returns "" when no entry is visible.
+// an entry whose own type is in hiddenTypes, or that belongs to none of
+// the five sections, breaking already counted as one, produces no line of
+// its own; its SubEntries can still earn it one, see sectionFor. Sections
+// returns "" when no entry is visible.
 func Sections(entries []Entry, hiddenTypes []string) string {
-	visible := make([]Entry, 0, len(entries))
-	for _, e := range entries {
-		if slices.Contains(hiddenTypes, e.Type) {
-			continue
-		}
-		visible = append(visible, e)
-	}
-
 	var body strings.Builder
-	for _, s := range sections {
+	for i, s := range sections {
 		var lines []string
-		for _, e := range visible {
-			if !s.match(e) {
-				continue
+		for _, e := range entries {
+			if idx, ok := sectionFor(e, hiddenTypes); ok && idx == i {
+				lines = append(lines, renderEntry(e, hiddenTypes)...)
 			}
-			lines = append(lines, renderLine(e))
 		}
 		if len(lines) == 0 {
 			continue
@@ -69,6 +70,35 @@ func Sections(entries []Entry, hiddenTypes []string) string {
 		body.WriteString("\n")
 	}
 	return strings.TrimRight(body.String(), "\n")
+}
+
+// sectionFor decides which section e, and the line its own line renders
+// as, belongs under. e's own type decides it when that type is not in
+// hiddenTypes and matches one of the five sections, same as always. When
+// it is hidden, or belongs to none of them, SubEntries gets a second
+// chance: the first section, in Breaking Changes, Features, Bug Fixes,
+// Performance, Reverts order, that one of e's own non-hidden sub entries
+// matches. That keeps a merge whose own title is a hidden type, a chore,
+// say, from losing a feat or fix sub commit's entire section: the parent
+// line still renders, as the heading of its sub items, wherever the
+// highest-priority visible one belongs. ok is false, no line at all, when
+// neither e nor any of its sub entries matches a section.
+func sectionFor(e Entry, hiddenTypes []string) (idx int, ok bool) {
+	if !slices.Contains(hiddenTypes, e.Type) {
+		for i, s := range sections {
+			if s.match(e) {
+				return i, true
+			}
+		}
+	}
+	for i, s := range sections {
+		for _, sub := range e.SubEntries {
+			if !slices.Contains(hiddenTypes, sub.Type) && s.match(sub) {
+				return i, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // Render renders the Markdown changelog for one version: the heading, then
@@ -84,6 +114,19 @@ func Render(version string, date time.Time, entries []Entry, hiddenTypes []strin
 	out.WriteString(body)
 	out.WriteString("\n")
 	return out.String()
+}
+
+// renderEntry renders one visible entry's own line, followed by one
+// indented line per sub entry that hiddenTypes does not drop.
+func renderEntry(e Entry, hiddenTypes []string) []string {
+	lines := []string{renderLine(e)}
+	for _, sub := range e.SubEntries {
+		if slices.Contains(hiddenTypes, sub.Type) {
+			continue
+		}
+		lines = append(lines, "  "+renderLine(sub))
+	}
+	return lines
 }
 
 func renderLine(e Entry) string {
