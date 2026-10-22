@@ -173,3 +173,41 @@ func TestSemverLessPrecedenceOrdersPreReleasesBelowTheRelease(t *testing.T) {
 		})
 	}
 }
+
+func TestHighestReturnsTheGreatestVersionOfTheFamily(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		versions []version.Semver
+		want     version.Semver
+		wantOK   bool
+	}{
+		{name: "an empty family carries no tag anywhere yet"},
+		{
+			name:     "a single version is its own highest",
+			versions: []version.Semver{{Major: 0, Minor: 8, Patch: 0}},
+			want:     version.Semver{Major: 0, Minor: 8, Patch: 0}, wantOK: true,
+		},
+		{
+			name: "picks the highest regardless of input order",
+			versions: []version.Semver{
+				{Major: 0, Minor: 8, Patch: 1}, {Major: 0, Minor: 8, Patch: 4}, {Major: 0, Minor: 8, Patch: 2},
+			},
+			want: version.Semver{Major: 0, Minor: 8, Patch: 4}, wantOK: true,
+		},
+		{
+			name:     "a higher minor outranks a higher patch",
+			versions: []version.Semver{{Major: 1, Minor: 2, Patch: 9}, {Major: 1, Minor: 3, Patch: 0}},
+			want:     version.Semver{Major: 1, Minor: 3, Patch: 0}, wantOK: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := version.Highest(tc.versions)
+			if ok != tc.wantOK || got != tc.want {
+				t.Fatalf("Highest(%+v) = (%+v, %v), want (%+v, %v)", tc.versions, got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}

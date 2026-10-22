@@ -64,6 +64,16 @@ func Next(last Semver, lastOK bool, changes []Change, initialVersion string, bum
 	return Result{Version: next.String(), Bump: bump, Reason: reason}, true
 }
 
+// Changed reports whether changes contains at least one change that bumps
+// the version. Next returns released true for exactly these changes,
+// regardless of the previous version: callers that need to know whether a
+// component has anything to release, without computing its next version
+// yet, can use Changed instead.
+func Changed(changes []Change) bool {
+	bump, _ := highestBump(changes)
+	return bump != BumpNone
+}
+
 func highestBump(changes []Change) (bump Bump, reason string) {
 	bump = BumpNone
 	for _, c := range changes {

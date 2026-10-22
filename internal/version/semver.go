@@ -126,6 +126,20 @@ func atoiOK(s string) (int, bool) {
 	return n, err == nil
 }
 
+// Highest returns the version of greatest semver precedence in versions,
+// comparing stable versions only through Less: it is meant for a linked or
+// locked family's set of last stable tags, one per component, never a mix
+// that includes pre-releases. ok is false for an empty versions, the
+// family carries no tag anywhere yet.
+func Highest(versions []Semver) (highest Semver, ok bool) {
+	for i, v := range versions {
+		if i == 0 || highest.Less(v) {
+			highest = v
+		}
+	}
+	return highest, len(versions) > 0
+}
+
 // WithPreRelease returns a copy of v with Pre set to "<preType>.<n>", one
 // pre-release build of v's major.minor.patch, for example "alpha.1".
 func (v Semver) WithPreRelease(preType string, n int) Semver {
