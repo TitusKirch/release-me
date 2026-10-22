@@ -4,6 +4,7 @@
 package releasepr_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
@@ -27,7 +28,34 @@ func TestTitle(t *testing.T) {
 	}
 }
 
-func TestBodyRendersTheVersionNotesAndChangelog(t *testing.T) {
+// testLabels is a releasepr.GuideLabels fixture naming the default label
+// configuration, the shape every test that does not exercise a custom
+// configuration uses.
+var testLabels = releasepr.GuideLabels{
+	Tagged: "release: tagged",
+	Alpha:  "release: alpha",
+	Beta:   "release: beta",
+	Rc:     "release: rc",
+}
+
+// guideText is the "How this release works" block rendered for tag and
+// labels, the shape every test asserting its exact content builds on.
+func guideText(tag string, labels releasepr.GuideLabels) string {
+	return "<details>\n<summary>How this release works</summary>\n\n" +
+		"- Merging this pull request tags `" + tag + "`, creates the release and moves the label to `" + labels.Tagged + "`. " +
+		"With `major-tag` enabled, the moving major tag follows a stable release.\n" +
+		"- Release notes: add a fenced block with the info string `release-me-notes` anywhere in this body. " +
+		"It is rendered above the entries in the changelog file and in the release and survives updates.\n" +
+		"- Pre-release: add the label `" + labels.Alpha + "`, `" + labels.Beta + "` or `" + labels.Rc + "`. " +
+		"The next run turns the version into `X.Y.Z-<type>.N`. Remove the label to go back to the stable version.\n" +
+		"- Hide or rewrite a change: a fenced block `release-me` in the changed pull request's body, " +
+		"one conventional line per entry, an empty block hides it.\n" +
+		"- Every push to the default branch updates this pull request. " +
+		"Edits to the body outside the notes block are overwritten.\n" +
+		"\n</details>\n"
+}
+
+func TestBodyRendersTheVersionGuideNotesAndChangelog(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name    string
@@ -39,6 +67,7 @@ func TestBodyRendersTheVersionNotesAndChangelog(t *testing.T) {
 			name:    "without notes",
 			section: "## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing\n",
 			want: "Release v1.2.3\n\n" +
+				guideText("v1.2.3", testLabels) + "\n" +
 				"<details>\n<summary>Changelog</summary>\n\n" +
 				"## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing\n\n</details>\n",
 		},
@@ -47,7 +76,8 @@ func TestBodyRendersTheVersionNotesAndChangelog(t *testing.T) {
 			notes:   "Upgrade note: run the migration first.",
 			section: "## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing\n",
 			want: "Release v1.2.3\n\n" +
-				"```release-me-notes\nUpgrade note: run the migration first.\n```\n\n" +
+				guideText("v1.2.3", testLabels) +
+				"\n```release-me-notes\nUpgrade note: run the migration first.\n```\n\n" +
 				"<details>\n<summary>Changelog</summary>\n\n" +
 				"## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing\n\n</details>\n",
 		},
@@ -55,11 +85,49 @@ func TestBodyRendersTheVersionNotesAndChangelog(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := releasepr.Body("1.2.3", tc.notes, tc.section)
+			got := releasepr.Body("1.2.3", "v1.2.3", testLabels, tc.notes, tc.section)
 			if got != tc.want {
 				t.Fatalf("Body() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestBodyRendersTheRealTagAndConfiguredLabelNames exercises a configured
+// component's tag prefix and label names that differ from the defaults,
+// so the guide never hard codes either.
+func TestBodyRendersTheRealTagAndConfiguredLabelNames(t *testing.T) {
+	t.Parallel()
+	labels := releasepr.GuideLabels{
+		Tagged: "status: released",
+		Alpha:  "pre: alpha",
+		Beta:   "pre: beta",
+		Rc:     "pre: rc",
+	}
+	section := "## v0.4.0 (2026-01-02)\n\n### Features\n\n- add the thing\n"
+
+	got := releasepr.Body("0.4.0", "frontend/v0.4.0", labels, "", section)
+
+	for _, want := range []string{
+		"tags `frontend/v0.4.0`",
+		"the label to `status: released`",
+		"`pre: alpha`, `pre: beta` or `pre: rc`",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Body() = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestBodyRendersTheGuideExactlyOnce guards against a regression where an
+// update would duplicate the guide block instead of rendering it once,
+// the same way a human reading the collapsed section expects.
+func TestBodyRendersTheGuideExactlyOnce(t *testing.T) {
+	t.Parallel()
+	got := releasepr.Body("1.2.3", "v1.2.3", testLabels, "", "## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing\n")
+
+	if n := strings.Count(got, "How this release works"); n != 1 {
+		t.Fatalf("Body() contains the guide %d times, want exactly 1:\n%s", n, got)
 	}
 }
 
@@ -104,7 +172,7 @@ func TestBodyAndExtractionsRoundTrip(t *testing.T) {
 	section := "## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing\n"
 	notes := "Upgrade note: run the migration first."
 
-	body := releasepr.Body("1.2.3", notes, section)
+	body := releasepr.Body("1.2.3", "v1.2.3", testLabels, notes, section)
 
 	gotNotes, ok := releasepr.ExtractNotes(body)
 	if !ok || gotNotes != notes {
@@ -123,11 +191,26 @@ func TestBodyAndExtractionsRoundTrip(t *testing.T) {
 func TestReleaseBodyWithoutNotes(t *testing.T) {
 	t.Parallel()
 	section := "## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing\n"
-	body := releasepr.Body("1.2.3", "", section)
+	body := releasepr.Body("1.2.3", "v1.2.3", testLabels, "", section)
 
 	want := "## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing"
 	if got := releasepr.ReleaseBody(body); got != want {
 		t.Fatalf("ReleaseBody() = %q, want %q", got, want)
+	}
+}
+
+// TestReleaseBodyDoesNotIncludeTheGuide confirms the GitHub release body
+// never carries the "How this release works" guide: a reader of the
+// release sees the notes and the changelog alone, the guide is a release
+// pull request affordance only.
+func TestReleaseBodyDoesNotIncludeTheGuide(t *testing.T) {
+	t.Parallel()
+	section := "## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing\n"
+	body := releasepr.Body("1.2.3", "v1.2.3", testLabels, "Upgrade note.", section)
+
+	got := releasepr.ReleaseBody(body)
+	if strings.Contains(got, "How this release works") || strings.Contains(got, "<details>") {
+		t.Fatalf("ReleaseBody() = %q, want no guide block", got)
 	}
 }
 
@@ -161,8 +244,10 @@ func TestExtractDate(t *testing.T) {
 	}{
 		{name: "no details block", body: "Release v1.2.3\n", wantOK: false},
 		{
-			name:   "reads the heading date",
-			body:   releasepr.Body("1.2.3", "", "## v1.2.3 (2026-03-14)\n\n### Features\n\n- add the thing\n"),
+			name: "reads the heading date",
+			body: releasepr.Body(
+				"1.2.3", "v1.2.3", testLabels, "", "## v1.2.3 (2026-03-14)\n\n### Features\n\n- add the thing\n",
+			),
 			wantOK: true,
 			want:   "2026-03-14",
 		},

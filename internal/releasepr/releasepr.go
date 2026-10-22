@@ -21,12 +21,26 @@ func Title(name, version string) string {
 	return fmt.Sprintf("chore(%s): release v%s", name, version)
 }
 
-// Body renders the release pull request body: the version line, the
-// preserved release-me-notes block when notes is not empty, then the
-// changelog for the version collapsed inside a <details> block.
-func Body(version, notes, changelogSection string) string {
+// GuideLabels is the label names rendered in the release pull request's
+// "How this release works" guide: the tagged label and the three
+// pre-release type labels. The pending label never appears there.
+type GuideLabels struct {
+	Tagged string
+	Alpha  string
+	Beta   string
+	Rc     string
+}
+
+// Body renders the release pull request body: the version line, the "How
+// this release works" guide, the preserved release-me-notes block when
+// notes is not empty, then the changelog for the version collapsed inside
+// a <details> block. tag is the tag merging this pull request creates,
+// and labels names the repository's configured label values, so the
+// guide always matches what merging and labelling actually do.
+func Body(version, tag string, labels GuideLabels, notes, changelogSection string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Release v%s\n", version)
+	fmt.Fprintf(&b, "Release v%s\n\n", version)
+	b.WriteString(guideBlock(tag, labels))
 
 	if notes != "" {
 		b.WriteString("\n```release-me-notes\n")
@@ -37,6 +51,26 @@ func Body(version, notes, changelogSection string) string {
 	b.WriteString("\n<details>\n<summary>Changelog</summary>\n\n")
 	b.WriteString(strings.TrimRight(changelogSection, "\n"))
 	b.WriteString("\n\n</details>\n")
+	return b.String()
+}
+
+// guideBlock renders the collapsed "How this release works" section: one
+// line each for the merge, the notes block, the pre-release labels, the
+// override block and the push behaviour.
+func guideBlock(tag string, labels GuideLabels) string {
+	var b strings.Builder
+	b.WriteString("<details>\n<summary>How this release works</summary>\n\n")
+	fmt.Fprintf(&b, "- Merging this pull request tags `%s`, creates the release and moves the label to `%s`. "+
+		"With `major-tag` enabled, the moving major tag follows a stable release.\n", tag, labels.Tagged)
+	b.WriteString("- Release notes: add a fenced block with the info string `release-me-notes` anywhere in this body. " +
+		"It is rendered above the entries in the changelog file and in the release and survives updates.\n")
+	fmt.Fprintf(&b, "- Pre-release: add the label `%s`, `%s` or `%s`. The next run turns the version into `X.Y.Z-<type>.N`. "+
+		"Remove the label to go back to the stable version.\n", labels.Alpha, labels.Beta, labels.Rc)
+	b.WriteString("- Hide or rewrite a change: a fenced block `release-me` in the changed pull request's body, " +
+		"one conventional line per entry, an empty block hides it.\n")
+	b.WriteString("- Every push to the default branch updates this pull request. " +
+		"Edits to the body outside the notes block are overwritten.\n")
+	b.WriteString("\n</details>\n")
 	return b.String()
 }
 
