@@ -436,7 +436,9 @@ files:
   starting over at `initial-version`. The version is appended to the prefix as it is. A prefix
   that is empty, holds whitespace or one of `~ ^ : ? * [ \`, contains `..`, `@{` or `//`, or
   starts with `/`, `-` or `.` is a configuration error, as are two components with the same
-  prefix:
+  prefix. The prefix is how a component finds its history: adding, changing or removing
+  `tag-prefix` once a component has tags under its previous prefix restarts it at
+  `initial-version`, the same way renaming the component would:
 
   ```yaml
   components:
