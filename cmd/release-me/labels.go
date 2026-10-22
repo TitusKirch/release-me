@@ -26,7 +26,9 @@ func missingLabels(ctx context.Context, f forge.Forge, owner, repoName string, c
 	}
 	wanted := []string{cfg.Labels.Pending, cfg.Labels.Tagged, cfg.Labels.Alpha, cfg.Labels.Beta, cfg.Labels.Rc}
 	for _, want := range wanted {
-		if !slices.Contains(repoLabels, want) {
+		// An empty pre-release label turns that type off: there is no
+		// label to expect on the repository.
+		if want != "" && !slices.Contains(repoLabels, want) {
 			missing = append(missing, want)
 		}
 	}

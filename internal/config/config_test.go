@@ -240,6 +240,8 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			name:    "rejects a file key on an updater that takes none",
 			content: "files:\n  - path: cmd/cli/version.go\n    key: Version\n",
 		},
+		{name: "rejects an empty pending label", content: "labels:\n  pending: \"\"\n"},
+		{name: "rejects an empty tagged label", content: "labels:\n  tagged: \"\"\n"},
 		{name: "rejects a component without a path", content: "components:\n  frontend:\n    initial-version: 0.1.0\n"},
 		{name: "rejects an unknown key inside a component", content: "components:\n  frontend:\n    path: frontend\n    release-tag: v1\n"},
 		{
@@ -496,5 +498,18 @@ components:
 		if c.Branch != want[i] {
 			t.Fatalf("component %s Branch = %q, want %q", c.Name, c.Branch, want[i])
 		}
+	}
+}
+
+func TestLoadTurnsAPreReleaseTypeOffWithAnEmptyLabel(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, "labels:\n  alpha: \"\"\n  beta: \"\"\n")
+
+	got, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.Labels.Alpha != "" || got.Labels.Beta != "" || got.Labels.Rc != config.DefaultRcLabel {
+		t.Fatalf("Labels = %+v, want alpha and beta off and rc at its default", got.Labels)
 	}
 }

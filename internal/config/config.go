@@ -136,6 +136,9 @@ type File struct {
 // Labels is the "labels" key: the label names release-me expects on the
 // repository. Alpha, Beta and Rc select a pre-release type on the release
 // pull request; Pending and Tagged apply to every release, stable or not.
+// An empty Alpha, Beta or Rc turns that pre-release type off: release-me
+// neither expects the label on the repository nor reads it from a pull
+// request. Pending and Tagged are never empty.
 type Labels struct {
 	Pending string
 	Tagged  string
@@ -434,9 +437,15 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {
+			if *r.Labels.Pending == "" {
+				return Config{}, fmt.Errorf("config: parse %s: labels.pending is empty", path)
+			}
 			cfg.Labels.Pending = *r.Labels.Pending
 		}
 		if r.Labels.Tagged != nil {
+			if *r.Labels.Tagged == "" {
+				return Config{}, fmt.Errorf("config: parse %s: labels.tagged is empty", path)
+			}
 			cfg.Labels.Tagged = *r.Labels.Tagged
 		}
 		if r.Labels.Alpha != nil {

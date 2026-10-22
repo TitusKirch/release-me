@@ -22,15 +22,23 @@ type preReleaseKind struct {
 	Label string
 }
 
-// preReleaseKinds lists the three pre-release types in the fixed order
+// preReleaseKinds lists the enabled pre-release types in the fixed order
 // alpha, beta, rc: the order a pull request carrying more than one label is
-// reported in.
+// reported in. A type whose label is configured empty is turned off and
+// left out.
 func preReleaseKinds(lbl config.Labels) []preReleaseKind {
-	return []preReleaseKind{
+	all := []preReleaseKind{
 		{Type: "alpha", Label: lbl.Alpha},
 		{Type: "beta", Label: lbl.Beta},
 		{Type: "rc", Label: lbl.Rc},
 	}
+	kinds := make([]preReleaseKind, 0, len(all))
+	for _, k := range all {
+		if k.Label != "" {
+			kinds = append(kinds, k)
+		}
+	}
+	return kinds
 }
 
 // selectPreReleaseType reads which of the alpha, beta and rc labels prLabels
