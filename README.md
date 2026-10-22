@@ -24,7 +24,8 @@ mise use ubi:ostendorf-cloud/release-me
 As a GitHub Action, pinned to a release tag. `release-me run` opens and updates pull requests
 and creates tags and releases, so the job needs `contents: write` and `pull-requests: write`;
 `secrets.GITHUB_TOKEN` cannot trigger the checks on the release pull request it opens, a
-repository or GitHub App token can:
+repository or GitHub App token can. A GitHub App token also lets the action attribute the
+release commit to the app's own bot account, through `app-slug`:
 
 ```yaml
 permissions:
@@ -32,18 +33,28 @@ permissions:
   pull-requests: write
 
 steps:
+  - uses: actions/create-github-app-token@v3
+    id: app-token
+    with:
+      app-id: ${{ vars.APP_ID }}
+      private-key: ${{ secrets.APP_PRIVATE_KEY }}
   - uses: ostendorf-cloud/release-me/action@v0.1.0
     with:
-      token: ${{ secrets.GITHUB_TOKEN }}
+      token: ${{ steps.app-token.outputs.token }}
+      app-slug: ${{ steps.app-token.outputs.app-slug }}
 ```
 
 The action downloads the archive and checksums file matching its own version for the
 runner's os and arch, verifies the checksum, then runs `release-me run`. Inputs: `token`
 (required), `component`, `dry-run`, `verbose`, `download-token` for the download step on a
-private fork, defaulting to the calling workflow's own token, and `version` to pin a different
+private fork, defaulting to the calling workflow's own token, `version` to pin a different
 release than the action's own tag, or `source` to build from the checkout with `go build`
-instead. `source` only builds this repository's own code: it is `go build`'s working directory
-for `uses: ./action` from inside this repository, not the caller's checkout for
+instead, and `author-name`, `author-email`, `app-slug` to attribute the release commit.
+An explicit `author-name` or `author-email` wins for that field; with `app-slug` set, the action resolves
+the app's bot account, `<slug>[bot]`, and its id through the API with `download-token`, and
+attributes the commit to it. Nothing set leaves the tool's own configured or default identity
+in place. `source` only builds this repository's own code: it is `go build`'s working
+directory for `uses: ./action` from inside this repository, not the caller's checkout for
 `uses: ostendorf-cloud/release-me/action@ref`.
 
 As a container image, for runners with an image cache:

@@ -80,6 +80,11 @@ tasks:
     cmds:
       - go test -race -count=1 ./...
 
+  test:action:
+    desc: Composite action shell script tests
+    cmds:
+      - action/resolve-author_test.sh
+
   check:
     desc: Every check, one after another
     cmds:
@@ -94,6 +99,7 @@ tasks:
       - task: lint:shell
       - task: lint:secrets
       - task: test:go
+      - task: test:action
       - task: build
 
   fmt:
