@@ -103,6 +103,7 @@ release-me pr          # create or update the release pull requests
 release-me release     # tag and release merged release pull requests
 release-me run         # pr then release, the CI entry point
 release-me check       # config, labels and token
+release-me migrate release-please   # translate a release-please setup, nothing written
 ```
 
 Every writing command accepts `--dry-run`: it prints what would change and writes nothing, not
@@ -216,6 +217,38 @@ Validates `release-me.yaml`, including an unknown `--component` name, that the `
 environment variable is both set and accepted by the forge: a rejected token is reported as
 such, not as a missing label, since the symptom from the forge is the same 401 either way.
 Prints every missing or invalid item and exits 1 when anything is missing, 0 otherwise.
+
+### migrate
+
+`migrate release-please` reads `release-please-config.json` and `.release-please-manifest.json`
+from the repository root and prints the equivalent `release-me.yaml` on stdout, so it can be
+reviewed before it is written: `release-me migrate release-please > release-me.yaml`. It writes
+nothing itself.
+
+Each release-please package becomes a component named after its `component`, else its
+`package-name` with a node scope removed, else the name in its `package.json`. Its tags and
+changelog stay where release-please put them, through `tag-prefix` and `changelog`, so
+release-me continues from the existing tags and changelogs. A single root package with plain
+`vX.Y.Z` tags becomes the implicit `main` component instead. It also carries over:
+
+- `bump-minor-pre-major` and `initial-version`;
+- the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package, and every
+  `extra-files` entry of type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
+- `label` and `release-label` as the `pending` and `tagged` labels, with the pre-release types
+  turned off, since release-please has none;
+- a `linked-versions` plugin over every component as `versioning: locked`: both release every
+  component at the family's version, changed or not.
+
+`changelog-source` is set to `all`, because release-please reads every commit since the last
+release, not the first parent history.
+
+Every setting it cannot carry over is printed on stderr as a `warning:` line, each naming the
+key and what to do instead, as are the differences a reader should know about, such as
+release-me opening one release pull request per component where release-please opened one for
+all of them. It then looks up the tag each package's manifest version was released under and
+warns about a missing one, since release-me would start that component over at its initial
+version. The translation is loaded the way every other command loads `release-me.yaml` before
+it is printed. Exits 0 with warnings, 1 when the files cannot be read or translated.
 
 ### Notes block
 
