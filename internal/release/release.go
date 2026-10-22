@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
@@ -36,6 +37,187 @@ func VersionFromTitle(title, name string) (versionStr string, ok bool) {
 		return "", false
 	}
 	return m[2], true
+}
+
+// LockedTitle renders the release pull request and release title for a
+// locked family run: the version, then every component it covers, in
+// release-me.yaml's order, so the title names both even though it always
+// covers the whole family.
+func LockedTitle(versionStr string, names []string) string {
+	return fmt.Sprintf("chore: release v%s (%s)", versionStr, strings.Join(names, ", "))
+}
+
+// lockedTitlePattern matches the title LockedTitle renders.
+var lockedTitlePattern = regexp.MustCompile(`^chore: release v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?) \(([^)]*)\)$`)
+
+// VersionFromLockedTitle extracts the version and the component names from
+// a locked release pull request title LockedTitle renders. ok is false
+// when title does not match that shape.
+func VersionFromLockedTitle(title string) (versionStr string, names []string, ok bool) {
+	m := lockedTitlePattern.FindStringSubmatch(title)
+	if m == nil {
+		return "", nil, false
+	}
+	return m[1], strings.Split(m[2], ", "), true
+}
+
+// lockedSectionHeading matches one component's heading inside a locked
+// release pull request's combined changelog, "#### <name>" on its own
+// line. The fourth level keeps it apart from the "### Features"-shaped
+// section headings changelog.Sections renders inside each component's own
+// slice.
+var lockedSectionHeading = regexp.MustCompile(`(?m)^#### (.+)$`)
+
+// componentSection returns name's own slice of changelogText, a locked
+// release pull request's combined changelog: the text between its
+// "#### <name>" heading and the next heading, or the end. "" when name
+// carries no heading.
+func componentSection(changelogText, name string) string {
+	locs := lockedSectionHeading.FindAllStringSubmatchIndex(changelogText, -1)
+	for i, loc := range locs {
+		if changelogText[loc[2]:loc[3]] != name {
+			continue
+		}
+		end := len(changelogText)
+		if i+1 < len(locs) {
+			end = locs[i+1][0]
+		}
+		return strings.TrimSpace(changelogText[loc[1]:end])
+	}
+	return ""
+}
+
+// lockedReleaseBody renders the GitHub release body for one component of a
+// locked family run: the free text of the release-me-notes block, shared
+// by the whole family, followed by name's own slice of the combined
+// changelog.
+func lockedReleaseBody(prBody, name string) string {
+	var parts []string
+	if notes, ok := releasepr.ExtractNotes(prBody); ok && notes != "" {
+		parts = append(parts, notes)
+	}
+	if section := componentSection(releasepr.ExtractChangelog(prBody), name); section != "" {
+		parts = append(parts, section)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// RunLocked tags, releases and swaps the label of every merged,
+// pending-labeled pull request on branch, the shared locked release
+// branch, tagging and releasing every component in comps at the same
+// version and merge commit: the release per component as Run already
+// renders it, drawing each one's own slice of the combined changelog from
+// the single pull request body.
+func RunLocked(
+	ctx context.Context, f forge.Forge, owner, repoName, branch string, comps []Component, labels Labels, dryRun bool, logger *slog.Logger,
+) ([]Result, error) {
+	prs, err := f.PullRequests(ctx, owner, repoName, branch, "closed")
+	if err != nil {
+		return nil, fmt.Errorf("release: locked family: list pull requests on %s: %w", branch, err)
+	}
+
+	var results []Result
+	for _, pr := range prs {
+		if !pr.Merged || !slices.Contains(pr.Labels, labels.Pending) {
+			continue
+		}
+		logger.Debug("locked release pull request merged", "number", pr.Number, "title", pr.Title)
+
+		versionStr, _, ok := VersionFromLockedTitle(pr.Title)
+		if !ok {
+			return nil, fmt.Errorf("release: locked family: pull request #%d: title %q does not name a version", pr.Number, pr.Title)
+		}
+		ver, ok := version.ParseTag("v" + versionStr)
+		if !ok {
+			return nil, fmt.Errorf("release: locked family: pull request #%d: version %q does not parse", pr.Number, versionStr)
+		}
+
+		res, err := releaseLockedFamily(ctx, f, owner, repoName, pr, versionStr, ver, comps, labels, dryRun)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, res...)
+	}
+	return results, nil
+}
+
+// releaseLockedFamily tags and releases every component in comps, for one
+// merged locked release pull request, then swaps its label once for the
+// whole family.
+func releaseLockedFamily(
+	ctx context.Context, f forge.Forge, owner, repoName string, pr forge.PullRequest, versionStr string,
+	ver version.Semver, comps []Component, labels Labels, dryRun bool,
+) ([]Result, error) {
+	if dryRun {
+		results := make([]Result, 0, len(comps))
+		for _, comp := range comps {
+			tag := comp.TagPrefix + versionStr
+			result := Result{PullRequestNumber: pr.Number, Version: versionStr, Tag: tag, Message: fmt.Sprintf("would tag and release %s", tag)}
+			mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, versionStr, "", comp.MajorTag, dryRun)
+			if err != nil {
+				return nil, err
+			}
+			result.MajorTag, result.MajorTagMessage = mtag, mmsg
+			results = append(results, result)
+		}
+		return results, nil
+	}
+
+	sha, err := f.MergeCommit(ctx, owner, repoName, pr.Number)
+	if err != nil {
+		return nil, fmt.Errorf("release: locked family: pull request #%d: merge commit: %w", pr.Number, err)
+	}
+
+	results := make([]Result, 0, len(comps))
+	for _, comp := range comps {
+		tag := comp.TagPrefix + versionStr
+		name := tag
+		if comp.Multi {
+			name = fmt.Sprintf("%s v%s", comp.Name, versionStr)
+		}
+
+		alreadyTagged := false
+		if err := f.CreateTag(ctx, owner, repoName, tag, sha); err != nil {
+			if !errors.Is(err, forge.ErrTagExists) {
+				return nil, fmt.Errorf("release: locked family: component %s: pull request #%d: create tag %s: %w", comp.Name, pr.Number, tag, err)
+			}
+			alreadyTagged = true
+		}
+
+		body := lockedReleaseBody(pr.Body, comp.Name)
+		if err := f.CreateRelease(ctx, owner, repoName, tag, name, body, ver.IsPreRelease()); err != nil && !errors.Is(err, forge.ErrReleaseExists) {
+			return nil, fmt.Errorf("release: locked family: component %s: pull request #%d: create release %s: %w", comp.Name, pr.Number, tag, err)
+		}
+
+		message := fmt.Sprintf("tagged and released %s", tag)
+		if alreadyTagged {
+			message = fmt.Sprintf("already tagged %s", tag)
+		}
+
+		mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, versionStr, sha, comp.MajorTag, dryRun)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, Result{
+			PullRequestNumber: pr.Number, Version: versionStr, Tag: tag, Skipped: alreadyTagged,
+			Message: message, MajorTag: mtag, MajorTagMessage: mmsg,
+		})
+	}
+
+	prLabels, err := f.Labels(ctx, owner, repoName, pr.Number)
+	if err != nil {
+		return nil, fmt.Errorf("release: locked family: pull request #%d: labels: %w", pr.Number, err)
+	}
+	remove := []string{labels.Pending}
+	if preType, _, ok := ver.PreReleaseType(); ok {
+		if typeLabel := labels.typeLabel(preType); typeLabel != "" {
+			remove = append(remove, typeLabel)
+		}
+	}
+	if err := f.SetLabels(ctx, owner, repoName, pr.Number, swapLabels(prLabels, remove, labels.Tagged)); err != nil {
+		return nil, fmt.Errorf("release: locked family: pull request #%d: set labels: %w", pr.Number, err)
+	}
+	return results, nil
 }
 
 // Component names the release branch, tag prefix and display name release

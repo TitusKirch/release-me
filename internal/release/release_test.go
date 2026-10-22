@@ -469,3 +469,117 @@ func TestRunKeepsAHumanAddedLabelWhenSwappingAPreReleaseType(t *testing.T) {
 		t.Fatalf("SetLabelsCalls = %+v, want %v", f.SetLabelsCalls, want)
 	}
 }
+
+func TestVersionFromLockedTitle(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		title     string
+		want      string
+		wantNames []string
+		wantOK    bool
+	}{
+		{
+			name: "reads the version and every component", title: "chore: release v0.3.0 (a, b)",
+			want: "0.3.0", wantNames: []string{"a", "b"}, wantOK: true,
+		},
+		{name: "rejects an unrelated title", title: "feat: add the next command"},
+		{name: "rejects a per-component title", title: "chore(a): release v0.3.0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, names, ok := release.VersionFromLockedTitle(tc.title)
+			if ok != tc.wantOK || got != tc.want || (ok && !reflect.DeepEqual(names, tc.wantNames)) {
+				t.Fatalf("VersionFromLockedTitle(%q) = (%q, %v, %v), want (%q, %v, %v)", tc.title, got, names, ok, tc.want, tc.wantNames, tc.wantOK)
+			}
+		})
+	}
+}
+
+func TestLockedTitleRendersTheVersionAndEveryComponent(t *testing.T) {
+	t.Parallel()
+	got := release.LockedTitle("0.3.0", []string{"a", "b", "c"})
+	want := "chore: release v0.3.0 (a, b, c)"
+	if got != want {
+		t.Fatalf("LockedTitle() = %q, want %q", got, want)
+	}
+}
+
+func TestRunLockedTagsAndReleasesEveryComponentFromOneMergedPullRequest(t *testing.T) {
+	t.Parallel()
+	body := "Release v0.3.0\n\n<details>\n<summary>Changelog</summary>\n\n## v0.3.0 (2026-01-02)\n\n" +
+		"#### a\n\n### Features\n\n- add thing a\n\n#### b\n\n- Version bump without user facing changes.\n\n</details>\n"
+	pr := forge.PullRequest{
+		Number: 9, Title: "chore: release v0.3.0 (a, b)", Body: body,
+		Labels: []string{"release: pending"}, Merged: true,
+	}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending"}},
+	}
+	comps := []release.Component{
+		{Name: "a", Branch: "release-me/main", TagPrefix: "a/v", Multi: true},
+		{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
+	}
+
+	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, discardLogger())
+	if err != nil {
+		t.Fatalf("RunLocked() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("RunLocked() = %+v, want two results", results)
+	}
+
+	wantTags := []forgetest.CreateTagCall{
+		{Owner: "owner", Repo: "repo", Tag: "a/v0.3.0", SHA: "deadbeef"},
+		{Owner: "owner", Repo: "repo", Tag: "b/v0.3.0", SHA: "deadbeef"},
+	}
+	if !reflect.DeepEqual(f.CreatedTags, wantTags) {
+		t.Fatalf("CreatedTags = %+v, want %+v", f.CreatedTags, wantTags)
+	}
+
+	if len(f.CreatedReleases) != 2 {
+		t.Fatalf("CreatedReleases = %+v, want two", f.CreatedReleases)
+	}
+	if got := f.CreatedReleases[0].Body; got != "### Features\n\n- add thing a" {
+		t.Fatalf("component a release body = %q", got)
+	}
+	if got := f.CreatedReleases[1].Body; got != "- Version bump without user facing changes." {
+		t.Fatalf("component b release body = %q", got)
+	}
+
+	// The label swaps once for the whole family, not once per component.
+	if len(f.SetLabelsCalls) != 1 || !reflect.DeepEqual(f.SetLabelsCalls[0].Labels, []string{"release: tagged"}) {
+		t.Fatalf("SetLabelsCalls = %+v, want one swap to release: tagged", f.SetLabelsCalls)
+	}
+}
+
+func TestRunLockedDryRunWritesNothing(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore: release v0.3.0 (a, b)", Labels: []string{"release: pending"}, Merged: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		PRLabels: map[int][]string{9: {"release: pending"}},
+	}
+	comps := []release.Component{
+		{Name: "a", Branch: "release-me/main", TagPrefix: "a/v"},
+		{Name: "b", Branch: "release-me/main", TagPrefix: "b/v"},
+	}
+
+	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, true, discardLogger())
+	if err != nil {
+		t.Fatalf("RunLocked() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("RunLocked() = %+v, want two results", results)
+	}
+	if len(f.CreatedTags) != 0 || len(f.CreatedReleases) != 0 || len(f.SetLabelsCalls) != 0 {
+		t.Fatalf("dry run wrote something: tags=%+v releases=%+v labels=%+v", f.CreatedTags, f.CreatedReleases, f.SetLabelsCalls)
+	}
+}

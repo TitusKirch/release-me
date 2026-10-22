@@ -50,7 +50,42 @@ const (
 	// when the "author" block, or one of its keys, is left out.
 	DefaultAuthorName  = "release-me"
 	DefaultAuthorEmail = "release-me[bot]@users.noreply.github.com"
+	// DefaultVersioning is the versioning mode applied when the
+	// "versioning" key is left out of release-me.yaml.
+	DefaultVersioning = VersioningIndependent
+	// lockedBranch is the shared release branch every component carries in
+	// VersioningLocked: one release pull request for the whole family,
+	// instead of one branch per component.
+	lockedBranch = "release-me/main"
 )
+
+// Versioning names how a repository's configured components' versions
+// relate to each other.
+type Versioning string
+
+// The versioning modes release-me.yaml's top-level "versioning" key
+// accepts.
+const (
+	// VersioningIndependent versions every component on its own: its own
+	// tag line, its own bump, its own release pull request. The default.
+	VersioningIndependent Versioning = "independent"
+	// VersioningLocked bumps every component to the same new version and
+	// releases all of them together, changed or not, through one release
+	// pull request for the whole family, branch "release-me/main".
+	VersioningLocked Versioning = "locked"
+	// VersioningLinked shares one version line across every component, but
+	// releases only a component with entries since its own last tag, at
+	// the family's next version: the highest version any component in the
+	// family carries, bumped by the highest bump type among the changed
+	// components.
+	VersioningLinked Versioning = "linked"
+)
+
+// validVersioning rejects a "versioning" value outside the three modes
+// above.
+var validVersioning = map[Versioning]bool{
+	VersioningIndependent: true, VersioningLocked: true, VersioningLinked: true,
+}
 
 // DefaultHiddenTypes is the hidden-types list applied when the key is left
 // out of release-me.yaml. DefaultFallbackType is hidden by default.
@@ -138,6 +173,11 @@ type Config struct {
 	// release moves the major tag "vX" to the release commit. A component
 	// overrides it through its own "major-tag" key.
 	MajorTag bool
+	// Versioning is the top-level "versioning" key: how the configured
+	// components' versions relate to each other, default
+	// VersioningIndependent. It applies to the whole family; there is no
+	// per-component override.
+	Versioning Versioning
 	// Components is the "components" key, in the order release-me.yaml
 	// declares them, or nil when the key is absent: a repository without
 	// it is one component at the repository root, as Resolve reports.
@@ -209,13 +249,23 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}}
 	}
 
+	branch := func(name string) string {
+		if cfg.Versioning == VersioningLocked {
+			// Locked keeps every component on one shared release pull
+			// request, branch "release-me/main", instead of one branch
+			// per component.
+			return lockedBranch
+		}
+		return "release-me/" + name
+	}
+
 	out := make([]ResolvedComponent, 0, len(cfg.Components))
 	for _, c := range cfg.Components {
 		rc := ResolvedComponent{
 			Name:              c.Name,
 			Path:              c.Path,
 			TagPrefix:         c.Name + "/v",
-			Branch:            "release-me/" + c.Name,
+			Branch:            branch(c.Name),
 			ChangelogPath:     stdpath.Join(c.Path, "CHANGELOG.md"),
 			Multi:             true,
 			InitialVersion:    cfg.InitialVersion,
@@ -286,6 +336,7 @@ type raw struct {
 	Labels            *rawLabels `yaml:"labels"`
 	Author            *rawAuthor `yaml:"author"`
 	MajorTag          *bool      `yaml:"major-tag"`
+	Versioning        *string    `yaml:"versioning"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -319,7 +370,8 @@ func Default() Config {
 			Pending: DefaultPendingLabel, Tagged: DefaultTaggedLabel,
 			Alpha: DefaultAlphaLabel, Beta: DefaultBetaLabel, Rc: DefaultRcLabel,
 		},
-		Author: Author{Name: DefaultAuthorName, Email: DefaultAuthorEmail},
+		Author:     Author{Name: DefaultAuthorName, Email: DefaultAuthorEmail},
+		Versioning: DefaultVersioning,
 	}
 }
 
@@ -414,6 +466,12 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.MajorTag != nil {
 		cfg.MajorTag = *r.MajorTag
+	}
+	if r.Versioning != nil {
+		cfg.Versioning = Versioning(*r.Versioning)
+		if !validVersioning[cfg.Versioning] {
+			return Config{}, fmt.Errorf("config: parse %s: versioning %q is not independent, locked or linked", path, *r.Versioning)
+		}
 	}
 	if r.Components.Kind != 0 {
 		components, err := decodeComponents(path, &r.Components)

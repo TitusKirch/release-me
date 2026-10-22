@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/history"
 )
 
@@ -26,6 +27,10 @@ func runNext(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	if err := rejectComponentForLocked(cfg, component); err != nil {
+		fmt.Fprintf(stderr, "release-me: %v\n", err)
+		return 2
+	}
 
 	components, err := resolveComponents(cfg, component)
 	if err != nil {
@@ -41,13 +46,33 @@ func runNext(args []string, stdout, stderr io.Writer) int {
 	}
 	logger.Debug("resolved repository", "owner", owner, "repo", repoName)
 
-	for _, comp := range components {
-		rel, released, err := computeRelease(ctx, dir, cfg, comp, owner, repoName, f, logger)
-		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
-			return 1
+	if cfg.Versioning == config.VersioningIndependent {
+		for _, comp := range components {
+			rel, released, err := computeRelease(ctx, dir, cfg, comp, owner, repoName, f, logger)
+			if err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 1
+			}
+			if !released {
+				continue
+			}
+			printLine(stdout, comp.Name, multi, fmt.Sprintf("%s (%s)", rel.version.Version, rel.version.Reason))
 		}
-		if !released {
+		return 0
+	}
+
+	members, err := gatherFamily(ctx, dir, cfg, owner, repoName, f, logger)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	releases, released := familyReleases(cfg, members)
+	if !released {
+		return 0
+	}
+	for _, comp := range components {
+		rel, ok := releases[comp.Name]
+		if !ok {
 			continue
 		}
 		printLine(stdout, comp.Name, multi, fmt.Sprintf("%s (%s)", rel.version.Version, rel.version.Reason))

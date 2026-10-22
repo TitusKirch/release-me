@@ -138,3 +138,25 @@ func TestNextReportsNoRelease(t *testing.T) {
 		})
 	}
 }
+
+func TestChangedReportsWhetherAnyChangeBumpsTheVersion(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		changes []version.Change
+		want    bool
+	}{
+		{name: "no changes"},
+		{name: "only hidden types", changes: []version.Change{{Type: "chore"}, {Type: "docs"}}},
+		{name: "a fix bumps", changes: []version.Change{{Type: "chore"}, {Type: "fix"}}, want: true},
+		{name: "a breaking change bumps", changes: []version.Change{{Type: "fix", Breaking: true}}, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := version.Changed(tc.changes); got != tc.want {
+				t.Fatalf("Changed(%+v) = %v, want %v", tc.changes, got, tc.want)
+			}
+		})
+	}
+}

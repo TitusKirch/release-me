@@ -30,6 +30,10 @@ func runRelease(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	if err := rejectComponentForLocked(cfg, component); err != nil {
+		fmt.Fprintf(stderr, "release-me: %v\n", err)
+		return 2
+	}
 
 	if err := doRelease(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -52,17 +56,21 @@ func doRelease(ctx context.Context, dir string, cfg config.Config, component str
 		return err
 	}
 	multi := len(components) > 1
+	labels := tagrelease.Labels{
+		Pending: cfg.Labels.Pending, Tagged: cfg.Labels.Tagged,
+		Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc,
+	}
+
+	if cfg.Versioning == config.VersioningLocked {
+		return doReleaseLocked(ctx, cfg, owner, repoName, f, labels, dryRun, logger, stdout)
+	}
 
 	any := false
 	for _, comp := range components {
 		results, err := tagrelease.Run(
 			ctx, f, owner, repoName,
 			tagrelease.Component{Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag},
-			tagrelease.Labels{
-				Pending: cfg.Labels.Pending, Tagged: cfg.Labels.Tagged,
-				Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc,
-			},
-			dryRun, logger,
+			labels, dryRun, logger,
 		)
 		if err != nil {
 			return fmt.Errorf("release-me: %w", err)
@@ -73,6 +81,41 @@ func doRelease(ctx context.Context, dir string, cfg config.Config, component str
 			if r.MajorTagMessage != "" {
 				printLine(stdout, comp.Name, multi, r.MajorTagMessage)
 			}
+		}
+	}
+	if !any {
+		fmt.Fprintln(stdout, "nothing to release")
+	}
+	return nil
+}
+
+// doReleaseLocked tags and releases every configured component together,
+// from the one release pull request a locked family shares: every merged,
+// pending-labeled pull request on branch "release-me/main" releases every
+// component at once, the same merge commit and version for each.
+func doReleaseLocked(
+	ctx context.Context, cfg config.Config, owner, repoName string, f forge.Forge, labels tagrelease.Labels, dryRun bool, logger *slog.Logger, stdout io.Writer,
+) error {
+	resolved := cfg.Resolve()
+	comps := make([]tagrelease.Component, 0, len(resolved))
+	for _, comp := range resolved {
+		comps = append(comps, tagrelease.Component{Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag})
+	}
+	branch := resolved[0].Branch
+
+	results, err := tagrelease.RunLocked(ctx, f, owner, repoName, branch, comps, labels, dryRun, logger)
+	if err != nil {
+		return fmt.Errorf("release-me: %w", err)
+	}
+
+	multi := len(resolved) > 1
+	any := false
+	for i, r := range results {
+		any = true
+		name := comps[i%len(comps)].Name
+		printLine(stdout, name, multi, r.Message)
+		if r.MajorTagMessage != "" {
+			printLine(stdout, name, multi, r.MajorTagMessage)
 		}
 	}
 	if !any {

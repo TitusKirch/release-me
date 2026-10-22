@@ -80,7 +80,8 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author: config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Author:     config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning: config.DefaultVersioning,
 			},
 		},
 		{
@@ -122,8 +123,9 @@ files:
 					Pending: "needs-release", Tagged: "released",
 					Alpha: "needs-alpha", Beta: "needs-beta", Rc: "needs-rc",
 				},
-				Author:   config.Author{Name: "renovate", Email: "renovate@example.com"},
-				MajorTag: true,
+				Author:     config.Author{Name: "renovate", Email: "renovate@example.com"},
+				MajorTag:   true,
+				Versioning: config.DefaultVersioning,
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
 					{Path: "deploy/values.yaml", Updater: "marker"},
@@ -145,7 +147,8 @@ files:
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author: config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Author:     config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning: config.DefaultVersioning,
 			},
 		},
 		{
@@ -162,7 +165,8 @@ files:
 					Pending: "needs-release", Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author: config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Author:     config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning: config.DefaultVersioning,
 			},
 		},
 		{
@@ -179,7 +183,8 @@ files:
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author: config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
+				Author:     config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
+				Versioning: config.DefaultVersioning,
 			},
 		},
 	}
@@ -400,5 +405,96 @@ components:
 	}
 	if got[1].ChangelogSource != "nested" {
 		t.Fatalf("frontend ChangelogSource = %q, want %q from its own override", got[1].ChangelogSource, "nested")
+	}
+}
+
+func TestDefaultSetsVersioningToIndependent(t *testing.T) {
+	t.Parallel()
+	if got := config.Default().Versioning; got != config.VersioningIndependent {
+		t.Fatalf("Versioning = %q, want %q", got, config.VersioningIndependent)
+	}
+}
+
+func TestLoadReadsVersioning(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		content string
+		want    config.Versioning
+	}{
+		{name: "defaults to independent", content: "", want: config.VersioningIndependent},
+		{name: "reads locked", content: "versioning: locked\n", want: config.VersioningLocked},
+		{name: "reads linked", content: "versioning: linked\n", want: config.VersioningLinked},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := writeFile(t, tc.content)
+
+			got, err := config.Load(path)
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got.Versioning != tc.want {
+				t.Fatalf("Versioning = %q, want %q", got.Versioning, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsAnUnknownVersioningValue(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, "versioning: mixed\n")
+
+	if _, err := config.Load(path); err == nil {
+		t.Fatal("Load() error = nil, want an error")
+	}
+}
+
+func TestResolveSharesOneBranchAcrossEveryComponentWhenLocked(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, `versioning: locked
+components:
+  backend:
+    path: backend
+  frontend:
+    path: frontend
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got := cfg.Resolve()
+	for _, c := range got {
+		if c.Branch != "release-me/main" {
+			t.Fatalf("component %s Branch = %q, want the shared %q", c.Name, c.Branch, "release-me/main")
+		}
+		if c.TagPrefix != c.Name+"/v" {
+			t.Fatalf("component %s TagPrefix = %q, want %q", c.Name, c.TagPrefix, c.Name+"/v")
+		}
+	}
+}
+
+func TestResolveKeepsOneBranchPerComponentWhenLinked(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, `versioning: linked
+components:
+  backend:
+    path: backend
+  frontend:
+    path: frontend
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got := cfg.Resolve()
+	want := []string{"release-me/backend", "release-me/frontend"}
+	for i, c := range got {
+		if c.Branch != want[i] {
+			t.Fatalf("component %s Branch = %q, want %q", c.Name, c.Branch, want[i])
+		}
 	}
 }
