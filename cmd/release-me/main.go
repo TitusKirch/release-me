@@ -25,6 +25,7 @@ Commands:
   release     tag, release, labels and major tag for merged release pull requests
   run         pr then release, the CI entry point
   check       config, labels and token valid
+  migrate     translate a release-please configuration, nothing written
   version     print the version
 `
 
@@ -53,6 +54,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runRun(args[1:], stdout, stderr)
 	case "check":
 		return runCheck(args[1:], stdout, stderr)
+	case "migrate":
+		return runMigrate(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
