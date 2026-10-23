@@ -152,10 +152,11 @@ func doPRLinked(
 
 // doPRComponent creates or updates the release pull request for one
 // component. Idempotency is judged on content, not on the rendered title
-// and body: the changelog entries (without the heading's date) and the
-// bumped files are compared against the release branch's current tip.
-// Equal content changes nothing, not even the pull request body, unless
-// the notes block itself changed, which updates the body alone, no push.
+// and body: the changelog heading's version, its entries (without the
+// heading's date) and the bumped files are compared against the release
+// branch's current tip. Equal content changes nothing, not even the pull
+// request body, unless the notes block itself changed, which updates the
+// body alone, no push.
 func doPRComponent(
 	ctx context.Context, dir string, cfg config.Config, comp config.ResolvedComponent, familyTagPrefixes []string, rel release,
 	owner, repoName, base string, f forge.Forge, logger *slog.Logger, dryRun, multi bool, stdout io.Writer,
@@ -576,15 +577,19 @@ func planReleaseBranch(ctx context.Context, dir, version string, changelogs []ch
 		plan.desiredFiles[file.Path] = newContent
 	}
 
-	plan.changed = !sameAsReleaseBranch(ctx, tmp, plan.changelogs, plan.desiredFiles, branch)
+	plan.changed = !sameAsReleaseBranch(ctx, tmp, version, plan.changelogs, plan.desiredFiles, branch)
 	return plan, nil
 }
 
-// sameAsReleaseBranch reports whether every changelogs entry and every
-// desiredFiles entry already match branch's current tip. It fetches the
-// branch into compareRef to read it; a branch that does not exist remotely
-// yet, or any read failure, is reported as not matching.
-func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelogUpdate, desiredFiles map[string]string, branch string) bool {
+// sameAsReleaseBranch reports whether every changelogs entry, at version,
+// and every desiredFiles entry already match branch's current tip. It
+// fetches the branch into compareRef to read it; a branch that does not
+// exist remotely yet, or any read failure, is reported as not matching. A
+// changelog heading whose version differs from version counts as not
+// matching too, even when the entries underneath read the same: a
+// version-only difference, a pre-release label added, changed or removed
+// with no new entry, must still push.
+func sameAsReleaseBranch(ctx context.Context, tmp, version string, changelogs []changelogUpdate, desiredFiles map[string]string, branch string) bool {
 	pushURL, err := gitOutput(ctx, tmp, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return false
@@ -596,6 +601,10 @@ func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelog
 	for _, c := range changelogs {
 		changelogContent, ok := gitShowFile(ctx, tmp, compareRef, c.path)
 		if !ok {
+			return false
+		}
+		existingVersion, ok := changelog.HeadingVersion(changelogContent)
+		if !ok || existingVersion != version {
 			return false
 		}
 		existingBody, ok := changelog.TopSection(changelogContent)
