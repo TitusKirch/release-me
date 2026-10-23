@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.1 (2026-10-23)
+
+### Bug Fixes
+
+- **run:** recognize a merged, not yet tagged release pull request ([#46](https://github.com/ostendorf-cloud/release-me/pull/46))
+
 ## v0.1.0 (2026-10-23)
 
 ### Features
