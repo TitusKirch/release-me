@@ -20,7 +20,9 @@ The repository has no release tool yet, or one other than release-please, and th
 to release it with release-me. A repository on release-please goes to the
 `migrate-release-please-to-release-me` skill instead.
 
-## 1. Survey
+## Steps
+
+### 1. Survey
 
 Read the repository; every row below comes from a command or a file, never from a guess.
 
@@ -53,7 +55,7 @@ Read the repository; every row below comes from a command or a file, never from 
 Done when a survey table lists forge, merge methods, every component with its path, version
 file and tag scheme, and the pinned version, each row filled or marked absent.
 
-## 2. Decide
+### 2. Decide
 
 Three choices belong to the human; ask each once, recommendation first:
 
@@ -67,16 +69,18 @@ Three choices belong to the human; ask each once, recommendation first:
 
 Everything else is derived:
 
-- **`changelog-source`** from the merge methods: squash only is `squash`, merge commits allowed
-  is `first-parent`, rebase only is `all`.
+- **`changelog-source`** from the merge methods, first match wins: merge commits allowed, in
+  any combination, is `first-parent`; otherwise squash allowed, alone or beside rebase, is
+  `squash`; rebase only is `all`.
 - **`files`** per component from its version file: `package.json` with updater `json` and key
   `version`, `Chart.yaml` with `helm`, `Cargo.toml` with `toml` and key `package.version`,
-  `pyproject.toml` with `toml` and key `project.version`, a Go constant with `go` and the
-  constant's name as key.
+  `pyproject.toml` with `toml` and key `project.version`, or `tool.poetry.version` where the
+  version sits under `[tool.poetry]` instead, a Go constant with `go` and the constant's name
+  as key.
 
 Done when every key the plan writes is either answered by the human or derived above.
 
-## 3. Plan, then write
+### 3. Plan, then write
 
 Show the complete `release-me.yaml`, the labels the repository lacks and the workflow, then
 write after confirmation:
@@ -94,7 +98,7 @@ write after confirmation:
 Done when both files exist, the missing labels are handed over, and the guard's label list
 equals the labels in `release-me.yaml`, name for name.
 
-## 4. Prove
+### 4. Prove
 
 Run the pinned version locally, through mise:
 
