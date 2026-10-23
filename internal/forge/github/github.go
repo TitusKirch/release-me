@@ -229,14 +229,12 @@ func (f *Forge) MergeCommit(ctx context.Context, owner, repo string, number int)
 // toPullRequest converts a go-github pull request into a forge.PullRequest.
 //
 // Merged reads both the single pull request endpoint's merged field and the
-// merge timestamp: go-github's PullRequest documents merged, mergeable,
-// mergeable_state, rebaseable, merged_by, merge_commit_sha, comments,
-// commits, additions, deletions, changed_files, maintainer_can_modify and
-// review_comments as "not populated by the List operation" that PullRequests
-// calls, so a pull request read from the list never carries merged. It does
-// carry merged_at, set only once a pull request is merged, so a non-zero
-// merge timestamp is as reliable a sign of a merge as the merged field
-// itself, and works for both endpoints.
+// merge timestamp: go-github documents merged as one of the fields the List
+// operation, which PullRequests calls, never populates, so a pull request
+// read from the list never carries merged. It does carry merged_at, set
+// only once a pull request is merged, so a non-zero merge timestamp is as
+// reliable a sign of a merge as the merged field itself, and works for both
+// endpoints.
 func toPullRequest(pr *gogithub.PullRequest) forge.PullRequest {
 	return forge.PullRequest{
 		Number:  pr.GetNumber(),

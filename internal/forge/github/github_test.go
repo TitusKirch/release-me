@@ -119,7 +119,7 @@ func TestPullRequest(t *testing.T) {
 
 // TestPullRequests checks the list endpoint's actual shape, as go-github
 // documents it: no merged field, a merge timestamp on the merged pull
-// request and none on the open one.
+// request and none on the closed-but-unmerged one.
 func TestPullRequests(t *testing.T) {
 	t.Parallel()
 	mux := http.NewServeMux()
@@ -127,8 +127,8 @@ func TestPullRequests(t *testing.T) {
 		if got := r.URL.Query().Get("head"); got != "owner:release-me/main" {
 			t.Errorf("head query = %q, want %q", got, "owner:release-me/main")
 		}
-		if got := r.URL.Query().Get("state"); got != "open" {
-			t.Errorf("state query = %q, want %q", got, "open")
+		if got := r.URL.Query().Get("state"); got != "closed" {
+			t.Errorf("state query = %q, want %q", got, "closed")
 		}
 		fmt.Fprint(w, `[
 			{"number": 9, "title": "chore(main): release v0.2.0"},
@@ -137,7 +137,7 @@ func TestPullRequests(t *testing.T) {
 	})
 	f := newTestForge(t, mux)
 
-	got, err := f.PullRequests(context.Background(), "owner", "repo", "release-me/main", "open")
+	got, err := f.PullRequests(context.Background(), "owner", "repo", "release-me/main", "closed")
 	if err != nil {
 		t.Fatalf("PullRequests() error = %v", err)
 	}
@@ -158,7 +158,13 @@ func TestPullRequests(t *testing.T) {
 func TestPullRequestsListedMergeTimestampDrivesRelease(t *testing.T) {
 	t.Parallel()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v3/repos/owner/repo/pulls", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/v3/repos/owner/repo/pulls", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("head"); got != "owner:release-me/main" {
+			t.Errorf("head query = %q, want %q", got, "owner:release-me/main")
+		}
+		if got := r.URL.Query().Get("state"); got != "closed" {
+			t.Errorf("state query = %q, want %q", got, "closed")
+		}
 		fmt.Fprint(w, `[{
 			"number": 19,
 			"title": "chore(main): release v0.1.0-rc.1",
