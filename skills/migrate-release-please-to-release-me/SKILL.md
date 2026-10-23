@@ -22,7 +22,9 @@ The repository releases with release-please, a `release-please-config.json` at i
 the user wants release-me to take over. A repository with no release tool goes to the
 `setup-release-me` skill instead.
 
-## 1. Survey
+## Steps
+
+### 1. Survey
 
 Read the repository; every row below comes from a command or a file.
 
@@ -47,7 +49,7 @@ Done when the survey lists both files, every release-please workflow, every cons
 file and line, the open release pull request or its absence, the pinned version, and an
 existing `release-me.yaml` or its absence.
 
-## 2. Translate
+### 2. Translate
 
 Nothing is written into the repository yet: the translation and its warnings go to the
 temporary directory, from any directory of the repository, since `migrate` finds the root
@@ -63,23 +65,25 @@ to the human as it stands: it holds the warnings, the error naming the file or k
 not be translated, and, for a translation release-me refuses, that translation to correct by
 hand.
 
-## 3. Settle every warning
+### 3. Settle every warning
 
 Every `warning:` line in the warnings file gets a row in a table: the warning, the action
 taken, and the reason. An action is one of: a change to the translated `release-me.yaml` in the
 temporary directory (a file entry, a key), a change elsewhere in the repository, or an
-acceptance the human confirms. Two kinds are always the human's:
+acceptance the human confirms. A **missing tag** is always the human's: release-me would start
+that component over at its initial version, and the choices are creating the tag at the commit
+that release shipped from, or accepting the restart.
 
-- **A missing tag:** release-me would start that component over at its initial version. The
-  choices are creating the tag at the commit that release shipped from, or accepting the
-  restart.
-- **Versioning:** the translation is `independent`, or `locked` for a `linked-versions` group
-  over every component. Offer `linked` too, one shared version line where only changed
-  components release, which release-please has no equivalent for.
+**Versioning** is the human's too, asked whenever there is more than one component, since no
+warning names it: the translation is `independent`, or `locked` for a `linked-versions` group
+over every component, and either is carried over silently. Offer the translated mode first,
+then the others, `linked` among them: one shared version line where only changed components
+release, which release-please has no equivalent for.
 
-Done when the table has exactly one row per warning line and every row has an action.
+Done when the table has exactly one row per warning line, every row has an action, and with
+more than one component the human has chosen the versioning mode.
 
-## 4. Plan, then write
+### 4. Plan, then write
 
 Show the final `release-me.yaml`, the table, and the workflow diff, then change after
 confirmation:
@@ -103,7 +107,7 @@ confirmation:
 Done when `git grep -n release-please` returns only history, such as changelog entries and
 release notes, and each remaining hit is named in the plan as history.
 
-## 5. Prove
+### 5. Prove
 
 ```sh
 mise exec ubi:ostendorf-cloud/release-me@<version> -- release-me check
