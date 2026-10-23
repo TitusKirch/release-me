@@ -16,6 +16,12 @@ consumed release-please's results is left waiting for a signal that never comes.
 The [release-me README](https://github.com/ostendorf-cloud/release-me#readme) at the pinned
 release is the single source of truth for every key and action input.
 
+## When to use
+
+The repository releases with release-please, a `release-please-config.json` at its root, and
+the user wants release-me to take over. A repository with no release tool goes to the
+`setup-release-me` skill instead.
+
 ## 1. Survey
 
 Read the repository; every row below comes from a command or a file.
@@ -32,27 +38,37 @@ Read the repository; every row below comes from a command or a file.
   the parts release-me does not replace one for one, since its action has no outputs.
 - **Open release pull request:** `gh pr list --label "autorelease: pending" --state open`. One
   that is open is merged or closed before the switch lands, so no release is half cut.
-- **Version to pin:** `gh release list --repo ostendorf-cloud/release-me --limit 1`.
+- **Version to pin:** `gh api repos/ostendorf-cloud/release-me/releases/latest --jq .tag_name`.
+  Without a release, a 404, there is nothing to pin, and the run ends with that finding.
+- **An earlier attempt:** a `release-me.yaml` already at the root is named in the plan; step 4
+  replaces it only after the human confirms.
 
 Done when the survey lists both files, every release-please workflow, every consumer with its
-file and line, the open release pull request or its absence, and the pinned version.
+file and line, the open release pull request or its absence, the pinned version, and an
+existing `release-me.yaml` or its absence.
 
 ## 2. Translate
 
+Nothing is written into the repository yet: the translation and its warnings go to the
+temporary directory, from any directory of the repository, since `migrate` finds the root
+itself.
+
 ```sh
 mise exec ubi:ostendorf-cloud/release-me@<version> -- release-me migrate release-please \
-  > release-me.yaml 2> "${TMPDIR:-/tmp}/release-me-migrate-warnings.txt"
+  > "${TMPDIR:-/tmp}/release-me-migrate.yaml" 2> "${TMPDIR:-/tmp}/release-me-migrate-warnings.txt"
 ```
 
-Done when the command exited 0 and both files exist. A non-zero exit names the file or key it
-could not translate; that finding goes to the human as it stands.
+Done when the command exited 0 and both files exist. On a non-zero exit, show the warnings file
+to the human as it stands: it holds the warnings, the error naming the file or key that could
+not be translated, and, for a translation release-me refuses, that translation to correct by
+hand.
 
 ## 3. Settle every warning
 
 Every `warning:` line in the warnings file gets a row in a table: the warning, the action
-taken, and the reason. An action is one of: a change to `release-me.yaml` (a file entry, a
-key), a change elsewhere in the repository, or an acceptance the human confirms. Two kinds are
-always the human's:
+taken, and the reason. An action is one of: a change to the translated `release-me.yaml` in the
+temporary directory (a file entry, a key), a change elsewhere in the repository, or an
+acceptance the human confirms. Two kinds are always the human's:
 
 - **A missing tag:** release-me would start that component over at its initial version. The
   choices are creating the tag at the commit that release shipped from, or accepting the
@@ -68,6 +84,8 @@ Done when the table has exactly one row per warning line and every row has an ac
 Show the final `release-me.yaml`, the table, and the workflow diff, then change after
 confirmation:
 
+- **Configuration:** the settled translation copied from the temporary directory to
+  `release-me.yaml` at the repository root.
 - **Workflow:** replace the release-please step with `ostendorf-cloud/release-me/action` as the
   README's action section shows it: `push` to the default branch plus `pull_request` with types
   `labeled` and `unlabeled`, a job guard listing exactly the labels in `release-me.yaml`, a
@@ -76,8 +94,9 @@ confirmation:
 - **Consumers:** each one from step 1 rewired to a signal release-me does produce: a pushed tag
   matching the component's `tag-prefix`, a published GitHub release, or a check against the
   package registry.
-- **Labels:** release-please's labels carry over by name; create only those `release-me.yaml`
-  names and the repository lacks.
+- **Labels:** release-please's labels carry over by name. Each one `release-me.yaml` names and
+  `gh api repos/{owner}/{repo}/labels --paginate --jq '.[].name'` lacks is listed for the human
+  to create; labels are repository settings, and the skill creates none.
 - **Removal:** `release-please-config.json`, `.release-please-manifest.json` and the
   release-please workflow steps. Changelogs stay, since release-me prepends to them.
 
@@ -105,3 +124,4 @@ Done when the three outputs are shown to the human.
 - Hand the change over uncommitted; the human commits and pushes it, ideally with no release
   pull request of either tool open.
 - Tags come from release-me, or from the human's explicit choice in step 3.
+- Labels and other repository settings are reported, never changed.
