@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -16,6 +17,7 @@ import (
 	gogithub "github.com/google/go-github/v93/github"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	forgegithub "github.com/ostendorf-cloud/release-me/internal/forge/github"
+	"github.com/ostendorf-cloud/release-me/internal/release"
 )
 
 // newTestForge points a Forge at a local httptest server instead of the real
@@ -115,6 +117,9 @@ func TestPullRequest(t *testing.T) {
 	}
 }
 
+// TestPullRequests checks the list endpoint's actual shape, as go-github
+// documents it: no merged field, a merge timestamp on the merged pull
+// request and none on the closed-but-unmerged one.
 func TestPullRequests(t *testing.T) {
 	t.Parallel()
 	mux := http.NewServeMux()
@@ -122,20 +127,96 @@ func TestPullRequests(t *testing.T) {
 		if got := r.URL.Query().Get("head"); got != "owner:release-me/main" {
 			t.Errorf("head query = %q, want %q", got, "owner:release-me/main")
 		}
-		if got := r.URL.Query().Get("state"); got != "open" {
-			t.Errorf("state query = %q, want %q", got, "open")
+		if got := r.URL.Query().Get("state"); got != "closed" {
+			t.Errorf("state query = %q, want %q", got, "closed")
 		}
-		fmt.Fprint(w, `[{"number": 9, "title": "chore(main): release v0.2.0", "merged": false}]`)
+		fmt.Fprint(w, `[
+			{"number": 9, "title": "chore(main): release v0.2.0"},
+			{"number": 7, "title": "chore(main): release v0.1.0", "merged_at": "2026-01-02T03:04:05Z"}
+		]`)
 	})
 	f := newTestForge(t, mux)
 
-	got, err := f.PullRequests(context.Background(), "owner", "repo", "release-me/main", "open")
+	got, err := f.PullRequests(context.Background(), "owner", "repo", "release-me/main", "closed")
 	if err != nil {
 		t.Fatalf("PullRequests() error = %v", err)
 	}
-	want := []forge.PullRequest{{Number: 9, Title: "chore(main): release v0.2.0", Labels: []string{}}}
+	want := []forge.PullRequest{
+		{Number: 9, Title: "chore(main): release v0.2.0", Labels: []string{}},
+		{Number: 7, Title: "chore(main): release v0.1.0", Labels: []string{}, Merged: true},
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("PullRequests() = %+v, want %+v", got, want)
+	}
+}
+
+// TestPullRequestsListedMergeTimestampDrivesRelease drives release.Run
+// against the real forge instead of forgetest.Fake, with a list response
+// shaped like GitHub's: it carries merged_at and no merged field. Before the
+// fix, PullRequests mapped Merged to false for every one of these, so Run
+// skipped the pull request and released nothing.
+func TestPullRequestsListedMergeTimestampDrivesRelease(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/owner/repo/pulls", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("head"); got != "owner:release-me/main" {
+			t.Errorf("head query = %q, want %q", got, "owner:release-me/main")
+		}
+		if got := r.URL.Query().Get("state"); got != "closed" {
+			t.Errorf("state query = %q, want %q", got, "closed")
+		}
+		fmt.Fprint(w, `[{
+			"number": 19,
+			"title": "chore(main): release v0.1.0-rc.1",
+			"body": "Release v0.1.0-rc.1\n\n<details>\n<summary>Changelog</summary>\n\n## v0.1.0-rc.1 (2026-01-02)\n\n### Features\n\n- add the thing\n\n</details>\n",
+			"labels": [{"name": "release: pending"}, {"name": "release: rc"}],
+			"html_url": "https://github.com/owner/repo/pull/19",
+			"merged_at": "2026-01-02T03:04:05Z",
+			"head": {"sha": "cafefeed"}
+		}]`)
+	})
+	mux.HandleFunc("/api/v3/repos/owner/repo/pulls/19", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"number": 19, "merged": true, "merge_commit_sha": "deadbeef"}`)
+	})
+	var replaced []string
+	mux.HandleFunc("/api/v3/repos/owner/repo/issues/19/labels", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			if err := json.NewDecoder(r.Body).Decode(&replaced); err != nil {
+				t.Fatalf("decode labels body: %v", err)
+			}
+		}
+		fmt.Fprint(w, `[{"name": "release: pending"}, {"name": "release: rc"}]`)
+	})
+	var createdTag map[string]any
+	mux.HandleFunc("/api/v3/repos/owner/repo/git/refs", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&createdTag); err != nil {
+			t.Fatalf("decode tag body: %v", err)
+		}
+		fmt.Fprint(w, `{"ref": "refs/tags/v0.1.0-rc.1", "object": {"sha": "deadbeef"}}`)
+	})
+	mux.HandleFunc("/api/v3/repos/owner/repo/releases", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"id": 1, "tag_name": "v0.1.0-rc.1"}`)
+	})
+	f := newTestForge(t, mux)
+
+	comp := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v"}
+	labels := release.Labels{
+		Pending: "release: pending", Tagged: "release: tagged",
+		Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc",
+	}
+
+	results, err := release.Run(context.Background(), f, "owner", "repo", comp, labels, false, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("release.Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].Tag != "v0.1.0-rc.1" || results[0].Skipped {
+		t.Fatalf("release.Run() = %+v", results)
+	}
+	if createdTag["sha"] != "deadbeef" {
+		t.Fatalf("created tag = %v, want sha deadbeef", createdTag)
+	}
+	if want := []string{"release: tagged"}; !reflect.DeepEqual(replaced, want) {
+		t.Fatalf("replaced labels = %v, want %v", replaced, want)
 	}
 }
 
