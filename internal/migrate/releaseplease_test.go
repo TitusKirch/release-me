@@ -74,7 +74,11 @@ const monorepoManifest = `{
 func TestFromReleasePleaseTranslatesAComponentTaggedMonorepo(t *testing.T) {
 	t.Parallel()
 
-	got, err := migrate.FromReleasePlease([]byte(monorepoConfig), []byte(monorepoManifest), files(nil))
+	read := files(map[string]string{
+		"packages/duxt/package.json":           `{"name": "@kirchdev/duxt", "version": "0.8.1"}`,
+		"packages/duxt-typesense/package.json": `{"name": "@kirchdev/duxt-typesense", "version": "0.1.0"}`,
+	})
+	got, err := migrate.FromReleasePlease([]byte(monorepoConfig), []byte(monorepoManifest), read)
 	if err != nil {
 		t.Fatalf("FromReleasePlease() error = %v", err)
 	}
@@ -141,7 +145,8 @@ func TestFromReleasePleaseKeepsARootPackageWithPlainTagsImplicit(t *testing.T) {
 	t.Parallel()
 	configJSON := `{"packages": {".": {"release-type": "node", "include-component-in-tag": false}}}`
 
-	got, err := migrate.FromReleasePlease([]byte(configJSON), []byte(`{".": "1.4.0"}`), files(nil))
+	read := files(map[string]string{"package.json": `{"private": true, "version": "1.4.0"}`})
+	got, err := migrate.FromReleasePlease([]byte(configJSON), []byte(`{".": "1.4.0"}`), read)
 	if err != nil {
 		t.Fatalf("FromReleasePlease() error = %v", err)
 	}
@@ -161,7 +166,10 @@ func TestFromReleasePleaseKeepsARootPackageWithPlainTagsImplicit(t *testing.T) {
 func TestFromReleasePleaseNamesANodePackageAfterItsPackageJSON(t *testing.T) {
 	t.Parallel()
 	configJSON := `{"separate-pull-requests": true, "packages": {"web": {}, "api": {"component": "backend"}}}`
-	read := files(map[string]string{"web/package.json": `{"name": "@acme/web", "version": "2.0.0"}`})
+	read := files(map[string]string{
+		"web/package.json": `{"name": "@acme/web", "version": "2.0.0"}`,
+		"api/package.json": `{"name": "@acme/api", "version": "1.3.0"}`,
+	})
 
 	got, err := migrate.FromReleasePlease([]byte(configJSON), nil, read)
 	if err != nil {
@@ -183,8 +191,12 @@ func TestFromReleasePleaseMapsLinkedVersionsOverEveryComponentToLocked(t *testin
 	t.Parallel()
 	configJSON := `{"plugins": [{"type": "linked-versions", "groupName": "family", "components": ["a", "b"]}],
 	  "packages": {"a": {"component": "a"}, "b": {"component": "b"}}}`
+	read := files(map[string]string{
+		"a/package.json": `{"name": "a", "version": "1.0.0"}`,
+		"b/package.json": `{"name": "b", "version": "1.0.0"}`,
+	})
 
-	got, err := migrate.FromReleasePlease([]byte(configJSON), nil, files(nil))
+	got, err := migrate.FromReleasePlease([]byte(configJSON), nil, read)
 	if err != nil {
 		t.Fatalf("FromReleasePlease() error = %v", err)
 	}
@@ -194,6 +206,48 @@ func TestFromReleasePleaseMapsLinkedVersionsOverEveryComponentToLocked(t *testin
 	}
 	if len(got.Warnings) != 0 {
 		t.Fatalf("Warnings = %q, want none: locked releases one shared pull request", got.Warnings)
+	}
+}
+
+func TestFromReleasePleaseLeavesOutAVersionFileThatDoesNotExist(t *testing.T) {
+	t.Parallel()
+	configJSON := `{"separate-pull-requests": true, "packages": {
+	  "services/api": {"component": "api"},
+	  "charts/web": {"component": "web", "release-type": "helm"}}}`
+
+	got, err := migrate.FromReleasePlease([]byte(configJSON), nil, files(nil))
+	if err != nil {
+		t.Fatalf("FromReleasePlease() error = %v", err)
+	}
+
+	for _, c := range load(t, got.YAML).Resolve() {
+		if len(c.Files) != 0 {
+			t.Fatalf("%s files = %+v, want none for a version file that does not exist", c.Name, c.Files)
+		}
+	}
+	wantWarnings := []string{
+		"package services/api: release-type node: services/api/package.json does not exist, left out of files",
+		"package charts/web: release-type helm: charts/web/Chart.yaml does not exist, left out of files",
+	}
+	if !reflect.DeepEqual(got.Warnings, wantWarnings) {
+		t.Fatalf("Warnings = %q, want %q", got.Warnings, wantWarnings)
+	}
+}
+
+func TestFromReleasePleaseFindsTheExpectedTagForAManifestKeyWrittenWithDotSlash(t *testing.T) {
+	t.Parallel()
+	configJSON := `{"packages": {"packages/web": {"component": "web", "release-type": "go"}}}`
+
+	got, err := migrate.FromReleasePlease([]byte(configJSON), []byte(`{"./packages/web": "1.0.0"}`), files(nil))
+	if err != nil {
+		t.Fatalf("FromReleasePlease() error = %v", err)
+	}
+
+	if !reflect.DeepEqual(got.Tags, []migrate.ExpectedTag{{Component: "web", Tag: "web-v1.0.0"}}) {
+		t.Fatalf("Tags = %+v, want web-v1.0.0", got.Tags)
+	}
+	if len(got.Warnings) != 0 {
+		t.Fatalf("Warnings = %q, want none", got.Warnings)
 	}
 }
 

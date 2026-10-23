@@ -18,9 +18,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ReadFile reads a file relative to the repository root, the package.json
-// a node package's name falls back to. It returns an error wrapping
-// fs.ErrNotExist for a file that is not there.
+// ReadFile reads a file relative to the repository root: the package.json
+// a node package's name falls back to, and the version file a release type
+// bumps. It returns an error wrapping fs.ErrNotExist for a file that is not
+// there.
 type ReadFile func(path string) ([]byte, error)
 
 // Result is a release-please configuration translated for release-me.
@@ -147,8 +148,12 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		}
 		components = append(components, c)
 	}
+	// The manifest keys are cleaned once, so "./web", "web/" and "web" all
+	// find the package at "web", for the warning and the expected tag alike.
+	versions := make(map[string]string, len(manifest))
 	manifestPaths := make([]string, 0, len(manifest))
-	for path := range manifest {
+	for path, v := range manifest {
+		versions[cleanPackagePath(path)] = v
 		manifestPaths = append(manifestPaths, path)
 	}
 	slices.Sort(manifestPaths)
@@ -156,6 +161,11 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		if !slices.ContainsFunc(packages, func(p rpPackage) bool { return p.path == cleanPackagePath(path) }) {
 			warn(".release-please-manifest.json: %s: no package configured at this path, left out", path)
 		}
+	}
+
+	if len(packages) > 1 && slices.ContainsFunc(packages, func(p rpPackage) bool { return p.path == "." }) {
+		warn("package .: release-me components cannot overlap, so a root package beside other packages " +
+			"needs a path of its own, the directory holding its source, before release-me.yaml loads")
 	}
 
 	versioning, err := translatePlugins(topValues["plugins"], components, warn)
@@ -186,9 +196,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 
 	var tags []ExpectedTag
 	for i, p := range packages {
-		if v, ok := manifest[p.path]; ok {
-			tags = append(tags, ExpectedTag{Component: components[i].name, Tag: components[i].tagPrefix + v})
-		} else if v, ok := manifest[p.path+"/"]; ok {
+		if v, ok := versions[p.path]; ok {
 			tags = append(tags, ExpectedTag{Component: components[i].name, Tag: components[i].tagPrefix + v})
 		}
 	}
@@ -295,14 +303,25 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		initialVersion:    initialVersion,
 	}
 
+	// A version file the release type implies is carried over only where it
+	// exists: release-type falls back to node, and an entry for a file that
+	// is not there would fail the first release pull request.
+	versionFile := func(name, updater, key string) {
+		path := stdpath.Join(p.path, name)
+		if _, err := readFile(path); err != nil {
+			warn("package %s: release-type %s: %s does not exist, left out of files", p.path, releaseType, path)
+			return
+		}
+		c.files = append(c.files, file{path: path, updater: updater, key: key})
+	}
 	switch releaseType {
 	case "node":
-		c.files = append(c.files, file{path: stdpath.Join(p.path, "package.json"), updater: "json", key: "version"})
+		versionFile("package.json", "json", "version")
 		if _, err := readFile(stdpath.Join(p.path, "package-lock.json")); err == nil {
 			warn("package %s: package-lock.json: release-please bumped it, release-me does not", p.path)
 		}
 	case "helm":
-		c.files = append(c.files, file{path: stdpath.Join(p.path, "Chart.yaml"), updater: "helm"})
+		versionFile("Chart.yaml", "helm", "")
 	case "go":
 	default:
 		warn("package %s: release-type %s: the files it bumps are not carried over, add them under files", p.path, releaseType)
@@ -470,9 +489,6 @@ func render(components []component, versioning, pending, tagged string) ([]byte,
 	shared := slices.IndexFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }) == -1
 	if shared {
 		add(doc, "bump-minor-pre-major", boolean(true))
-		for i := range components {
-			components[i].bumpMinorPreMajor = false
-		}
 	}
 
 	if len(components) == 1 && components[0].path == "." && components[0].tagPrefix == "v" {
@@ -480,7 +496,7 @@ func render(components []component, versioning, pending, tagged string) ([]byte,
 		if c.changelog != "CHANGELOG.md" {
 			add(doc, "changelog", scalar(c.changelog))
 		}
-		addSettings(doc, c, add)
+		addSettings(doc, c, shared, add)
 	} else {
 		comps := &yaml.Node{Kind: yaml.MappingNode}
 		for _, c := range components {
@@ -492,7 +508,7 @@ func render(components []component, versioning, pending, tagged string) ([]byte,
 			if c.changelog != stdpath.Join(c.path, "CHANGELOG.md") {
 				add(m, "changelog", scalar(c.changelog))
 			}
-			addSettings(m, c, add)
+			addSettings(m, c, shared, add)
 			add(comps, c.name, m)
 		}
 		add(doc, "components", comps)
@@ -513,11 +529,12 @@ func render(components []component, versioning, pending, tagged string) ([]byte,
 
 // addSettings writes the settings release-me reads per component or at the
 // top level alike: initial-version, bump-minor-pre-major and files.
-func addSettings(m *yaml.Node, c component, add func(*yaml.Node, string, *yaml.Node)) {
+// bump-minor-pre-major is left out where the top level already carries it.
+func addSettings(m *yaml.Node, c component, shared bool, add func(*yaml.Node, string, *yaml.Node)) {
 	if c.initialVersion != "" {
 		add(m, "initial-version", scalar(c.initialVersion))
 	}
-	if c.bumpMinorPreMajor {
+	if c.bumpMinorPreMajor && !shared {
 		add(m, "bump-minor-pre-major", boolean(true))
 	}
 	if len(c.files) > 0 {
