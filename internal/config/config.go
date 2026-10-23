@@ -136,6 +136,9 @@ type File struct {
 // Labels is the "labels" key: the label names release-me expects on the
 // repository. Alpha, Beta and Rc select a pre-release type on the release
 // pull request; Pending and Tagged apply to every release, stable or not.
+// An empty Alpha, Beta or Rc turns that pre-release type off: release-me
+// neither expects the label on the repository nor reads it from a pull
+// request. Pending and Tagged are never empty.
 type Labels struct {
 	Pending string
 	Tagged  string
@@ -444,9 +447,15 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {
+			if *r.Labels.Pending == "" {
+				return Config{}, fmt.Errorf("config: parse %s: labels.pending is empty", path)
+			}
 			cfg.Labels.Pending = *r.Labels.Pending
 		}
 		if r.Labels.Tagged != nil {
+			if *r.Labels.Tagged == "" {
+				return Config{}, fmt.Errorf("config: parse %s: labels.tagged is empty", path)
+			}
 			cfg.Labels.Tagged = *r.Labels.Tagged
 		}
 		if r.Labels.Alpha != nil {
@@ -457,6 +466,9 @@ func Load(path string) (cfg Config, err error) {
 		}
 		if r.Labels.Rc != nil {
 			cfg.Labels.Rc = *r.Labels.Rc
+		}
+		if err := validateLabels(path, cfg.Labels); err != nil {
+			return Config{}, err
 		}
 	}
 	if r.Author != nil {
@@ -692,6 +704,25 @@ func validateChangelogPaths(path string, components []Component) error {
 			if pa, pb := a.changelogPath(), b.changelogPath(); pa == pb {
 				return fmt.Errorf("config: parse %s: component %q and %q write the same changelog %q",
 					path, a.Name, b.Name, pa)
+			}
+		}
+	}
+	return nil
+}
+
+// validateLabels rejects one label name configured for two roles: a pull
+// request carrying it would select both, and the error release-me reports
+// then names the same label twice and points at no fix. Turned-off
+// pre-release types, configured empty, are not compared.
+func validateLabels(path string, l Labels) error {
+	roles := []struct{ key, name string }{
+		{"pending", l.Pending}, {"tagged", l.Tagged}, {"alpha", l.Alpha}, {"beta", l.Beta}, {"rc", l.Rc},
+	}
+	for i := 0; i < len(roles); i++ {
+		for j := i + 1; j < len(roles); j++ {
+			if roles[i].name != "" && roles[i].name == roles[j].name {
+				return fmt.Errorf("config: parse %s: labels.%s and labels.%s are both %q",
+					path, roles[i].key, roles[j].key, roles[i].name)
 			}
 		}
 	}

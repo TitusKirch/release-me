@@ -25,7 +25,8 @@ func Title(name, version string) string {
 
 // GuideLabels is the label names rendered in the release pull request's
 // "How this release works" guide: the tagged label and the three
-// pre-release type labels. The pending label never appears there.
+// pre-release type labels, an empty one for a type turned off. The pending
+// label never appears there.
 type GuideLabels struct {
 	Tagged string
 	Alpha  string
@@ -58,7 +59,8 @@ func Body(version, tag string, labels GuideLabels, notes, changelogSection strin
 
 // guideBlock renders the collapsed "How this release works" section: one
 // line each for the merge, the notes block, the pre-release labels, the
-// override block and the push behaviour.
+// override block and the push behaviour. The pre-release line names only
+// the enabled types and is left out when every type is turned off.
 func guideBlock(tag string, labels GuideLabels) string {
 	var b strings.Builder
 	b.WriteString("<details>\n<summary>How this release works</summary>\n\n")
@@ -66,14 +68,36 @@ func guideBlock(tag string, labels GuideLabels) string {
 		"With `major-tag` enabled, the moving major tag follows a stable release.\n", tag, labels.Tagged)
 	b.WriteString("- Release notes: add a fenced block with the info string `release-me-notes` anywhere in this body. " +
 		"It is rendered above the entries in the changelog file and in the release and survives updates.\n")
-	fmt.Fprintf(&b, "- Pre-release: add the label `%s`, `%s` or `%s`. The next run turns the version into `X.Y.Z-<type>.N`. "+
-		"Remove the label to go back to the stable version.\n", labels.Alpha, labels.Beta, labels.Rc)
+	if enabled := preReleaseLabelList(labels); enabled != "" {
+		fmt.Fprintf(&b, "- Pre-release: add the label %s. The next run turns the version into `X.Y.Z-<type>.N`. "+
+			"Remove the label to go back to the stable version.\n", enabled)
+	}
 	b.WriteString("- Hide or rewrite a change: a fenced block `release-me` in the changed pull request's body, " +
 		"one conventional line per entry, an empty block hides it.\n")
 	b.WriteString("- Every push to the default branch updates this pull request. " +
 		"Edits to the body outside the notes block are overwritten.\n")
 	b.WriteString("\n</details>\n")
 	return b.String()
+}
+
+// preReleaseLabelList renders the enabled pre-release labels as prose,
+// "`a`", "`a` or `b`" or "`a`, `b` or `c`", or "" when every type is
+// turned off.
+func preReleaseLabelList(labels GuideLabels) string {
+	var names []string
+	for _, l := range []string{labels.Alpha, labels.Beta, labels.Rc} {
+		if l != "" {
+			names = append(names, "`"+l+"`")
+		}
+	}
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	default:
+		return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
+	}
 }
 
 // notesBlock matches the "release-me-notes" fenced block of a release pull

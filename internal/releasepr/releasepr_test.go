@@ -273,3 +273,43 @@ func TestExtractDate(t *testing.T) {
 		})
 	}
 }
+
+func TestBodyNamesOnlyTheEnabledPreReleaseLabels(t *testing.T) {
+	t.Parallel()
+	section := "## v0.4.0 (2026-01-02)\n\n### Features\n\n- add the thing\n"
+
+	cases := []struct {
+		name    string
+		labels  releasepr.GuideLabels
+		want    string
+		wantNot string
+	}{
+		{
+			name:   "two of three",
+			labels: releasepr.GuideLabels{Tagged: "release: tagged", Beta: "pre: beta", Rc: "pre: rc"},
+			want:   "add the label `pre: beta` or `pre: rc`.",
+		},
+		{
+			name:   "one",
+			labels: releasepr.GuideLabels{Tagged: "release: tagged", Rc: "pre: rc"},
+			want:   "add the label `pre: rc`.",
+		},
+		{
+			name:    "none",
+			labels:  releasepr.GuideLabels{Tagged: "release: tagged"},
+			wantNot: "Pre-release:",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := releasepr.Body("0.4.0", "v0.4.0", tc.labels, "", section)
+			if tc.want != "" && !strings.Contains(got, tc.want) {
+				t.Fatalf("Body() = %q, want it to contain %q", got, tc.want)
+			}
+			if tc.wantNot != "" && strings.Contains(got, tc.wantNot) {
+				t.Fatalf("Body() = %q, want no %q line", got, tc.wantNot)
+			}
+		})
+	}
+}

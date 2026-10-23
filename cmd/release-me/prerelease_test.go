@@ -120,3 +120,18 @@ func TestPreReleaseVersionSharesTheCounterAcrossTheFamily(t *testing.T) {
 		t.Fatalf("since = %q, want %q", sinceA, "a/v0.9.0-alpha.1")
 	}
 }
+
+func TestSelectPreReleaseTypeIgnoresATypeConfiguredEmpty(t *testing.T) {
+	t.Parallel()
+	lbl := config.Labels{Pending: "release: pending", Tagged: "release: tagged", Rc: "release: rc"}
+
+	// A label named like a turned-off type is an ordinary label, not a
+	// pre-release request, and a second label beside rc is no conflict.
+	preType, ok, err := selectPreReleaseType([]string{"release: pending", "release: alpha", "release: rc"}, lbl)
+	if err != nil || !ok || preType != "rc" {
+		t.Fatalf("selectPreReleaseType() = %q, %v, %v, want rc, true, nil", preType, ok, err)
+	}
+	if _, ok, err := selectPreReleaseType([]string{"release: pending", ""}, lbl); ok || err != nil {
+		t.Fatalf("selectPreReleaseType() ok = %v, err = %v, want a stable release for an empty label name", ok, err)
+	}
+}

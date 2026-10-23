@@ -63,12 +63,13 @@ Trigger the calling workflow on `push` to the default branch, and also on `pull_
 types `labeled` and `unlabeled`. The labeled trigger reruns `release-me run` right away when a
 release label changes, instead of waiting for the next push. Guard the job so the label run
 only fires for a release pull request: the pull request from the repository itself rather than
-a fork, head branch under `release-me/`, and the changed label one of the five release labels,
+a fork, head branch under `release-me/`, and the changed label one of the release labels in use,
 `release: pending`, `release: tagged`, `release: alpha`, `release: beta` or `release: rc` by
-default. A repository that renames its labels through `labels` in `release-me.yaml` names the
-renamed ones in that guard instead: the workflow condition is plain text, it does not read the
-configuration. Check out the pull request's base branch on a label event, not the merge ref,
-so the action computes against the default branch.
+default, without the pre-release types turned off. A repository that renames its labels
+through `labels` in `release-me.yaml` names the renamed ones in that guard instead: the
+workflow condition is plain text, it does not read the configuration. Check out the pull
+request's base branch on a label event, not the merge ref, so the action computes against the
+default branch.
 
 As a container image, for runners with an image cache:
 
@@ -165,7 +166,13 @@ A pre-release type label on the open release pull request, `release: alpha`, `re
 or `release: rc` by default, turns its next run into a pre-release: version `X.Y.Z-alpha.N`,
 `X.Y.Z-beta.N` or `X.Y.Z-rc.N`. `X.Y.Z` is the version a stable release would get from the
 entries since the last stable tag; pre-release tags never move that base. Exactly one of the
-three labels may be present at a time; two at once is an error naming both.
+three labels may be present at a time; two at once is an error naming both. A type whose label
+is set to `""` in `release-me.yaml` is turned off: release-me neither expects that label on the
+repository nor reads it from the pull request, and the guide in the pull request body leaves
+it out. A pull request that already carries the label of a type just turned off keeps it as an
+ordinary label: the next `pr` run returns the version to the stable `X.Y.Z`, and `release`
+leaves that label in place when it swaps `pending` for `tagged`. One name configured for two
+labels is a configuration error.
 
 `N` starts at `1` for a type and counts up from the highest `N` an earlier pre-release tag of
 that same type and base version already carries. Switching the label to a different type does
@@ -381,9 +388,10 @@ files:
 - `labels.pending` and `labels.tagged`: the label names `pr`, `release` and `check` use,
   default `release: pending` and `release: tagged`.
 - `labels.alpha`, `labels.beta` and `labels.rc`: the pre-release type labels `pr`, `release`
-  and `check` use, default `release: alpha`, `release: beta` and `release: rc`. See
-  [Pre-releases](#pre-releases). `check` reports any of the five missing labels by name, it
-  never creates one.
+  and `check` use, default `release: alpha`, `release: beta` and `release: rc`. `""` turns
+  that pre-release type off, so a repository that never cuts pre-releases needs none of the
+  three labels. See [Pre-releases](#pre-releases). `check` reports any of the enabled labels
+  missing by name, it never creates one. `labels.pending` and `labels.tagged` cannot be empty.
 - `author.name` and `author.email`: the git identity `pr` commits the release branch as,
   default `release-me` and `release-me[bot]@users.noreply.github.com`. Passed to the commit
   through the git subprocess's environment, never written into git config. A
