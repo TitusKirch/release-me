@@ -187,9 +187,10 @@ type Config struct {
 // Component is one entry of the "components" key: a name mapped to a path
 // and optional overrides of the top-level initial-version,
 // bump-minor-pre-major, hidden-types, files, major-tag and
-// changelog-source. A nil field was left out of release-me.yaml and falls
-// back to the top-level value, the same left-out-versus-zero-value
-// distinction Load applies to the top level itself.
+// changelog-source, plus its own tag-prefix. A nil field was left out of
+// release-me.yaml and falls back to the top-level value, the same
+// left-out-versus-zero-value distinction Load applies to the top level
+// itself.
 type Component struct {
 	Name              string
 	Path              string
@@ -199,12 +200,15 @@ type Component struct {
 	Files             *[]File
 	MajorTag          *bool
 	ChangelogSource   *string
+	// TagPrefix is the component's "tag-prefix" key, nil when it was left
+	// out and the component keeps the derived "<name>/v".
+	TagPrefix *string
 }
 
 // ResolvedComponent is one component ready for a command to release: its
-// name and path, the tag prefix, release branch and changelog path derived
-// from them, and its settings with the top-level ones applied where it
-// carries no override of its own.
+// name and path, the tag prefix configured or derived from the name, the
+// release branch and changelog path derived from them, and its settings
+// with the top-level ones applied where it carries no override of its own.
 type ResolvedComponent struct {
 	Name          string
 	Path          string
@@ -264,7 +268,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		rc := ResolvedComponent{
 			Name:              c.Name,
 			Path:              c.Path,
-			TagPrefix:         c.Name + "/v",
+			TagPrefix:         c.tagPrefix(),
 			Branch:            branch(c.Name),
 			ChangelogPath:     stdpath.Join(c.Path, "CHANGELOG.md"),
 			Multi:             true,
@@ -355,6 +359,7 @@ type rawComponent struct {
 	Files             *[]rawFile `yaml:"files"`
 	MajorTag          *bool      `yaml:"major-tag"`
 	ChangelogSource   *string    `yaml:"changelog-source"`
+	TagPrefix         *string    `yaml:"tag-prefix"`
 }
 
 // Default is the configuration applied when release-me.yaml is absent.
@@ -481,6 +486,9 @@ func Load(path string) (cfg Config, err error) {
 		if err := validateComponentPaths(path, components); err != nil {
 			return Config{}, err
 		}
+		if err := validateTagPrefixes(path, components); err != nil {
+			return Config{}, err
+		}
 		cfg.Components = components
 	}
 	return cfg, nil
@@ -543,6 +551,11 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 		if rc.Path == nil {
 			return nil, fmt.Errorf("config: parse %s: component %s: path is required", path, name)
 		}
+		if rc.TagPrefix != nil {
+			if err := validateTagPrefix(*rc.TagPrefix); err != nil {
+				return nil, fmt.Errorf("config: parse %s: component %s: tag-prefix %q %w", path, name, *rc.TagPrefix, err)
+			}
+		}
 		if rc.ChangelogSource != nil && !slices.Contains(changelogSources, *rc.ChangelogSource) {
 			return nil, fmt.Errorf(
 				"config: parse %s: component %s: changelog-source %q is none of %s",
@@ -553,7 +566,7 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 		c := Component{
 			Name: name, Path: *rc.Path, InitialVersion: rc.InitialVersion,
 			BumpMinorPreMajor: rc.BumpMinorPreMajor, HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag,
-			ChangelogSource: rc.ChangelogSource,
+			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix,
 		}
 		if rc.Files != nil {
 			files, err := decodeFiles(path, *rc.Files)
@@ -577,6 +590,53 @@ func validateComponentPaths(path string, components []Component) error {
 			if pathsOverlap(a.Path, b.Path) {
 				return fmt.Errorf("config: parse %s: component %q and %q have overlapping paths %q and %q",
 					path, a.Name, b.Name, a.Path, b.Path)
+			}
+		}
+	}
+	return nil
+}
+
+// tagPrefix returns the component's configured "tag-prefix", or the
+// derived "<name>/v" when it carries none.
+func (c Component) tagPrefix() string {
+	if c.TagPrefix != nil {
+		return *c.TagPrefix
+	}
+	return c.Name + "/v"
+}
+
+// validateTagPrefix rejects a "tag-prefix" that cannot start a git tag
+// name, or that git would read as a pattern: LastTag lists a component's
+// tags through "git tag --list <prefix>*", so a glob character in the
+// prefix would match other tags than the component's own. The version is
+// appended to the prefix as it is, so a trailing "/" is allowed.
+func validateTagPrefix(prefix string) error {
+	switch {
+	case prefix == "":
+		return errors.New("is empty")
+	case strings.ContainsAny(prefix, " \t\n~^:?*[\\"):
+		return errors.New("contains whitespace or one of ~ ^ : ? * [ \\")
+	case strings.Contains(prefix, "..") || strings.Contains(prefix, "@{") || strings.Contains(prefix, "//"):
+		return errors.New(`contains "..", "@{" or "//"`)
+	case strings.HasPrefix(prefix, "/") || strings.HasPrefix(prefix, "-") || strings.HasPrefix(prefix, "."):
+		return errors.New(`starts with "/", "-" or "."`)
+	case strings.Contains(prefix, "/."):
+		return errors.New(`has a path segment starting with "."`)
+	}
+	return nil
+}
+
+// validateTagPrefixes rejects two components with the same tag prefix,
+// configured or derived: both would tag the same name and read each
+// other's releases as their own. A prefix that merely starts with another
+// is fine, LastTag discards a tag whose remainder is no version.
+func validateTagPrefixes(path string, components []Component) error {
+	for i := 0; i < len(components); i++ {
+		for j := i + 1; j < len(components); j++ {
+			a, b := components[i], components[j]
+			if pa, pb := a.tagPrefix(), b.tagPrefix(); pa == pb {
+				return fmt.Errorf("config: parse %s: component %q and %q have the same tag prefix %q",
+					path, a.Name, b.Name, pa)
 			}
 		}
 	}

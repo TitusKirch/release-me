@@ -185,16 +185,17 @@ the `pending` label: a tag on the merge commit, a GitHub release with the pull r
 and changelog, draft always false and prerelease true for a pre-release version. The label
 swap removes `pending`, and the matching pre-release type label when the version carries one,
 replacing both with `tagged`. The implicit `main` component tags `vX.Y.Z` and names the release
-after the tag, today's shape; a configured component tags `<name>/vX.Y.Z` and names the release
-`<name> vX.Y.Z`. A tag that already exists, left over from an earlier, interrupted run, is not
-an error: the release and the label swap still happen, so the pull request does not stay
-pending forever, and the run reports it as already tagged.
+after the tag, today's shape; a configured component tags `<name>/vX.Y.Z`, or its `tag-prefix`
+followed by the version, and names the release `<name> vX.Y.Z`. A tag that already exists,
+left over from an earlier, interrupted run, is not an error: the release and the label swap
+still happen, so the pull request does not stay pending forever, and the run reports it as
+already tagged.
 
 With `major-tag: true`, every stable release additionally creates or force-moves the major
-tag, `vX` for the implicit `main` component or `<name>/vX` for a configured one, onto the same
-commit. A tag that does not exist yet is created; one that does is moved, never left behind. A
-pre-release, once that lands, never moves it. `--dry-run` reports whether the major tag would
-be created or moved, writing nothing.
+tag, `vX` for the implicit `main` component or its tag prefix followed by `X` for a configured
+one, onto the same commit. A tag that does not exist yet is created; one that does is moved,
+never left behind. A pre-release, once that lands, never moves it. `--dry-run` reports whether
+the major tag would be created or moved, writing nothing.
 
 ### run
 
@@ -434,7 +435,15 @@ files:
   `components` is
   one component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the shape
   every example above already is. A configured component gets tag prefix `<name>/v`, branch
-  `release-me/<name>`, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`:
+  `release-me/<name>`, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`.
+  `tag-prefix` replaces the derived prefix, for a component whose existing tags follow
+  another scheme, such as `api@v1.4.0`: release-me continues from its last such tag instead of
+  starting over at `initial-version`. The version is appended to the prefix as it is. A prefix
+  that is empty, holds whitespace or one of `~ ^ : ? * [ \`, contains `..`, `@{` or `//`, or
+  starts with `/`, `-` or `.` is a configuration error, as are two components with the same
+  prefix. The prefix is how a component finds its history: adding, changing or removing
+  `tag-prefix` once a component has tags under its previous prefix restarts it at
+  `initial-version`, the same way renaming the component would:
 
   ```yaml
   components:
@@ -446,6 +455,7 @@ files:
     backend:
       path: services/backend
       hidden-types: [chore, docs, test]
+      tag-prefix: backend@v
   ```
 
   A first parent entry belongs to every component whose path it touches, through the files a
