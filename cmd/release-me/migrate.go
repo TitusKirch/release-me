@@ -5,10 +5,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/history"
@@ -74,13 +76,15 @@ func runMigrate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "release-me: %v\n", err)
 		return 1
 	}
-	if err := validateMigrated(result.YAML); err != nil {
-		fmt.Fprintf(stderr, "release-me: migrate: the translated release-me.yaml does not load: %v\n", err)
-		return 1
-	}
-
+	// The warnings come first: a translation release-me refuses is often
+	// explained by one of them.
 	for _, w := range result.Warnings {
 		fmt.Fprintf(stderr, "warning: %s\n", w)
+	}
+	if err := validateMigrated(result.YAML); err != nil {
+		fmt.Fprintf(stderr, "release-me: migrate: the translated release-me.yaml does not load: %v\n", err)
+		fmt.Fprintf(stderr, "release-me: migrate: the refused translation, to correct by hand:\n%s", result.YAML)
+		return 1
 	}
 	for _, t := range result.Tags {
 		exists, err := history.TagExists(ctx, dir, t.Tag)
@@ -104,7 +108,9 @@ func runMigrate(args []string, stdout, stderr io.Writer) int {
 
 // validateMigrated loads the translated configuration the way every other
 // command will, so a translation release-me itself would refuse is reported
-// here instead of on the first release run.
+// here instead of on the first release run. The error names release-me.yaml,
+// not the temporary file it was loaded from, which is gone by the time the
+// user reads it.
 func validateMigrated(content []byte) error {
 	tmp, err := os.MkdirTemp("", "release-me-migrate-")
 	if err != nil {
@@ -115,6 +121,8 @@ func validateMigrated(content []byte) error {
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		return err
 	}
-	_, err = config.Load(path)
-	return err
+	if _, err := config.Load(path); err != nil {
+		return errors.New(strings.ReplaceAll(err.Error(), path, "release-me.yaml"))
+	}
+	return nil
 }
