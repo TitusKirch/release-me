@@ -520,6 +520,17 @@ An unknown key is an error, inside a component too. The file is read from the re
 root, found through `git rev-parse --show-toplevel`, whatever directory the command runs
 from.
 
+## Agent skills
+
+`skills/` carries agent skills for coding agents, installed through [skills.sh](https://skills.sh):
+
+```sh
+npx skills add ostendorf-cloud/release-me
+```
+
+- `setup-release-me`: sets up release-me in a repository with no release tool yet, from the
+  survey of its packages and tags to a `release-me check` and `release-me next` that pass.
+
 ## Development
 
 ```sh

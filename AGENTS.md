@@ -21,6 +21,7 @@ and are not repeated here.
   release section sends the correct `prerelease` field to a fake GitHub API.
 - `action/`: the composite action. `Dockerfile`: the image for runners with an image cache.
 - `release-me.yaml`: the tool's own release configuration.
+- `skills/`: agent skills for using release-me, one folder each, shipped through skills.sh.
 
 ## Commands
 
