@@ -174,6 +174,17 @@ func doPRComponent(
 		}
 	}
 
+	if existing == nil {
+		pending, err := mergedPendingRelease(ctx, f, owner, repoName, comp.Branch, cfg.Labels.Pending, logger)
+		if err != nil {
+			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
+		}
+		if pending {
+			printLine(stdout, comp.Name, multi, "nothing to release")
+			return nil
+		}
+	}
+
 	versionStr := rel.version.Version
 	entries := rel.entries
 	if existing != nil {
@@ -318,6 +329,17 @@ func doPRLocked(
 		if len(existingList) > 1 {
 			logger.Warn("more than one open locked release pull request, using the first",
 				"head", branch, "count", len(existingList), "number", existing.Number)
+		}
+	}
+
+	if existing == nil {
+		pending, err := mergedPendingRelease(ctx, f, owner, repoName, branch, cfg.Labels.Pending, logger)
+		if err != nil {
+			return fmt.Errorf("release-me: locked family: %w", err)
+		}
+		if pending {
+			fmt.Fprintln(stdout, "nothing to release")
+			return nil
 		}
 	}
 
@@ -470,6 +492,37 @@ func lockedPreReleaseEntries(
 		out[m.comp.Name] = release{version: version.Result{Version: vStr, Bump: rel.version.Bump, Reason: rel.version.Reason}, entries: entries, hiddenTypes: m.comp.HiddenTypes}
 	}
 	return versionStr, out, nil
+}
+
+// mergedPendingRelease reports whether branch already carries a closed,
+// merged pull request still labeled pendingLabel: a release already
+// decided, not yet tagged. doRelease recognizes the exact same pull
+// request by the exact same signal to tag it, so as long as it still
+// carries the label, nothing else may release in its place.
+//
+// This is the case right after a release pull request's merge lands on
+// the default branch: that same push's run invocation calls doPR before
+// doRelease tags the release, so the pull request is no longer open, and
+// history.LastTag, reading the local repository doPR runs against, does
+// not see the tag either: CreateTag writes it through the forge API
+// alone, never to a local ref, and release-me never fetches mid-run.
+// Reordering run to tag first would not help: the same local repository
+// stays blind to that tag until the next checkout. Recognizing the
+// merged, still pending pull request directly, the same way doRelease
+// already does, needs no local git state at all.
+func mergedPendingRelease(ctx context.Context, f forge.Forge, owner, repoName, branch, pendingLabel string, logger *slog.Logger) (bool, error) {
+	closed, err := f.PullRequests(ctx, owner, repoName, branch, "closed")
+	if err != nil {
+		return false, fmt.Errorf("list closed pull requests on %s: %w", branch, err)
+	}
+	for _, pr := range closed {
+		if pr.Merged && slices.Contains(pr.Labels, pendingLabel) {
+			logger.Debug("merged pull request still pending, deferring to release",
+				"head", branch, "number", pr.Number)
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // resolveBaseBranch reads the repository's default branch from the forge,

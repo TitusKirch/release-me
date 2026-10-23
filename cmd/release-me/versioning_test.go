@@ -167,6 +167,67 @@ func TestLockedFamilyReleasesAnUnchangedComponentAnyway(t *testing.T) {
 	}
 }
 
+// TestLockedFamilyDoesNotDuplicateTheReleasePullRequestOnTheMergeThatReleasesIt
+// reproduces #45 for a locked family: the shared release pull request's
+// merge pushes to the default branch, and that push's run invocation
+// calls doPR before doRelease tags the release. doPR must recognize the
+// closed, merged, still pending-labeled pull request and create nothing,
+// leaving the one shared pull request for doRelease to tag.
+func TestLockedFamilyDoesNotDuplicateTheReleasePullRequestOnTheMergeThatReleasesIt(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	writeConfig(t, dir, "versioning: locked\ncomponents:\n  a:\n    path: a\n  b:\n    path: b\n")
+	writeFiles(t, dir, "chore: scaffold the family", map[string]string{"a/README.md": "a\n", "b/README.md": "b\n"})
+	writeFiles(t, dir, "feat: add a's feature", map[string]string{"a/feature.go": "package a\n"})
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+
+	f := newFake()
+	var stdout bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+	if len(f.CreatedPullRequests) != 1 {
+		t.Fatalf("CreatedPullRequests = %+v, want one", f.CreatedPullRequests)
+	}
+	created := f.CreatedPullRequests[0]
+
+	// The shared release pull request merges. It still carries the pending
+	// label: release has not tagged it yet.
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{
+			{Number: 1, Title: created.Title, Body: created.Body, Labels: []string{"release: pending"}, Merged: true},
+		}},
+	}
+	f.MergeCommits = map[int]string{1: "deadbeef"}
+	f.PRLabels = map[int][]string{1: {"release: pending"}}
+
+	// The same push's run invocation calls doPR again, before doRelease.
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+	if len(f.CreatedPullRequests) != 1 {
+		t.Fatalf("CreatedPullRequests = %+v, want still only the one shared pull request, no duplicate", f.CreatedPullRequests)
+	}
+
+	if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doRelease() error = %v", err)
+	}
+	wantTags := map[string]bool{"a/v0.1.0": false, "b/v0.1.0": false}
+	for _, tag := range f.CreatedTags {
+		if _, ok := wantTags[tag.Tag]; ok {
+			wantTags[tag.Tag] = true
+		}
+	}
+	for tag, found := range wantTags {
+		if !found {
+			t.Fatalf("CreatedTags = %+v, want %q among them", f.CreatedTags, tag)
+		}
+	}
+}
+
 // TestDoPRIndependentLeavesAnUnchangedComponentUntouched confirms
 // VersioningIndependent, the default, still releases only the component
 // that actually changed, each on its own: adding the "versioning" key does
