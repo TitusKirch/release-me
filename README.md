@@ -530,6 +530,9 @@ npx skills add ostendorf-cloud/release-me
 
 - `setup-release-me`: sets up release-me in a repository with no release tool yet, from the
   survey of its packages and tags to a `release-me check` and `release-me next` that pass.
+- `migrate-release-please-to-release-me`: moves a repository from release-please to release-me
+  through `release-me migrate`, settling every warning it prints, rewiring whatever consumed
+  release-please's outputs, and proving each component continues from its last tag.
 
 ## Development
 
