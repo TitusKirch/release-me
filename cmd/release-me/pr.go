@@ -175,7 +175,7 @@ func doPRComponent(
 	}
 
 	if existing == nil {
-		pending, err := mergedPendingRelease(ctx, f, owner, repoName, comp.Branch, cfg.Labels.Pending)
+		pending, err := mergedPendingRelease(ctx, f, owner, repoName, comp.Branch, cfg.Labels.Pending, logger)
 		if err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
@@ -333,7 +333,7 @@ func doPRLocked(
 	}
 
 	if existing == nil {
-		pending, err := mergedPendingRelease(ctx, f, owner, repoName, branch, cfg.Labels.Pending)
+		pending, err := mergedPendingRelease(ctx, f, owner, repoName, branch, cfg.Labels.Pending, logger)
 		if err != nil {
 			return fmt.Errorf("release-me: locked family: %w", err)
 		}
@@ -510,13 +510,15 @@ func lockedPreReleaseEntries(
 // stays blind to that tag until the next checkout. Recognizing the
 // merged, still pending pull request directly, the same way doRelease
 // already does, needs no local git state at all.
-func mergedPendingRelease(ctx context.Context, f forge.Forge, owner, repoName, branch, pendingLabel string) (bool, error) {
+func mergedPendingRelease(ctx context.Context, f forge.Forge, owner, repoName, branch, pendingLabel string, logger *slog.Logger) (bool, error) {
 	closed, err := f.PullRequests(ctx, owner, repoName, branch, "closed")
 	if err != nil {
 		return false, fmt.Errorf("list closed pull requests on %s: %w", branch, err)
 	}
 	for _, pr := range closed {
 		if pr.Merged && slices.Contains(pr.Labels, pendingLabel) {
+			logger.Debug("merged pull request still pending, deferring to release",
+				"head", branch, "number", pr.Number)
 			return true, nil
 		}
 	}
