@@ -232,8 +232,9 @@ release-me continues from the existing tags and changelogs. A single root packag
 `vX.Y.Z` tags becomes the implicit `main` component instead. It also carries over:
 
 - `bump-minor-pre-major` and `initial-version`;
-- the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package, and every
-  `extra-files` entry of type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
+- the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package where that
+  file exists, `node` being release-please's default type, and every `extra-files` entry of
+  type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
 - `label` and `release-label` as the `pending` and `tagged` labels, with the pre-release types
   turned off, since release-please has none;
 - a `linked-versions` plugin over every component as `versioning: locked`: both release every
@@ -248,7 +249,10 @@ release-me opening one release pull request per component where release-please o
 all of them. It then looks up the tag each package's manifest version was released under and
 warns about a missing one, since release-me would start that component over at its initial
 version. The translation is loaded the way every other command loads `release-me.yaml` before
-it is printed. Exits 0 with warnings, 1 when the files cannot be read or translated.
+it is printed. One release-me refuses, such as a root package beside other packages, whose
+paths overlap, is printed on stderr after the warnings and the reason, to correct by hand.
+Exits 0 with warnings, 1 when the files cannot be read or translated or the translation does not
+load.
 
 ### Notes block
 
