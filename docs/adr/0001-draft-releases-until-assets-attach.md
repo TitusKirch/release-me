@@ -114,11 +114,13 @@ sets `draft-until-assets-attach: true`.
   their release's draft status directly, as the Decision section above describes; a rerun of
   the whole pipeline, not only of release-me's own step, still finds and finishes a release
   orphaned this way.
-- Pull request #50 (issue #49) rewrites `CreateRelease`'s 422 handling in
+- Pull request #50 (issue #49) rewrote `CreateRelease`'s 422 handling in
   `internal/forge/github`, to distinguish a genuine "already exists" 422 from any other reason
-  GitHub might return one. This branch left that handling as it already was, pre-#50, since
-  the two touch the same function for unrelated reasons; they will need an ordinary rebase or
-  merge once both land, but neither depends on the other landing first.
+  GitHub might return one, through a new `releaseAlreadyExists` helper. This branch rebased
+  onto that change once #50 merged: the two touched the same function for unrelated reasons,
+  so the rebase kept both. `CreateRelease` now takes the `draft bool` parameter this ADR adds,
+  builds its request body with `Draft: &draft`, and classifies a 422 response through
+  `releaseAlreadyExists`, exactly as #50 left it; neither change required the other to adapt.
 - Not verified in this environment: a draft release's assets actually attaching and
   publishing against a repository with GitHub's immutable releases setting turned on. That
   setting is off on this repository today, and no `release.yaml` run has exercised the new
