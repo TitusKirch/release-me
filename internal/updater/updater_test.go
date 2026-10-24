@@ -86,6 +86,59 @@ const Fallback = "2.0.0" // release-me: version
 	}
 }
 
+func TestUpdateMarkerReplacesAnExistingPreReleaseOrBuildSuffix(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		content string
+		version string
+		want    string
+	}{
+		{
+			name:    "bumps a stable version to a pre-release version",
+			content: `0.1.1 # release-me: version`,
+			version: "0.3.0-rc.1",
+			want:    `0.3.0-rc.1 # release-me: version`,
+		},
+		{
+			name:    "bumps a pre-release version to another build of the same type",
+			content: `0.3.0-rc.1 # release-me: version`,
+			version: "0.3.0-rc.2",
+			want:    `0.3.0-rc.2 # release-me: version`,
+		},
+		{
+			name:    "bumps a pre-release version to a different pre-release type",
+			content: `0.3.0-rc.1 # release-me: version`,
+			version: "0.3.0-beta.1",
+			want:    `0.3.0-beta.1 # release-me: version`,
+		},
+		{
+			name:    "bumps a pre-release version to the stable version it graduates to",
+			content: `0.3.0-rc.1 # release-me: version`,
+			version: "0.3.0",
+			want:    `0.3.0 # release-me: version`,
+		},
+		{
+			name:    "bumps a version carrying build metadata to another one",
+			content: `1.2.3+build.5 # release-me: version`,
+			version: "1.2.4+build.6",
+			want:    `1.2.4+build.6 # release-me: version`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := updater.UpdateMarker(tc.content, tc.version)
+			if err != nil {
+				t.Fatalf("UpdateMarker() error = %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("UpdateMarker() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestUpdateMarkerRejectsInvalidInput(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
