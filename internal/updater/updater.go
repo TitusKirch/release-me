@@ -56,12 +56,18 @@ func ignoreKey(f func(content, version string) (string, error)) Func {
 // marker comment and the comment itself, kept verbatim.
 var markerLine = regexp.MustCompile(`^(.*?)((?:#|//)\s*release-me:\s*version\s*)$`)
 
-// versionLiteral matches a dotted-number version such as "1.2.3".
-var versionLiteral = regexp.MustCompile(`\d+\.\d+\.\d+`)
+// versionLiteral matches a dotted-number version such as "1.2.3", together
+// with any pre-release suffix introduced by "-" and any build metadata
+// suffix introduced by "+" already attached to it, for example
+// "1.2.3-rc.1" or "1.2.3+build.5". The grammar matches
+// internal/version.tagPattern's own pre-release and build identifiers, so a
+// version replaced here is never left with a stale suffix from the old one.
+var versionLiteral = regexp.MustCompile(`\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`)
 
 // UpdateMarker replaces the version on every line of content that ends in
 // "# release-me: version" or "// release-me: version" with version. The
-// version replaced is the first dotted-number literal found before the
+// version replaced is the first dotted-number literal, together with any
+// pre-release or build suffix already attached to it, found before the
 // marker comment on that line; everything else on the line, including the
 // comment itself, is kept unchanged.
 //
