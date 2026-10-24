@@ -5,6 +5,7 @@ package release_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"reflect"
 	"testing"
@@ -150,6 +151,40 @@ func TestRunToleratesAReleaseThatAlreadyExistsTooWhenTheTagDoes(t *testing.T) {
 	}
 	if len(f.SetLabelsCalls) != 1 {
 		t.Fatalf("SetLabelsCalls = %+v, want the label swapped", f.SetLabelsCalls)
+	}
+}
+
+// TestRunFailsLoudlyWhenCreateReleaseReturnsANonRecoverableError proves that
+// a CreateRelease error that is not forge.ErrReleaseExists, the real forge
+// returns it for a tag name that was ever used by a now-deleted immutable
+// release, stops Run before it swaps the label or moves the major tag: the
+// release was never created, so neither may happen.
+func TestRunFailsLoudlyWhenCreateReleaseReturnsANonRecoverableError(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v0.2.0", Labels: []string{"release: pending"}, Merged: true}
+	releaseErr := errors.New("tag_name was used by an immutable release")
+	comp := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", MajorTag: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits:      map[int]string{9: "deadbeef"},
+		PRLabels:          map[int][]string{9: {"release: pending"}},
+		CreateReleaseErrs: map[string]error{"v0.2.0": releaseErr},
+	}
+
+	_, err := release.Run(context.Background(), f, "owner", "repo", comp, testLabels, false, discardLogger())
+	if !errors.Is(err, releaseErr) {
+		t.Fatalf("Run() error = %v, want it to wrap %v", err, releaseErr)
+	}
+	if len(f.SetLabelsCalls) != 0 {
+		t.Fatalf("SetLabelsCalls = %+v, want no label swap", f.SetLabelsCalls)
+	}
+	if len(f.MovedTags) != 0 {
+		t.Fatalf("MovedTags = %+v, want no major tag move", f.MovedTags)
+	}
+	if len(f.CreatedTags) != 1 || f.CreatedTags[0].Tag != "v0.2.0" {
+		t.Fatalf("CreatedTags = %+v, want only the component tag, no major tag", f.CreatedTags)
 	}
 }
 

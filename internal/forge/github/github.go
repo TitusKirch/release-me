@@ -7,6 +7,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -209,12 +210,33 @@ func (f *Forge) CreateRelease(ctx context.Context, owner, repo, tag, name, body 
 		Prerelease: &prerelease,
 	})
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
+		if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity && releaseAlreadyExists(err) {
 			return forge.ErrReleaseExists
 		}
 		return fmt.Errorf("github: create release %s: %w", tag, err)
 	}
 	return nil
+}
+
+// releaseAlreadyExists reports whether err is GitHub's validation error for
+// a release that genuinely already exists at the requested tag right now:
+// a 422 response whose errors slice names "already_exists" on the
+// "tag_name" field. GitHub returns 422 on this endpoint for other reasons
+// too, including a tag name that was ever used by a now-deleted immutable
+// release, which can never host a release again; those are not this case,
+// and the caller must see the real error instead of treating them as
+// recoverable.
+func releaseAlreadyExists(err error) bool {
+	var errResp *gogithub.ErrorResponse
+	if !errors.As(err, &errResp) {
+		return false
+	}
+	for _, e := range errResp.Errors {
+		if e.Field == "tag_name" && e.Code == "already_exists" {
+			return true
+		}
+	}
+	return false
 }
 
 // MergeCommit implements forge.Forge.

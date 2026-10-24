@@ -120,6 +120,13 @@ type Fake struct {
 	// recording a call.
 	ExistingReleases map[string]bool
 
+	// CreateReleaseErrs maps a tag name to the error CreateRelease returns
+	// for it instead of recording a call, checked before ExistingReleases.
+	// It simulates a non-recoverable forge error, distinct from
+	// forge.ErrReleaseExists, such as GitHub rejecting a tag name that was
+	// ever used by a now-deleted immutable release.
+	CreateReleaseErrs map[string]error
+
 	// NextNumber is the pull request number CreatePullRequest assigns next.
 	NextNumber int
 
@@ -237,6 +244,9 @@ func (f *Fake) MoveTag(_ context.Context, owner, repo, tag, sha string) error {
 
 // CreateRelease implements forge.Forge.
 func (f *Fake) CreateRelease(_ context.Context, owner, repo, tag, name, body string, prerelease bool) error {
+	if err, ok := f.CreateReleaseErrs[tag]; ok {
+		return err
+	}
 	if f.ExistingReleases[tag] {
 		return forge.ErrReleaseExists
 	}

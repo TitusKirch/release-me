@@ -572,18 +572,57 @@ func TestCreateReleaseMarksAPreReleaseVersionAsAPreRelease(t *testing.T) {
 	}
 }
 
-func TestCreateReleaseReturnsErrReleaseExistsOnADuplicateTag(t *testing.T) {
+// TestCreateReleaseTellsAGenuineDuplicateApartFromAnImmutableRelease pins
+// CreateRelease's mapping of a 422 response against the two real GitHub
+// response bodies for POST /repos/{owner}/{repo}/releases: a release that
+// already exists at the tag right now, which is recoverable, and a tag
+// name that was ever used by a now-deleted immutable release, which is
+// permanent and can never host a release.
+func TestCreateReleaseTellsAGenuineDuplicateApartFromAnImmutableRelease(t *testing.T) {
 	t.Parallel()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v3/repos/owner/repo/releases", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		fmt.Fprint(w, `{"message": "Validation Failed"}`)
-	})
-	f := newTestForge(t, mux)
+	cases := []struct {
+		name          string
+		body          string
+		wantErrExists bool
+	}{
+		{
+			name:          "a release already exists at the tag right now",
+			body:          `{"message":"Validation Failed","errors":[{"resource":"Release","field":"tag_name","code":"already_exists","message":"already_exists"}],"documentation_url":"https://docs.github.com/rest/releases/releases#create-a-release"}`,
+			wantErrExists: true,
+		},
+		{
+			name:          "the tag name was used by a now-deleted immutable release",
+			body:          `{"message":"Validation Failed","errors":[{"resource":"Release","field":"tag_name","code":"custom","message":"tag_name was used by an immutable release"}],"documentation_url":"https://docs.github.com/rest/releases/releases#create-a-release"}`,
+			wantErrExists: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v3/repos/owner/repo/releases", func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				fmt.Fprint(w, tc.body)
+			})
+			f := newTestForge(t, mux)
 
-	err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false)
-	if !errors.Is(err, forge.ErrReleaseExists) {
-		t.Fatalf("CreateRelease() error = %v, want %v", err, forge.ErrReleaseExists)
+			err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.1", "v0.1.1", "Release v0.1.1", false)
+			if err == nil {
+				t.Fatalf("CreateRelease() error = nil, want an error")
+			}
+			if got := errors.Is(err, forge.ErrReleaseExists); got != tc.wantErrExists {
+				t.Fatalf("CreateRelease() errors.Is(err, ErrReleaseExists) = %v, want %v (err = %v)", got, tc.wantErrExists, err)
+			}
+			if !tc.wantErrExists {
+				var errResp *gogithub.ErrorResponse
+				if !errors.As(err, &errResp) {
+					t.Fatalf("CreateRelease() error = %v, want it to wrap a *gogithub.ErrorResponse", err)
+				}
+				if len(errResp.Errors) != 1 || errResp.Errors[0].Message != "tag_name was used by an immutable release" {
+					t.Fatalf("CreateRelease() error's wrapped Errors = %+v, want GitHub's validation message", errResp.Errors)
+				}
+			}
+		})
 	}
 }
 
