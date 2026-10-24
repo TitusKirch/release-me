@@ -64,9 +64,10 @@ Without `version`, the action resolves its own release in order: the ref it was 
 (`github.action_ref`), when that ref is itself a release tag; failing that, the `VERSION`
 file shipped at the pinned commit, which this repository's own release process keeps at the
 version released from that exact commit; failing both, an error naming all the ways out.
-Pinned by commit digest, `github.action_ref` is the 40 character sha, never a release tag, so
-the `VERSION` file is what actually resolves it; pinned by a floating tag instead, the ref
-itself already is the release tag, and the `VERSION` file is never consulted.
+Pinned by anything other than a release tag, a commit digest or a floating branch alike,
+`github.action_ref` never matches a release tag, so the `VERSION` file is what actually
+resolves it; pinned by a release tag instead, the ref itself already is the tag, and the
+`VERSION` file is never consulted.
 
 Trigger the calling workflow on `push` to the default branch, and also on `pull_request` with
 types `labeled` and `unlabeled`. The labeled trigger reruns `release-me run` right away when a

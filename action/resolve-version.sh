@@ -15,12 +15,12 @@ if [ -n "${INPUT_VERSION:-}" ]; then
 elif [[ "${ACTION_REF}" =~ ${tag_pattern} ]]; then
   version="${ACTION_REF}"
 elif [ -s "${version_file}" ]; then
-  # A consumer pinned by commit digest, the convention this action's own
-  # README recommends, invokes the action with github.action_ref set to
-  # the 40 character commit sha rather than a release tag, so the regex
-  # above never matches. Read the version release-me's own "files" marker
-  # bumps into VERSION on every release instead: it is the exact version
-  # released from this same commit.
+  # The invocation ref is not itself a release tag, so the regex above
+  # never matches: a consumer pinned by commit digest, the convention this
+  # action's own README recommends, or one pinned to a floating branch
+  # instead. Read the version release-me's own "files" marker bumps into
+  # VERSION on every release instead: it is the exact version released
+  # from this same commit.
   version="$(awk '{print $1; exit}' "${version_file}")"
 else
   version="${ACTION_REF}"
