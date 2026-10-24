@@ -26,8 +26,9 @@ inputs:
   version:
     description: >-
       release-me release to run, without the "v" prefix, or "source" to build it with go build
-      from this checkout instead of downloading a release. Defaults to the action's own release
-      tag.
+      from this checkout instead of downloading a release. Defaults to the ref the action was
+      invoked at when that ref is itself a release tag, then to the VERSION file shipped at
+      the pinned commit, which covers a consumer pinned by commit digest.
     required: false
     default: ""
   author-name:
