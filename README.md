@@ -23,11 +23,12 @@ Through [mise](https://mise.jdx.dev), from the GitHub release's binaries:
 mise use ubi:ostendorf-cloud/release-me
 ```
 
-As a GitHub Action, pinned to a release tag. `release-me run` opens and updates pull requests
-and creates tags and releases, so the job needs `contents: write` and `pull-requests: write`;
-`secrets.GITHUB_TOKEN` cannot trigger the checks on the release pull request it opens, a
-repository or GitHub App token can. A GitHub App token also lets the action attribute the
-release commit to the app's own bot account, through `app-slug`:
+As a GitHub Action, pinned to a commit digest, the convention every action in this
+organisation follows. `release-me run` opens and updates pull requests and creates tags and
+releases, so the job needs `contents: write` and `pull-requests: write`; `secrets.GITHUB_TOKEN`
+cannot trigger the checks on the release pull request it opens, a repository or GitHub App
+token can. A GitHub App token also lets the action attribute the release commit to the app's
+own bot account, through `app-slug`:
 
 ```yaml
 permissions:
@@ -40,7 +41,7 @@ steps:
     with:
       app-id: ${{ vars.APP_ID }}
       private-key: ${{ secrets.APP_PRIVATE_KEY }}
-  - uses: ostendorf-cloud/release-me/action@v0.1.0
+  - uses: ostendorf-cloud/release-me/action@<commit sha>  # v0.1.1
     with:
       token: ${{ steps.app-token.outputs.token }}
       app-slug: ${{ steps.app-token.outputs.app-slug }}
@@ -50,14 +51,23 @@ The action downloads the archive and checksums file matching its own version for
 runner's os and arch, verifies the checksum, then runs `release-me run`. Inputs: `token`
 (required), `component`, `dry-run`, `verbose`, `download-token` for the download step on a
 private fork, defaulting to the calling workflow's own token, `version` to pin a different
-release than the action's own tag, or `source` to build from the checkout with `go build`
-instead, and `author-name`, `author-email`, `app-slug` to attribute the release commit.
-An explicit `author-name` or `author-email` wins for that field; with `app-slug` set, the action resolves
-the app's bot account, `<slug>[bot]`, and its id through the API with `download-token`, and
-attributes the commit to it. Nothing set leaves the tool's own configured or default identity
-in place. `source` only builds this repository's own code: it is `go build`'s working
-directory for `uses: ./action` from inside this repository, not the caller's checkout for
-`uses: ostendorf-cloud/release-me/action@ref`.
+release than the one the action resolves on its own, or `source` to build from the checkout
+with `go build` instead, and `author-name`, `author-email`, `app-slug` to attribute the
+release commit. An explicit `author-name` or `author-email` wins for that field; with
+`app-slug` set, the action resolves the app's bot account, `<slug>[bot]`, and its id through
+the API with `download-token`, and attributes the commit to it. Nothing set leaves the tool's
+own configured or default identity in place. `source` only builds this repository's own code:
+it is `go build`'s working directory for `uses: ./action` from inside this repository, not the
+caller's checkout for `uses: ostendorf-cloud/release-me/action@ref`.
+
+Without `version`, the action resolves its own release in order: the ref it was invoked at
+(`github.action_ref`), when that ref is itself a release tag; failing that, the `VERSION`
+file shipped at the pinned commit, which this repository's own release process keeps at the
+version released from that exact commit; failing both, an error naming all the ways out.
+Pinned by anything other than a release tag, a commit digest or a floating branch alike,
+`github.action_ref` never matches a release tag, so the `VERSION` file is what actually
+resolves it; pinned by a release tag instead, the ref itself already is the tag, and the
+`VERSION` file is never consulted.
 
 Trigger the calling workflow on `push` to the default branch, and also on `pull_request` with
 types `labeled` and `unlabeled`. The labeled trigger reruns `release-me run` right away when a

@@ -84,6 +84,7 @@ tasks:
     desc: Composite action shell script tests
     cmds:
       - action/resolve-author_test.sh
+      - action/resolve-version_test.sh
 
   check:
     desc: Every check, one after another
