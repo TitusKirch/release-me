@@ -84,33 +84,160 @@ type Outcome struct {
 // KindReleaseNotes to use verbatim.
 var commandWord = regexp.MustCompile(`(?s)^(\S+)[ \t\r\n]*(.*)$`)
 
-// htmlComment, fencedBlock and inlineCode match the markdown constructs
-// sanitize removes before Parse ever looks for mention: a comment, quote
-// or illustrative snippet discussing a command must never be read as one.
-var (
-	htmlComment = regexp.MustCompile(`(?s)<!--.*?-->`)
-	fencedBlock = regexp.MustCompile("(?s)```.*?```|~~~.*?~~~")
-	inlineCode  = regexp.MustCompile("`[^`\n]*`")
-)
-
 // sanitize strips HTML comments, fenced code blocks, inline code spans and
 // blockquote lines from body, so Parse never scans text the commenter
 // quoted, fenced or commented out rather than typed as a live command. A
 // GitHub "Quote reply" prefixes every quoted line with ">", which this
 // drops entirely rather than merely ignoring the prefix, since a quoted
 // command is never meant to run.
+//
+// Each construct is removed through its own well-formed close when one
+// exists. An HTML comment or a fenced code block that never closes is
+// removed to the end of body instead of left alone: CommonMark and
+// GitHub's own renderer read an unterminated "<!--" or an unterminated
+// fence as running to the end of the document, inert the whole way, not
+// as a syntax error that leaves the rest of the comment live. A regex
+// requiring a literal closing delimiter cannot express that "or to the
+// end" fallback, so this scans body itself, one construct at a time,
+// left to right, rather than matching closed pairs and hoping every
+// comment happens to close them.
+//
+// An inline code span is different: CommonMark pairs an opening run of N
+// backticks with the next run of exactly N backticks, and one that never
+// finds a matching run is not a code span at all, just literal backtick
+// characters, read as ordinary text by the renderer too. sanitize mirrors
+// that: a backtick run with no matching close is kept, unstripped, so
+// Parse still scans whatever follows it as live text, the same thing a
+// reader of the rendered comment would see.
 func sanitize(body string) string {
-	body = htmlComment.ReplaceAllString(body, "")
-	body = fencedBlock.ReplaceAllString(body, "")
-	body = inlineCode.ReplaceAllString(body, "")
+	var out strings.Builder
+	for i := 0; i < len(body); {
+		switch {
+		case strings.HasPrefix(body[i:], "<!--"):
+			if j := strings.Index(body[i+4:], "-->"); j >= 0 {
+				i += 4 + j + 3
+			} else {
+				i = len(body)
+			}
 
+		case body[i] == '`' || body[i] == '~':
+			c := body[i]
+			n := runLength(body, i, c)
+			switch {
+			case n >= 3 && atFenceOpen(body, i):
+				if end := findRunOfAtLeast(body, i+n, c, n); end >= 0 {
+					i = end
+				} else {
+					i = len(body)
+				}
+			case c == '`':
+				if end := findRunOfExactly(body, i+n, n); end >= 0 {
+					i = end
+				} else {
+					out.WriteString(body[i : i+n])
+					i += n
+				}
+			default:
+				// A tilde run that is not a fence opener has no other
+				// special meaning in CommonMark; keep it literal.
+				out.WriteString(body[i : i+n])
+				i += n
+			}
+
+		default:
+			out.WriteByte(body[i])
+			i++
+		}
+	}
+	return stripBlockquoteLines(out.String())
+}
+
+// runLength returns the length of the run of byte c starting at i.
+func runLength(s string, i int, c byte) int {
+	n := 0
+	for i+n < len(s) && s[i+n] == c {
+		n++
+	}
+	return n
+}
+
+// atFenceOpen reports whether i opens a line, up to three leading spaces
+// or tabs allowed, the same indentation CommonMark still reads a code
+// fence through.
+func atFenceOpen(s string, i int) bool {
+	lineStart := strings.LastIndexByte(s[:i], '\n') + 1
+	indent := s[lineStart:i]
+	if len(indent) > 3 {
+		return false
+	}
+	for j := 0; j < len(indent); j++ {
+		if indent[j] != ' ' && indent[j] != '\t' {
+			return false
+		}
+	}
+	return true
+}
+
+// findRunOfAtLeast returns the index right after the first run of c with
+// length at least minLen, found at or after i, or -1 when body carries
+// none: the fence closing rule, which accepts a closing delimiter at
+// least as long as the opener, a shorter run of the same character
+// skipped over as ordinary content.
+func findRunOfAtLeast(s string, i int, c byte, minLen int) int {
+	for i < len(s) {
+		if s[i] == c {
+			n := runLength(s, i, c)
+			if n >= minLen {
+				return i + n
+			}
+			i += n
+		} else {
+			i++
+		}
+	}
+	return -1
+}
+
+// findRunOfExactly returns the index right after the first run of
+// exactly n backticks found at or after i, or -1 when body carries none:
+// the inline code span closing rule, which only a run of the same length
+// as the opener ends, a longer or shorter run skipped over as content.
+func findRunOfExactly(s string, i, n int) int {
+	for i < len(s) {
+		if s[i] == '`' {
+			run := runLength(s, i, '`')
+			if run == n {
+				return i + n
+			}
+			i += run
+		} else {
+			i++
+		}
+	}
+	return -1
+}
+
+// stripBlockquoteLines drops every line of body that CommonMark reads as
+// part of a blockquote: one starting, after only leading whitespace,
+// with ">", and every immediately following non-blank line that lazily
+// continues it without repeating the marker, the same way CommonMark's
+// own lazy continuation rule reads a quoted paragraph that is not
+// re-prefixed on every line. A blank line ends the continuation.
+func stripBlockquoteLines(body string) string {
 	lines := strings.Split(body, "\n")
 	kept := make([]string, 0, len(lines))
+	inQuote := false
 	for _, line := range lines {
-		if strings.HasPrefix(strings.TrimLeft(line, " \t"), ">") {
-			continue
+		trimmed := strings.TrimLeft(line, " \t")
+		switch {
+		case strings.HasPrefix(trimmed, ">"):
+			inQuote = true
+		case inQuote && trimmed != "":
+			// Lazy continuation: still part of the blockquote above.
+		default:
+			inQuote = false
+			kept = append(kept, line)
 		}
-		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")
 }

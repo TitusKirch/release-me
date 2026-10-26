@@ -198,6 +198,58 @@ func TestParse(t *testing.T) {
 			association: "OWNER",
 			want:        commentcmd.Outcome{Matched: false},
 		},
+		{
+			name:        "a command inside an unterminated fenced code block never executes",
+			body:        "```\n@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command inside an unterminated HTML comment never executes",
+			body:        "<!--\n@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command inside a multi-line double-backtick inline code span never executes",
+			body:        "``\n@release-me release-as 9.9.9\n``",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command lazily continuing a blockquote with no repeated marker never executes",
+			body:        "> No, we should not do that.\n@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command after a blank line following a blockquote still executes",
+			body:        "> quoted text\n\n@release-me release-as 9.9.9",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "9.9.9", Valid: true,
+			},
+		},
+		{
+			name:        "an indented, unterminated fenced code block never executes",
+			body:        "some text\n   ```\n@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a fence opened with tildes closes only on a tilde run of at least the same length",
+			body:        "~~~~\n@release-me release-as 9.9.9\n~~~\nstill inside\n~~~~\nnow outside\n@release-me release-as 1.2.3",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "1.2.3", Valid: true,
+			},
+		},
+		{
+			name:        "an inline code span closes only on a run of exactly the same backtick count",
+			body:        "``@release-me release-as 9.9.9` still inside``",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
