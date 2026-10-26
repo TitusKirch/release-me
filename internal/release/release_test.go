@@ -221,6 +221,105 @@ func TestRunFailsLoudlyWhenCreateReleaseReturnsANonRecoverableError(t *testing.T
 	}
 }
 
+// TestRunDoesNotDraftASecondReleaseWhenTheLabelSwapFailedAfterTheFirstDraft
+// reproduces the race one step earlier than
+// TestRunResumesAnAlreadyTaggedPullRequestWhoseReleaseIsStillADraft: a
+// pull request that stays labeled Pending because the label swap failed
+// after CreateRelease already drafted the release. GitHub's own
+// duplicate-tag_name check does not see a draft, so simply re-entering
+// releaseOne on the next run and tolerating forge.ErrReleaseExists is not
+// enough; Run must notice the existing draft itself and skip straight to
+// the label swap instead of asking CreateRelease to draft a second,
+// orphaned release at the same tag.
+func TestRunDoesNotDraftASecondReleaseWhenTheLabelSwapFailedAfterTheFirstDraft(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v0.2.0", Labels: []string{"release: pending"}, Merged: true}
+	wantErr := errors.New("forge unavailable")
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending"}},
+		SetLabelsErr: wantErr,
+	}
+
+	// First run: CreateRelease drafts the release, but the label swap that
+	// was meant to follow fails, so the pull request stays Pending.
+	_, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, true, false, discardLogger())
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("first Run() error = %v, want it to wrap %v", err, wantErr)
+	}
+	if len(f.CreatedReleases) != 1 {
+		t.Fatalf("CreatedReleases = %+v, want exactly one draft after the first run", f.CreatedReleases)
+	}
+	if got := f.PRLabels[9]; !reflect.DeepEqual(got, []string{"release: pending"}) {
+		t.Fatalf("PRLabels[9] = %v, want the pull request still pending after the failed swap", got)
+	}
+
+	// Second run: the pull request is still Pending, so Run re-enters
+	// releaseOne for it. SetLabels now succeeds.
+	f.SetLabelsErr = nil
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, true, false, discardLogger())
+	if err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].Tag != "v0.2.0" {
+		t.Fatalf("second Run() = %+v", results)
+	}
+	if len(f.CreatedReleases) != 1 {
+		t.Fatalf("CreatedReleases = %+v, want still exactly one, no second orphaned draft", f.CreatedReleases)
+	}
+	if len(f.SetLabelsCalls) != 1 || !reflect.DeepEqual(f.SetLabelsCalls[0].Labels, []string{"release: tagged"}) {
+		t.Fatalf("SetLabelsCalls = %+v, want one successful swap to release: tagged", f.SetLabelsCalls)
+	}
+}
+
+// TestRunLockedDoesNotDraftASecondReleaseWhenTheLabelSwapFailedAfterTheFirstDraft
+// mirrors TestRunDoesNotDraftASecondReleaseWhenTheLabelSwapFailedAfterTheFirstDraft
+// for a locked family, where the label swaps once for every component
+// together.
+func TestRunLockedDoesNotDraftASecondReleaseWhenTheLabelSwapFailedAfterTheFirstDraft(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore: release v0.3.0 (a, b)", Labels: []string{"release: pending"}, Merged: true}
+	wantErr := errors.New("forge unavailable")
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{9: "deadbeef"},
+		PRLabels:     map[int][]string{9: {"release: pending"}},
+		SetLabelsErr: wantErr,
+	}
+	comps := []release.Component{
+		{Name: "a", Branch: "release-me/main", TagPrefix: "a/v", Multi: true},
+		{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
+	}
+
+	_, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, true, false, discardLogger())
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("first RunLocked() error = %v, want it to wrap %v", err, wantErr)
+	}
+	if len(f.CreatedReleases) != 2 {
+		t.Fatalf("CreatedReleases = %+v, want exactly two drafts after the first run", f.CreatedReleases)
+	}
+
+	f.SetLabelsErr = nil
+	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, true, false, discardLogger())
+	if err != nil {
+		t.Fatalf("second RunLocked() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("second RunLocked() = %+v, want two results", results)
+	}
+	if len(f.CreatedReleases) != 2 {
+		t.Fatalf("CreatedReleases = %+v, want still exactly two, no second orphaned drafts", f.CreatedReleases)
+	}
+	if len(f.SetLabelsCalls) != 1 || !reflect.DeepEqual(f.SetLabelsCalls[0].Labels, []string{"release: tagged"}) {
+		t.Fatalf("SetLabelsCalls = %+v, want one successful swap to release: tagged", f.SetLabelsCalls)
+	}
+}
+
 // TestRunResumesAnAlreadyTaggedPullRequestWhoseReleaseIsStillADraft
 // reproduces the orphaned-draft hole left by the Tagged label swapping in
 // immediately after CreateRelease, before any asset attaches or the

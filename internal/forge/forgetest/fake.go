@@ -115,6 +115,12 @@ type Fake struct {
 	// consulting ExistingTags.
 	TagExistsErr error
 
+	// SetLabelsErr, when set, is returned by SetLabels instead of
+	// recording the call or updating PRLabels, simulating a failed write
+	// that changes no remote state, the same as a real forge rejecting
+	// the request.
+	SetLabelsErr error
+
 	// ExistingReleases is the set of tag names CreateRelease treats as
 	// already released, returning forge.ErrReleaseExists instead of
 	// recording a call.
@@ -206,6 +212,9 @@ func (f *Fake) AddLabels(_ context.Context, owner, repo string, number int, labe
 
 // SetLabels implements forge.Forge.
 func (f *Fake) SetLabels(_ context.Context, owner, repo string, number int, labels []string) error {
+	if f.SetLabelsErr != nil {
+		return f.SetLabelsErr
+	}
 	f.SetLabelsCalls = append(f.SetLabelsCalls, SetLabelsCall{Owner: owner, Repo: repo, Number: number, Labels: labels})
 	f.setPRLabels(number, labels)
 	return nil

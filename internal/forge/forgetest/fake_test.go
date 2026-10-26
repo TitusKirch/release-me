@@ -187,6 +187,28 @@ func TestFakeSetLabelsRecordsTheCall(t *testing.T) {
 	}
 }
 
+// TestFakeSetLabelsReturnsTheConfiguredErrorAndChangesNothing proves the
+// fake mirrors a real forge rejecting the write: PRLabels stays whatever it
+// was before the call, and no call is recorded, so a caller checking either
+// one after a failed SetLabels sees no trace of it.
+func TestFakeSetLabelsReturnsTheConfiguredErrorAndChangesNothing(t *testing.T) {
+	t.Parallel()
+	wantErr := errors.New("forge unavailable")
+	f := &forgetest.Fake{PRLabels: map[int][]string{7: {"release: pending"}}, SetLabelsErr: wantErr}
+
+	err := f.SetLabels(context.Background(), "owner", "repo", 7, []string{"release: tagged"})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("SetLabels() error = %v, want %v", err, wantErr)
+	}
+	if len(f.SetLabelsCalls) != 0 {
+		t.Fatalf("SetLabelsCalls = %+v, want none recorded", f.SetLabelsCalls)
+	}
+	labels, _ := f.Labels(context.Background(), "owner", "repo", 7)
+	if !reflect.DeepEqual(labels, []string{"release: pending"}) {
+		t.Fatalf("Labels() = %v, want the original labels unchanged", labels)
+	}
+}
+
 func TestFakeRepositoryLabelsReturnsTheConfiguredList(t *testing.T) {
 	t.Parallel()
 	f := &forgetest.Fake{RepoLabels: []string{"release: pending", "release: tagged"}}

@@ -247,10 +247,31 @@ func releaseLockedFamily(
 			alreadyTagged = true
 		}
 
-		body := lockedReleaseBody(pr.Body, comp.Name)
-		if err := f.CreateRelease(ctx, owner, repoName, tag, name, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil &&
-			!errors.Is(err, forge.ErrReleaseExists) {
-			return nil, fmt.Errorf("release: locked family: component %s: pull request #%d: create release %s: %w", comp.Name, pr.Number, tag, err)
+		// See releaseOne's matching comment: a draft release is invisible
+		// to GitHub's own duplicate-tag_name check, so checking
+		// IsReleaseDraft first closes the same race here, one step
+		// before the label swap, that resumeLockedFamily closes one step
+		// after it.
+		alreadyDrafted := false
+		if draftUntilAssetsAttach {
+			draft, err := f.IsReleaseDraft(ctx, owner, repoName, tag)
+			switch {
+			case err == nil && draft:
+				alreadyDrafted = true
+			case errors.Is(err, forge.ErrReleaseNotFound):
+				// The normal, first-time case: nothing has been
+				// drafted yet, so CreateRelease below runs as usual.
+			case err != nil:
+				return nil, fmt.Errorf("release: locked family: component %s: pull request #%d: check draft %s: %w", comp.Name, pr.Number, tag, err)
+			}
+		}
+
+		if !alreadyDrafted {
+			body := lockedReleaseBody(pr.Body, comp.Name)
+			if err := f.CreateRelease(ctx, owner, repoName, tag, name, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil &&
+				!errors.Is(err, forge.ErrReleaseExists) {
+				return nil, fmt.Errorf("release: locked family: component %s: pull request #%d: create release %s: %w", comp.Name, pr.Number, tag, err)
+			}
 		}
 
 		message := fmt.Sprintf("tagged and released %s", tag)
@@ -544,10 +565,38 @@ func releaseOne(
 		alreadyTagged = true
 	}
 
-	body := releasepr.ReleaseBody(pr.Body)
-	if err := f.CreateRelease(ctx, owner, repoName, tag, releaseName, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil &&
-		!errors.Is(err, forge.ErrReleaseExists) {
-		return Result{}, fmt.Errorf("release: component %s: pull request #%d: create release %s: %w", componentName, pr.Number, tag, err)
+	// A draft release is invisible to GitHub's own duplicate-tag_name check
+	// (see forge.Forge's CreateRelease and IsReleaseDraft doc comments), so
+	// the ErrReleaseExists tolerance below only closes this hole once the
+	// release is published. The gap it misses sits one step earlier: a
+	// previous run can have drafted the release successfully and then
+	// failed before the label swap below, leaving the pull request still
+	// Pending. Re-entering here would call CreateRelease again and get a
+	// second, orphaned draft at the same tag, since GitHub never objects.
+	// Checking IsReleaseDraft first closes that gap the same way
+	// resumeOne closes it for the step after the label swap: find the
+	// draft that already exists and skip straight past it, instead of
+	// creating another one.
+	alreadyDrafted := false
+	if draftUntilAssetsAttach {
+		draft, err := f.IsReleaseDraft(ctx, owner, repoName, tag)
+		switch {
+		case err == nil && draft:
+			alreadyDrafted = true
+		case errors.Is(err, forge.ErrReleaseNotFound):
+			// The normal, first-time case: nothing has been drafted yet,
+			// so CreateRelease below runs as usual.
+		case err != nil:
+			return Result{}, fmt.Errorf("release: component %s: pull request #%d: check draft %s: %w", componentName, pr.Number, tag, err)
+		}
+	}
+
+	if !alreadyDrafted {
+		body := releasepr.ReleaseBody(pr.Body)
+		if err := f.CreateRelease(ctx, owner, repoName, tag, releaseName, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil &&
+			!errors.Is(err, forge.ErrReleaseExists) {
+			return Result{}, fmt.Errorf("release: component %s: pull request #%d: create release %s: %w", componentName, pr.Number, tag, err)
+		}
 	}
 
 	prLabels, err := f.Labels(ctx, owner, repoName, pr.Number)
