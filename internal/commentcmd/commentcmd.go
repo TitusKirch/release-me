@@ -14,6 +14,10 @@ import (
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/version"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/text"
 )
 
 // Kind names a recognized comment command word.
@@ -50,9 +54,10 @@ func Authorized(association string) bool {
 
 // Outcome is what Parse resolved one comment body to.
 type Outcome struct {
-	// Matched is true when some line of body, once stripped of quoted,
-	// fenced, inline code and HTML comment text, starts with mention,
-	// whether or not a recognized command word follows it.
+	// Matched is true when some line of body's live text, with every
+	// quoted, fenced, code span and HTML comment or block construct
+	// removed, starts with mention, whether or not a recognized command
+	// word follows it.
 	Matched bool
 	// Allowed reports whether the comment's author association is close
 	// to write access or higher; see Authorized. Meaningless when Matched
@@ -84,178 +89,86 @@ type Outcome struct {
 // KindReleaseNotes to use verbatim.
 var commandWord = regexp.MustCompile(`(?s)^(\S+)[ \t\r\n]*(.*)$`)
 
-// sanitize strips HTML comments, fenced code blocks, inline code spans and
-// blockquote lines from body, so Parse never scans text the commenter
-// quoted, fenced or commented out rather than typed as a live command. A
-// GitHub "Quote reply" prefixes every quoted line with ">", which this
-// drops entirely rather than merely ignoring the prefix, since a quoted
-// command is never meant to run.
-//
-// Each construct is removed through its own well-formed close when one
-// exists. An HTML comment or a fenced code block that never closes is
-// removed to the end of body instead of left alone: CommonMark and
-// GitHub's own renderer read an unterminated "<!--" or an unterminated
-// fence as running to the end of the document, inert the whole way, not
-// as a syntax error that leaves the rest of the comment live. A regex
-// requiring a literal closing delimiter cannot express that "or to the
-// end" fallback, so this scans body itself, one construct at a time,
-// left to right, rather than matching closed pairs and hoping every
-// comment happens to close them.
-//
-// An inline code span is different: CommonMark pairs an opening run of N
-// backticks with the next run of exactly N backticks, and one that never
-// finds a matching run is not a code span at all, just literal backtick
-// characters, read as ordinary text by the renderer too. sanitize mirrors
-// that: a backtick run with no matching close is kept, unstripped, so
-// Parse still scans whatever follows it as live text, the same thing a
-// reader of the rendered comment would see.
-func sanitize(body string) string {
-	var out strings.Builder
-	for i := 0; i < len(body); {
-		switch {
-		case strings.HasPrefix(body[i:], "<!--"):
-			if j := strings.Index(body[i+4:], "-->"); j >= 0 {
-				i += 4 + j + 3
-			} else {
-				i = len(body)
-			}
+// markdown is the shared CommonMark/GFM parser liveText uses to tell live
+// text apart from a fenced or indented code block, an HTML block or
+// comment, a blockquote at any depth, or an inline code span: the exact
+// set of constructs GitHub's own renderer treats as inert, with every one
+// of CommonMark's own closing rules (fence length and character, a
+// closer standing alone on its own line, indented-code-block detection,
+// blockquote lazy continuation, code span backtick-run matching) already
+// correctly implemented there, rather than re-approximated by hand here.
+// A hand-rolled scanner previously attempted that approximation and, over
+// three review rounds, kept missing real CommonMark edge cases, each one
+// a fresh way to smuggle a command past the mention-matching below: an
+// unterminated fence or comment, a multi-line double-backtick span, a
+// closing fence embedded mid-line instead of alone on its own, and a
+// plain indented code block. A conformant parser is the fix for the
+// whole class, not another special case.
+var markdown = goldmark.New(goldmark.WithExtensions(extension.GFM))
 
-		case body[i] == '`' || body[i] == '~':
-			c := body[i]
-			n := runLength(body, i, c)
-			switch {
-			case n >= 3 && atFenceOpen(body, i):
-				if end := findRunOfAtLeast(body, i+n, c, n); end >= 0 {
-					i = end
-				} else {
-					i = len(body)
-				}
-			case c == '`':
-				if end := findRunOfExactly(body, i+n, n); end >= 0 {
-					i = end
-				} else {
-					out.WriteString(body[i : i+n])
-					i += n
-				}
-			default:
-				// A tilde run that is not a fence opener has no other
-				// special meaning in CommonMark; keep it literal.
-				out.WriteString(body[i : i+n])
-				i += n
-			}
+// liveText returns the plain text content of body that CommonMark reads
+// as live, read in document order: the content of a fenced or indented
+// code block, an HTML block, a blockquote at any depth, and an inline
+// code span or raw inline HTML are all skipped entirely, never scanned
+// for mention, the same text a reader of the rendered comment would
+// never see as a real command either. Each surviving source line keeps
+// its own line in the result, so Parse's "mention opens its own line"
+// rule still applies to exactly the text CommonMark would actually
+// render live.
+func liveText(body string) string {
+	source := []byte(body)
+	doc := markdown.Parser().Parse(text.NewReader(source))
 
-		default:
-			out.WriteByte(body[i])
-			i++
+	var b strings.Builder
+	walkLiveText(doc, source, &b)
+	return b.String()
+}
+
+// walkLiveText appends n's live text content to b, skipping n entirely
+// when it is one of the constructs CommonMark renders as inert, and
+// recursing into every other node's children otherwise. A line break
+// follows a block node's own content, so sibling blocks never merge onto
+// one line.
+func walkLiveText(n ast.Node, source []byte, b *strings.Builder) {
+	switch n.Kind() {
+	case ast.KindFencedCodeBlock, ast.KindCodeBlock, ast.KindHTMLBlock, ast.KindBlockquote,
+		ast.KindCodeSpan, ast.KindRawHTML:
+		return
+
+	case ast.KindText:
+		t, ok := n.(*ast.Text)
+		if !ok {
+			return
 		}
-	}
-	return stripBlockquoteLines(out.String())
-}
-
-// runLength returns the length of the run of byte c starting at i.
-func runLength(s string, i int, c byte) int {
-	n := 0
-	for i+n < len(s) && s[i+n] == c {
-		n++
-	}
-	return n
-}
-
-// atFenceOpen reports whether i opens a line, up to three leading spaces
-// or tabs allowed, the same indentation CommonMark still reads a code
-// fence through.
-func atFenceOpen(s string, i int) bool {
-	lineStart := strings.LastIndexByte(s[:i], '\n') + 1
-	indent := s[lineStart:i]
-	if len(indent) > 3 {
-		return false
-	}
-	for j := 0; j < len(indent); j++ {
-		if indent[j] != ' ' && indent[j] != '\t' {
-			return false
+		b.Write(t.Segment.Value(source))
+		if t.SoftLineBreak() || t.HardLineBreak() {
+			b.WriteByte('\n')
 		}
+		return
 	}
-	return true
+
+	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		walkLiveText(c, source, b)
+	}
+	if n.Type() == ast.TypeBlock {
+		b.WriteByte('\n')
+	}
 }
 
-// findRunOfAtLeast returns the index right after the first run of c with
-// length at least minLen, found at or after i, or -1 when body carries
-// none: the fence closing rule, which accepts a closing delimiter at
-// least as long as the opener, a shorter run of the same character
-// skipped over as ordinary content.
-func findRunOfAtLeast(s string, i int, c byte, minLen int) int {
-	for i < len(s) {
-		if s[i] == c {
-			n := runLength(s, i, c)
-			if n >= minLen {
-				return i + n
-			}
-			i += n
-		} else {
-			i++
-		}
-	}
-	return -1
-}
-
-// findRunOfExactly returns the index right after the first run of
-// exactly n backticks found at or after i, or -1 when body carries none:
-// the inline code span closing rule, which only a run of the same length
-// as the opener ends, a longer or shorter run skipped over as content.
-func findRunOfExactly(s string, i, n int) int {
-	for i < len(s) {
-		if s[i] == '`' {
-			run := runLength(s, i, '`')
-			if run == n {
-				return i + n
-			}
-			i += run
-		} else {
-			i++
-		}
-	}
-	return -1
-}
-
-// stripBlockquoteLines drops every line of body that CommonMark reads as
-// part of a blockquote: one starting, after only leading whitespace,
-// with ">", and every immediately following non-blank line that lazily
-// continues it without repeating the marker, the same way CommonMark's
-// own lazy continuation rule reads a quoted paragraph that is not
-// re-prefixed on every line. A blank line ends the continuation.
-func stripBlockquoteLines(body string) string {
-	lines := strings.Split(body, "\n")
-	kept := make([]string, 0, len(lines))
-	inQuote := false
-	for _, line := range lines {
-		trimmed := strings.TrimLeft(line, " \t")
-		switch {
-		case strings.HasPrefix(trimmed, ">"):
-			inQuote = true
-		case inQuote && trimmed != "":
-			// Lazy continuation: still part of the blockquote above.
-		default:
-			inQuote = false
-			kept = append(kept, line)
-		}
-	}
-	return strings.Join(kept, "\n")
-}
-
-// Parse sanitizes body, then scans its lines for one that starts, after
-// only leading whitespace, with mention at a real token boundary, and
-// resolves the recognized command word that follows the first such line
-// one does, returning what it resolved and whether association
-// authorizes it. mention is compared literally; a repository's configured
-// "comment-mention" is passed as is.
+// Parse reduces body to its live text through liveText, then scans its
+// lines for one that starts, after only leading whitespace, with mention
+// at a real token boundary, and resolves the recognized command word
+// that follows the first such line one does, returning what it resolved
+// and whether association authorizes it. mention is compared literally;
+// a repository's configured "comment-mention" is passed as is.
 //
 // Requiring mention to open its own line, not merely appear anywhere in
 // body, is deliberate: a command embedded mid sentence, in a blockquote, a
 // fenced block, an inline code span or an HTML comment must never execute,
 // including when a maintainer's own "Quote reply" repeats a refused
-// command verbatim to say no to it. sanitize already drops every one of
+// command verbatim to say no to it. liveText already drops every one of
 // those constructs; the line-start rule is a second, independent reason
-// each of them fails to match even if sanitize somehow missed one.
+// each of them fails to match even if liveText ever somehow missed one.
 //
 // A comment that never names mention at all returns Matched false: the
 // comment was not directed at release-me, and the caller replies to
@@ -271,7 +184,7 @@ func Parse(body, mention, association string) Outcome {
 		return out
 	}
 
-	clean := sanitize(body)
+	clean := liveText(body)
 	offset := 0
 	for _, line := range strings.Split(clean, "\n") {
 		trimmed := strings.TrimLeft(line, " \t")

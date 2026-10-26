@@ -250,6 +250,30 @@ func TestParse(t *testing.T) {
 			association: "OWNER",
 			want:        commentcmd.Outcome{Matched: false},
 		},
+		{
+			name:        "a closing fence embedded mid-line, not alone on its own line, never closes the fence",
+			body:        "```\nignore ``` @release-me release-as 9.9.9\n```\n",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a longer closing run embedded mid-line also never closes the fence",
+			body:        "```\nsome content ```` @release-me release-as 9.9.9\n```\n",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "an indented code block, four spaces after a blank line, never executes",
+			body:        "Some comment text.\n\n    @release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "an indented code block with a tab indent never executes",
+			body:        "Some comment text.\n\n\t@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
