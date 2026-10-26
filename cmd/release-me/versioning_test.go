@@ -225,6 +225,61 @@ func TestLockedFamilyAppliesAVersionOverride(t *testing.T) {
 	}
 }
 
+// TestLockedFamilyIgnoresAVersionOverrideNotGreaterThanTheLastTag guards
+// against a locked family's release-as override producing a backwards
+// release: a family already at 5.0.0 commenting "release-as 1.2.3" must
+// not ship 1.2.3 over 5.0.0, the same regression
+// TestDoPRIgnoresAVersionOverrideNotGreaterThanTheLastTag guards for a
+// single, independent component.
+func TestLockedFamilyIgnoresAVersionOverrideNotGreaterThanTheLastTag(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeConfig(t, dir, "versioning: locked\ncomponents:\n  a:\n    path: a\n  b:\n    path: b\n")
+	writeFiles(t, dir, "chore: scaffold the family", map[string]string{"a/README.md": "a\n", "b/README.md": "b\n"})
+	runGit(t, dir, "tag", "a/v5.0.0")
+	runGit(t, dir, "tag", "b/v5.0.0")
+	writeFiles(t, dir, "feat: add a's feature", map[string]string{"a/feature.go": "package a\n"})
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+
+	f := newFake()
+	var first bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &first); err != nil {
+		t.Fatalf("doPR() first run error = %v", err)
+	}
+	created := f.CreatedPullRequests[0]
+	if !strings.Contains(created.Title, "v5.1.0") {
+		t.Fatalf("created title = %q, want v5.1.0", created.Title)
+	}
+
+	withOverride := releasepr.SetVersionOverride(created.Body, "1.2.3")
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: "release-me/main", State: "open", PullRequests: []forge.PullRequest{
+			{Number: 1, Title: created.Title, Body: withOverride, HeadSHA: bareBranchSHA(t, origin)},
+		}},
+	}
+
+	writeFiles(t, dir, "fix: patch a", map[string]string{"a/CHANGES.txt": "a-fix\n"})
+
+	var second bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &second); err != nil {
+		t.Fatalf("doPR() second run error = %v", err)
+	}
+
+	if len(f.UpdatedPullRequests) != 1 {
+		t.Fatalf("UpdatedPullRequests = %+v, want one", f.UpdatedPullRequests)
+	}
+	updated := f.UpdatedPullRequests[0]
+	if !strings.Contains(updated.Title, "v5.1.0") {
+		t.Fatalf("updated title = %q, want the computed version kept, not the backwards override", updated.Title)
+	}
+	if !strings.Contains(updated.Body, "```release-me-version\n1.2.3\n```") {
+		t.Fatalf("updated body = %q, want the rejected override text kept verbatim for visibility", updated.Body)
+	}
+}
+
 // TestLockedFamilyDoesNotDuplicateTheReleasePullRequestOnTheMergeThatReleasesIt
 // reproduces #45 for a locked family: the shared release pull request's
 // merge pushes to the default branch, and that push's run invocation
