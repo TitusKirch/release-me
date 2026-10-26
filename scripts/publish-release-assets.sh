@@ -25,16 +25,32 @@ fi
 
 git fetch origin --tags --force
 
-# Every tag gets checked out by hand before its build: the job's checkout
-# step may sit on the base branch or a push's own commit, not necessarily
-# the merge commit release-me tagged, in particular on the pull_request
-# labeled/unlabeled trigger, and a locked family can tag more than one
-# component from more than one merge commit in the same run. goreleaser
-# must build the exact commit each tag names, never whatever the job
-# happens to have checked out. original_ref is restored once every tag is
-# done, by commit SHA rather than branch name: a push-triggered run leaves
-# the checkout detached, with no branch name to restore.
+# Every tag gets built in a dedicated git worktree, never by detaching the
+# job's own checkout in place: the job's checkout may sit on the base
+# branch or a push's own commit, not necessarily the merge commit release-me
+# tagged, in particular on the pull_request labeled/unlabeled trigger, and a
+# locked family can tag more than one component from more than one merge
+# commit in the same run, so each tag needs its own exact build. Detaching
+# HEAD in place would rewrite this very script and .goreleaser.yaml out from
+# under the still-executing shell, since both live in the checkout a
+# detaching "git checkout" would switch to a different commit of; a separate
+# worktree leaves the running checkout, and this script, untouched.
+#
+# original_ref and worktree_dir are restored and removed by the trap below
+# on every exit path, success or failure: a plain "restore at the end of the
+# script" line would never run once "set -euo pipefail" or an explicit
+# "exit 1" stops the script early, for a tag whose release view, build,
+# upload or publish step failed.
 original_ref="$(git rev-parse HEAD)"
+worktree_dir=""
+
+cleanup() {
+  if [ -n "${worktree_dir}" ] && [ -d "${worktree_dir}" ]; then
+    git worktree remove --force --quiet "${worktree_dir}"
+  fi
+  git checkout --quiet "${original_ref}"
+}
+trap cleanup EXIT
 
 while IFS= read -r tag; do
   if [ -z "${tag}" ]; then
@@ -63,17 +79,23 @@ while IFS= read -r tag; do
     ;;
   esac
 
-  echo "checking out ${tag} to build its exact source"
-  git checkout --quiet --detach "${tag}"
+  echo "building ${tag} in its own worktree"
+  worktree_dir="$(mktemp -d)"
+  git worktree add --quiet --detach "${worktree_dir}" "${tag}"
 
-  echo "building archives for ${tag}"
-  GORELEASER_CURRENT_TAG="${tag}" goreleaser release --clean --skip=announce,validate,publish
+  (
+    cd "${worktree_dir}"
 
-  echo "attaching assets to the draft release ${tag}"
-  gh release upload "${tag}" dist/*.tar.gz dist/*checksums.txt --clobber
+    echo "building archives for ${tag}"
+    GORELEASER_CURRENT_TAG="${tag}" goreleaser release --clean --skip=announce,validate,publish
 
-  echo "publishing ${tag}"
-  gh release edit "${tag}" --draft=false
+    echo "attaching assets to the draft release ${tag}"
+    gh release upload "${tag}" dist/*.tar.gz dist/*checksums.txt --clobber
+
+    echo "publishing ${tag}"
+    gh release edit "${tag}" --draft=false
+  )
+
+  git worktree remove --quiet "${worktree_dir}"
+  worktree_dir=""
 done <<<"${TAGS}"
-
-git checkout --quiet "${original_ref}"
