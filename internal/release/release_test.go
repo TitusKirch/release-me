@@ -376,7 +376,7 @@ func TestRunDoesNotResumeAnAlreadyTaggedPullRequestOnceItsReleaseIsPublished(t *
 
 func TestRunIgnoresAPullRequestWithoutThePendingLabel(t *testing.T) {
 	t.Parallel()
-	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v0.2.0", Labels: []string{"release: tagged"}, Merged: true}
+	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v0.2.0", Labels: []string{"priority: high"}, Merged: true}
 	f := &forgetest.Fake{
 		ListResponses: []forgetest.ListResponse{
 			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
@@ -389,6 +389,64 @@ func TestRunIgnoresAPullRequestWithoutThePendingLabel(t *testing.T) {
 	}
 	if len(results) != 0 {
 		t.Fatalf("Run() = %+v, want no results", results)
+	}
+}
+
+// TestRunDoesNotResumeATaggedPullRequestWhenDraftUntilAssetsAttachIsOff
+// proves the resumeOne scan itself is gated on draftUntilAssetsAttach,
+// not merely that it happens to find nothing: the fake forge's
+// ReleaseDrafts is primed with an actual, outstanding draft for this
+// pull request's tag, so if the "!draftUntilAssetsAttach" guard in Run
+// were ever deleted, resumeOne would find that draft and produce a
+// result, and this test would then correctly fail. Priming
+// ReleaseDrafts is what tells this test apart from one where resumeOne
+// runs and legitimately finds nothing, which forge.ErrReleaseNotFound
+// would also produce with an empty ReleaseDrafts map.
+func TestRunDoesNotResumeATaggedPullRequestWhenDraftUntilAssetsAttachIsOff(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v0.2.0", Labels: []string{"release: tagged"}, Merged: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		ReleaseDrafts: map[string]bool{"v0.2.0": true},
+	}
+
+	results, err := release.Run(context.Background(), f, "owner", "repo", mainComponent, testLabels, false, false, discardLogger())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("Run() = %+v, want no results: resuming is off", results)
+	}
+}
+
+// TestRunLockedDoesNotResumeATaggedPullRequestWhenDraftUntilAssetsAttachIsOff
+// mirrors TestRunDoesNotResumeATaggedPullRequestWhenDraftUntilAssetsAttachIsOff
+// for a locked family, for the same reason
+// TestRunLockedResumesOnlyTheComponentWhoseReleaseIsStillADraft mirrors
+// TestRunResumesAnAlreadyTaggedPullRequestWhoseReleaseIsStillADraft: this
+// file mirrors resume's own coverage across both Run paths.
+func TestRunLockedDoesNotResumeATaggedPullRequestWhenDraftUntilAssetsAttachIsOff(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{Number: 9, Title: "chore: release v0.3.0 (a, b)", Labels: []string{"release: tagged"}, Merged: true}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		ReleaseDrafts: map[string]bool{"a/v0.3.0": true, "b/v0.3.0": true},
+	}
+	comps := []release.Component{
+		{Name: "a", Branch: "release-me/main", TagPrefix: "a/v", Multi: true},
+		{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
+	}
+
+	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger())
+	if err != nil {
+		t.Fatalf("RunLocked() error = %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("RunLocked() = %+v, want no results: resuming is off", results)
 	}
 }
 
