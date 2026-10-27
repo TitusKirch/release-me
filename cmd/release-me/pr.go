@@ -195,6 +195,9 @@ func doPRComponent(
 			return fmt.Errorf("release-me: component %s: last tag: %w", comp.Name, err)
 		}
 		versionOverride, versionStr, overrideValid = applyVersionOverride(existing.Body, versionStr, last, hasLast, logger, comp.Name, existing.Number)
+		if versionOverride != "" {
+			recordOverrideOutcome(ctx, existing.Number, overrideValid)
+		}
 	}
 	if existing != nil && !overrideValid {
 		preType, isPre, err := selectPreReleaseType(existing.Labels, cfg.Labels)
@@ -363,6 +366,9 @@ func doPRLocked(
 	if existing != nil {
 		last, hasLast := familyLastVersion(members)
 		versionOverride, versionStr, overrideValid = applyVersionOverride(existing.Body, versionStr, last, hasLast, logger, "locked family", existing.Number)
+		if versionOverride != "" {
+			recordOverrideOutcome(ctx, existing.Number, overrideValid)
+		}
 	}
 	if existing != nil && !overrideValid {
 		preType, isPre, err := selectPreReleaseType(existing.Labels, cfg.Labels)
@@ -608,6 +614,45 @@ func applyVersionOverride(
 	default:
 		return raw, sv.String(), true
 	}
+}
+
+// overrideRecorder collects, for every open release pull request doPR
+// touches this run, whether a release-me-version override present on its
+// body actually won against the last released version: the one decision
+// applyVersionOverride already makes, silently, every run. A "release-as"
+// comment command wires one into ctx, through withOverrideRecorder, right
+// before calling doPR, so it can report accurately on the one pull
+// request it just wrote the override onto, instead of assuming the
+// override won whenever doPR itself returns no error. The ordinary "pr"
+// command's own run never wires one in, so recordOverrideOutcome is a
+// no-op and costs nothing there.
+type overrideRecorder struct {
+	results map[int]bool
+}
+
+// overrideRecorderKey is the unexported context key an *overrideRecorder
+// is stored under, so only withOverrideRecorder and recordOverrideOutcome
+// ever reach it.
+type overrideRecorderKey struct{}
+
+// withOverrideRecorder returns ctx carrying rec, read back by every
+// recordOverrideOutcome call doPR's run makes.
+func withOverrideRecorder(ctx context.Context, rec *overrideRecorder) context.Context {
+	return context.WithValue(ctx, overrideRecorderKey{}, rec)
+}
+
+// recordOverrideOutcome records, for pull request number, whether a
+// release-me-version override found on its body actually won this run,
+// when ctx carries an *overrideRecorder; it does nothing otherwise.
+func recordOverrideOutcome(ctx context.Context, number int, applied bool) {
+	rec, ok := ctx.Value(overrideRecorderKey{}).(*overrideRecorder)
+	if !ok {
+		return
+	}
+	if rec.results == nil {
+		rec.results = make(map[int]bool)
+	}
+	rec.results[number] = applied
 }
 
 // changelogUpdate is one component's changelog file path and the entries

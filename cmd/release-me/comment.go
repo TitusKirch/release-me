@@ -111,21 +111,49 @@ func doComment(
 		// here on is best-effort. Recompute every configured component's
 		// release pull request now, the same logic and the same "pr" code
 		// path the next scheduled run would use, so this one does not have
-		// to wait for it. A failure here never undoes the write above and
-		// never fails the command: the next scheduled run still applies the
-		// override exactly as it always has, so the fallback this reply
-		// names is real, not a false promise.
-		if err := doPR(ctx, dir, cfg, "", f, logger, false, stdout); err != nil {
-			logger.Error("release-as: could not recompute the title and changelog immediately, "+
-				"falling back to the next scheduled run", "pr", flags.prNumber, "error", err)
+		// to wait for it. doPR itself returning no error only means the
+		// recompute ran; it says nothing about whether applyVersionOverride
+		// actually let this exact version win against the last released
+		// one, so an overrideRecorder rides along on ctx to answer that
+		// specific question for this pull request.
+		rec := &overrideRecorder{}
+		recomputeErr := doPR(withOverrideRecorder(ctx, rec), dir, cfg, "", f, logger, false, stdout)
+		applied, known := rec.results[flags.prNumber]
+
+		switch {
+		case recomputeErr != nil || !known:
+			// A failure here, or doPR never reporting back on this exact
+			// pull request at all, never undoes the write above and never
+			// fails the command: the next scheduled run still applies the
+			// override exactly as it always has, so the fallback this
+			// reply names is real, not a false promise.
+			if recomputeErr != nil {
+				logger.Error("release-as: could not recompute the title and changelog immediately, "+
+					"falling back to the next scheduled run", "pr", flags.prNumber, "error", recomputeErr)
+			} else {
+				logger.Warn("release-as: could not confirm whether the immediate recompute reached this "+
+					"pull request, falling back to the next scheduled run", "pr", flags.prNumber)
+			}
 			return reply(ctx, f, owner, repoName, flags.prNumber, stdout,
 				"forced the next version to %s. The override is saved, but updating this pull request's title "+
 					"and changelog right now did not succeed; the next scheduled run will update them instead.",
 				outcome.Version)
+
+		case !applied:
+			// Written for visibility, same as a hand-edited override
+			// always was, but applyVersionOverride already decided, same
+			// as it always has, that it does not win: it does not parse,
+			// which commentcmd.Parse already ruled out above, or it is not
+			// strictly greater than the last released version.
+			return reply(ctx, f, owner, repoName, flags.prNumber, stdout,
+				"the release-as version %q was refused: it is not greater than the last released version, "+
+					"so this pull request's title and changelog were not updated.", outcome.Version)
+
+		default:
+			return reply(ctx, f, owner, repoName, flags.prNumber, stdout,
+				"forced the next version to %s and updated this pull request's title and changelog to match.",
+				outcome.Version)
 		}
-		return reply(ctx, f, owner, repoName, flags.prNumber, stdout,
-			"forced the next version to %s and updated this pull request's title and changelog to match.",
-			outcome.Version)
 
 	default: // commentcmd.KindReleaseNotes
 		newBody := releasepr.SetNotes(pr.Body, outcome.Notes)
