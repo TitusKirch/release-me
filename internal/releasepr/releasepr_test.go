@@ -195,12 +195,27 @@ func TestBodyAndExtractionsRoundTrip(t *testing.T) {
 
 func TestReleaseBodyWithoutNotes(t *testing.T) {
 	t.Parallel()
-	section := "## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing\n"
-	body := releasepr.Body("1.2.3", "v1.2.3", testLabels, "", "", section)
+	cases := []struct {
+		name    string
+		heading string
+	}{
+		{name: "an unlinked heading", heading: "## v1.2.3 (2026-01-02)"},
+		{
+			name:    "a heading linked to the compare view keeps its link",
+			heading: "## [v1.2.3](https://github.com/ostendorf-cloud/release-me/compare/v1.2.2...v1.2.3) (2026-01-02)",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			section := tc.heading + "\n\n### Features\n\n- add the thing\n"
+			body := releasepr.Body("1.2.3", "v1.2.3", testLabels, "", "", section)
 
-	want := "## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing"
-	if got := releasepr.ReleaseBody(body); got != want {
-		t.Fatalf("ReleaseBody() = %q, want %q", got, want)
+			want := tc.heading + "\n\n### Features\n\n- add the thing"
+			if got := releasepr.ReleaseBody(body); got != want {
+				t.Fatalf("ReleaseBody() = %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -252,6 +267,16 @@ func TestExtractDate(t *testing.T) {
 			name: "reads the heading date",
 			body: releasepr.Body(
 				"1.2.3", "v1.2.3", testLabels, "", "", "## v1.2.3 (2026-03-14)\n\n### Features\n\n- add the thing\n",
+			),
+			wantOK: true,
+			want:   "2026-03-14",
+		},
+		{
+			name: "reads the heading date of a heading linked to the compare view",
+			body: releasepr.Body(
+				"1.2.3", "v1.2.3", testLabels, "", "",
+				"## [v1.2.3](https://github.com/ostendorf-cloud/release-me/compare/v1.2.2...v1.2.3) (2026-03-14)\n\n"+
+					"### Features\n\n- add the thing\n",
 			),
 			wantOK: true,
 			want:   "2026-03-14",

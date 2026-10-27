@@ -58,7 +58,7 @@ func runChangelog(args []string, stdout, stderr io.Writer) int {
 			if !released {
 				continue
 			}
-			printBlock(stdout, comp.Name, multi, changelog.Render(rel.version.Version, time.Now(), rel.entries, rel.hiddenTypes))
+			printBlock(stdout, comp.Name, multi, changelog.Render(rel.version.Version, time.Now(), "", rel.entries, rel.hiddenTypes))
 		}
 		return 0
 	}
@@ -77,7 +77,7 @@ func runChangelog(args []string, stdout, stderr io.Writer) int {
 		if !ok {
 			continue
 		}
-		printBlock(stdout, comp.Name, multi, changelog.Render(rel.version.Version, time.Now(), rel.entries, rel.hiddenTypes))
+		printBlock(stdout, comp.Name, multi, changelog.Render(rel.version.Version, time.Now(), "", rel.entries, rel.hiddenTypes))
 	}
 	return 0
 }
