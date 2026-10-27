@@ -395,6 +395,42 @@ Both commands work today through this repository's own `release.yaml` `comment` 
 composite action does not yet wire the `issue_comment` trigger for other repositories using
 it.
 
+### Release-As footer
+
+A `Release-As: X.Y.Z` footer in a commit message forces the next version the same way
+`release-as` does, but from the history itself: it needs no comment and stays in git log. The
+key is case-insensitive, as in release-please, and the version takes an optional `v`:
+
+```text
+chore: release 2.0.0
+
+Release-As: 2.0.0
+```
+
+The footer counts on any commit release-me reads for a component since that component's last
+tag: a direct commit, a squash merge's commit body, a merged pull request's body, and in
+`all` or `nested` mode every commit on the branch. A pull request with an [override
+block](#override-block) contributes only its block's lines, so a footer on it is not read.
+The commit must touch the component's `path`, the same attribution its changelog entry gets.
+
+A forced version wins outright over the computed bump and the initial version, and releases
+even when no commit bumps the version, so an empty commit carrying the footer is enough. With
+more than one footer in range, the highest version wins, whatever order the commits came in;
+inside one message, the last footer counts. In `locked` and `linked`, a footer on any
+component forces the family's shared version: `locked` releases every component at it,
+`linked` every changed component, the one carrying the footer counted as changed even when
+nothing else in it bumps.
+
+The same rule as `release-as` applies: a value that does not parse, or is not strictly greater
+than the last tag, is ignored with a warning in the log, never failing the run, and the
+computed bump applies. A pre-release value is ignored too: the footer stays in range until the
+next stable tag, so it would force the same pre-release again after it shipped. A pre-release
+label on the release pull request builds on the forced version instead, `2.0.0-rc.1` for a
+footer of `2.0.0` and the `rc` label.
+
+A `release-me-version` block on the release pull request, from a `release-as` comment or a
+hand edit, wins over every footer.
+
 ### Changelog modes
 
 `changelog-source` selects which commits become changelog entries, top level and per
