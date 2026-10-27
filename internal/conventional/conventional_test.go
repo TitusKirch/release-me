@@ -82,7 +82,7 @@ func TestParseReadsTypeScopeAndDescription(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := conventional.Parse(tc.text, conventional.FallbackType)
-			if got != tc.want {
+			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("Parse(%q) = %+v, want %+v", tc.text, got, tc.want)
 			}
 		})
@@ -93,7 +93,7 @@ func TestParseUsesTheGivenFallbackType(t *testing.T) {
 	t.Parallel()
 	got := conventional.Parse("quick hack before the demo", "misc")
 	want := conventional.Message{Type: "misc", Description: "quick hack before the demo"}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Parse() = %+v, want %+v", got, want)
 	}
 }
@@ -153,6 +153,71 @@ func TestParseReadsAReleaseAsFooter(t *testing.T) {
 			got := conventional.Parse(tc.text, conventional.FallbackType).ReleaseAs
 			if got != tc.want {
 				t.Fatalf("Parse(%q).ReleaseAs = %q, want %q", tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseReadsReleaseComponentFooters(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		text string
+		want []string
+	}{
+		{
+			name: "reads the footer of a docs only commit",
+			text: "feat(duxt): document the new layout prop\n\nRelease-Component: duxt",
+			want: []string{"duxt"},
+		},
+		{
+			name: "reads the key in any case",
+			text: "fix: retag the broken build\n\nrelease-component: duxt",
+			want: []string{"duxt"},
+		},
+		{
+			name: "reads a repeated footer in the order written",
+			text: "fix: share the date helper\n\nRelease-Component: duxt\nRelease-Component: api",
+			want: []string{"duxt", "api"},
+		},
+		{
+			name: "splits a comma separated value",
+			text: "fix: share the date helper\n\nRelease-Component: duxt, api",
+			want: []string{"duxt", "api"},
+		},
+		{
+			name: "names a component once when two footers repeat it",
+			text: "fix: share the date helper\n\nRelease-Component: duxt,api\nRelease-Component: duxt",
+			want: []string{"duxt", "api"},
+		},
+		{
+			name: "reads the footer below other trailers of a squash merge",
+			text: "feat(cli): add the next command (#42)\n\n* feat: add the flag\n\n" +
+				"Release-Component: cli\nCo-authored-by: Jane Doe <jane@example.com>",
+			want: []string{"cli"},
+		},
+		{
+			name: "ignores the footer that is not at the start of a line",
+			text: "docs: explain the footer\n\nwrite Release-Component: duxt to attribute a commit",
+			want: nil,
+		},
+		{
+			name: "ignores the header line",
+			text: "Release-Component: duxt",
+			want: nil,
+		},
+		{
+			name: "ignores an empty value and empty list items",
+			text: "chore: retag\n\nRelease-Component:\nRelease-Component: , duxt,",
+			want: []string{"duxt"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := conventional.Parse(tc.text, conventional.FallbackType).Components
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Parse(%q).Components = %q, want %q", tc.text, got, tc.want)
 			}
 		})
 	}

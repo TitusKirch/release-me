@@ -3,11 +3,13 @@
 
 // Package conventional parses commit subjects and pull request titles into
 // Conventional Commits data: type, scope, description, whether the change
-// is breaking and the version a "Release-As" footer forces.
+// is breaking, the version a "Release-As" footer forces and the components
+// a "Release-Component" footer names.
 package conventional
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -26,6 +28,11 @@ type Message struct {
 	// validates it: internal/version decides whether it is a version the
 	// next release may take.
 	ReleaseAs string
+	// Components are the component names "Release-Component:" footers in
+	// the body name, in the order written, each once, nil when the body
+	// carries none. Parse never checks them against a configuration: the
+	// command layer decides which names are components.
+	Components []string
 }
 
 // headerPattern matches a lowercase type only, so "Feat:" or "WIP:" fall to
@@ -42,7 +49,9 @@ var headerPattern = regexp.MustCompile(`^([a-z]+)(\(([^()]+)\))?(!)?:\s*(.+)$`)
 // footer anywhere in the body marks the change breaking even without "!".
 // A "Release-As:" footer, key case-insensitive as in release-please, sets
 // ReleaseAs; with more than one in the same body, the last one counts, the
-// way git reads a repeated trailer.
+// way git reads a repeated trailer. A "Release-Component:" footer, key
+// case-insensitive too, sets Components; it may repeat and each value may
+// list several names separated by commas, every one of them counts.
 func Parse(text, fallbackType string) Message {
 	header, body, _ := strings.Cut(text, "\n")
 	header = strings.TrimSpace(header)
@@ -52,7 +61,31 @@ func Parse(text, fallbackType string) Message {
 		msg.Breaking = true
 	}
 	msg.ReleaseAs = releaseAsFooter(body)
+	msg.Components = releaseComponentFooters(body)
 	return msg
+}
+
+// releaseComponentPattern matches a "Release-Component:" footer line in
+// git trailer form, the key at the start of the line in any case.
+var releaseComponentPattern = regexp.MustCompile(`(?i)^release-component:[ \t]*(.*)$`)
+
+// releaseComponentFooters returns every component name the
+// "Release-Component:" footer lines in body name, split on commas, trimmed,
+// each once in the order first written, nil when there is none.
+func releaseComponentFooters(body string) []string {
+	var names []string
+	for _, line := range strings.Split(body, "\n") {
+		m := releaseComponentPattern.FindStringSubmatch(strings.TrimSpace(line))
+		if m == nil {
+			continue
+		}
+		for _, name := range strings.Split(m[1], ",") {
+			if name = strings.TrimSpace(name); name != "" && !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 // releaseAsPattern matches a "Release-As:" footer line in git trailer
