@@ -34,6 +34,10 @@ func runRelease(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "release-me: %v\n", err)
 		return 2
 	}
+	if err := rejectComponentForShared(cfg, component); err != nil {
+		fmt.Fprintf(stderr, "release-me: %v\n", err)
+		return 2
+	}
 
 	if err := doRelease(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -63,6 +67,9 @@ func doRelease(ctx context.Context, dir string, cfg config.Config, component str
 
 	if cfg.Versioning == config.VersioningLocked {
 		return doReleaseLocked(ctx, cfg, owner, repoName, f, labels, dryRun, logger, stdout)
+	}
+	if sharedOutsideLocked(cfg) {
+		return doReleaseShared(ctx, cfg, owner, repoName, f, labels, dryRun, logger, stdout)
 	}
 
 	any := false
@@ -134,6 +141,54 @@ func doReleaseLocked(
 	}
 	if !any {
 		fmt.Fprintln(stdout, "nothing to release")
+	}
+	return nil
+}
+
+// doReleaseShared tags and releases every component a merged shared
+// release pull request names, on branch "release-me/main", each at its own
+// version, then every merged, still pending pull request on a component's
+// own branch, "release-me/<name>": one merged right before the switch to
+// "release-pull-request: shared" still gets its tag and release instead of
+// staying pending forever.
+func doReleaseShared(
+	ctx context.Context, cfg config.Config, owner, repoName string, f forge.Forge, labels tagrelease.Labels,
+	dryRun bool, logger *slog.Logger, stdout io.Writer,
+) error {
+	resolved := cfg.Resolve()
+	branch := resolved[0].Branch
+	comps := make([]tagrelease.Component, 0, len(resolved))
+	for _, comp := range resolved {
+		comps = append(comps, tagrelease.Component{Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag})
+	}
+
+	results, err := tagrelease.RunShared(ctx, f, owner, repoName, branch, comps, labels, cfg.DraftUntilAssetsAttach, dryRun, logger)
+	if err != nil {
+		return fmt.Errorf("release-me: %w", err)
+	}
+	for _, comp := range comps {
+		own := config.PerComponentBranch(comp.Name)
+		if own == branch {
+			continue
+		}
+		comp.Branch = own
+		leftover, err := tagrelease.Run(ctx, f, owner, repoName, comp, labels, cfg.DraftUntilAssetsAttach, dryRun, logger)
+		if err != nil {
+			return fmt.Errorf("release-me: %w", err)
+		}
+		results = append(results, leftover...)
+	}
+
+	if len(results) == 0 {
+		fmt.Fprintln(stdout, "nothing to release")
+		return nil
+	}
+	for _, r := range results {
+		printLine(stdout, r.Name, true, r.Message)
+		if r.MajorTagMessage != "" {
+			printLine(stdout, r.Name, true, r.MajorTagMessage)
+		}
+		printReleasedTag(stdout, dryRun, r.Tag)
 	}
 	return nil
 }
