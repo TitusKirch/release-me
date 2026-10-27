@@ -383,10 +383,13 @@ survives a later push the same way the notes block does:
 ```
 ````
 
-The pull request's title and changelog still show the previously computed version until the
-next `pr` run re-renders the body; merging in that window releases the old version, not the
-override. The reply names this risk; nothing in this repository dispatches that next run
-immediately on comment today.
+The same workflow run also re-renders the pull request's title and changelog from the override,
+through the same logic a push to the default branch would run, so there is no window in which
+the pull request's title and changelog still show a stale version: merging right after the
+command releases the version it just forced, not an old one. The reply confirms the update. A
+version that is not greater than the last released version is still ignored during that
+re-render, exactly as it always was; the reply names the refusal instead, and the title and
+changelog stay untouched.
 
 Both commands work today through this repository's own `release.yaml` `comment` job; the
 composite action does not yet wire the `issue_comment` trigger for other repositories using

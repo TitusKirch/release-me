@@ -96,6 +96,12 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           ref: ${{ github.event.repository.default_branch }}
+          # A "release-as" command now calls into the same pr logic a push
+          # to the default branch does, to recompute the release pull
+          # request's title and changelog immediately: that logic walks
+          # first-parent history and lists tags, both missing from the
+          # default, shallow checkout.
+          fetch-depth: 0
 
       # No release-me release exists yet: build from source. Once the
       # first one is tagged, this job should run the downloaded binary the
