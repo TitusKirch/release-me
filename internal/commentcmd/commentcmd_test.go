@@ -274,6 +274,30 @@ func TestParse(t *testing.T) {
 			association: "OWNER",
 			want:        commentcmd.Outcome{Matched: false},
 		},
+		{
+			name:        "a mention right after an inline code span on the same line never opens the line",
+			body:        "`x` @release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a mention glued directly to an inline code span on the same line never opens the line",
+			body:        "`x`@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a mention right after inline raw HTML on the same line never opens the line",
+			body:        "<b></b> @release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "text before an inline code span on the same line still correctly never opens the line",
+			body:        "note `x` @release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

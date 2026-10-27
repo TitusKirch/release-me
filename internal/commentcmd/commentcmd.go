@@ -114,7 +114,10 @@ var markdown = goldmark.New(goldmark.WithExtensions(extension.GFM))
 // never see as a real command either. Each surviving source line keeps
 // its own line in the result, so Parse's "mention opens its own line"
 // rule still applies to exactly the text CommonMark would actually
-// render live.
+// render live: an inline construct skipped mid-line, unlike a whole
+// block, leaves a placeholder behind rather than vanishing outright, so
+// text that only looked line-initial once the inline construct's own
+// content was removed is never mistaken for text that really is.
 func liveText(body string) string {
 	source := []byte(body)
 	doc := markdown.Parser().Parse(text.NewReader(source))
@@ -131,8 +134,25 @@ func liveText(body string) string {
 // one line.
 func walkLiveText(n ast.Node, source []byte, b *strings.Builder) {
 	switch n.Kind() {
-	case ast.KindFencedCodeBlock, ast.KindCodeBlock, ast.KindHTMLBlock, ast.KindBlockquote,
-		ast.KindCodeSpan, ast.KindRawHTML:
+	case ast.KindFencedCodeBlock, ast.KindCodeBlock, ast.KindHTMLBlock, ast.KindBlockquote:
+		// A whole-line, block-level exclusion: CommonMark never lets one
+		// of these share a source line with other inline content, so
+		// dropping it drops entire lines, never merging onto one.
+		return
+
+	case ast.KindCodeSpan, ast.KindRawHTML:
+		// An inline exclusion: unlike the block kinds above, a code span
+		// or raw HTML tag can sit mid-line beside surviving text, on
+		// either side. Returning with nothing written would let that
+		// surviving text, which in the source started mid-line, be
+		// mistaken for text that opens the line once this node's own
+		// content is gone, exactly what the mention-opens-its-own-line
+		// rule in Parse exists to rule out. The object replacement
+		// character marks "something inert sat here": it is not
+		// whitespace, so Parse's own leading-whitespace trim never
+		// removes it, and it is not a character any real
+		// "comment-mention" would plausibly open with.
+		b.WriteRune('￼')
 		return
 
 	case ast.KindText:
