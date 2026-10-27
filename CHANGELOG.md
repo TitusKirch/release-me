@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.1 (2026-10-27)
+
+### Bug Fixes
+
+- **ci:** git worktree remove does not take --quiet ([#60](https://github.com/ostendorf-cloud/release-me/pull/60))
+
 ## v0.2.0 (2026-10-27)
 
 ### Features
