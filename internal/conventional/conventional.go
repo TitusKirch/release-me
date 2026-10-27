@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package conventional parses commit subjects and pull request titles into
-// Conventional Commits data: type, scope, description and whether the change
-// is breaking.
+// Conventional Commits data: type, scope, description, whether the change
+// is breaking and the version a "Release-As" footer forces.
 package conventional
 
 import (
@@ -21,6 +21,11 @@ type Message struct {
 	Scope       string
 	Description string
 	Breaking    bool
+	// ReleaseAs is the value of a "Release-As:" footer in the body, trimmed
+	// and otherwise as written, "" when the body carries none. Parse never
+	// validates it: internal/version decides whether it is a version the
+	// next release may take.
+	ReleaseAs string
 }
 
 // headerPattern matches a lowercase type only, so "Feat:" or "WIP:" fall to
@@ -35,6 +40,9 @@ var headerPattern = regexp.MustCompile(`^([a-z]+)(\(([^()]+)\))?(!)?:\s*(.+)$`)
 // first line that does not match becomes a Message of fallbackType with the
 // first line as its description. A "BREAKING CHANGE:" or "BREAKING-CHANGE:"
 // footer anywhere in the body marks the change breaking even without "!".
+// A "Release-As:" footer, key case-insensitive as in release-please, sets
+// ReleaseAs; with more than one in the same body, the last one counts, the
+// way git reads a repeated trailer.
 func Parse(text, fallbackType string) Message {
 	header, body, _ := strings.Cut(text, "\n")
 	header = strings.TrimSpace(header)
@@ -43,7 +51,28 @@ func Parse(text, fallbackType string) Message {
 	if hasBreakingFooter(body) {
 		msg.Breaking = true
 	}
+	msg.ReleaseAs = releaseAsFooter(body)
 	return msg
+}
+
+// releaseAsPattern matches a "Release-As:" footer line in git trailer
+// form, the key at the start of the line in any case.
+var releaseAsPattern = regexp.MustCompile(`(?i)^release-as:[ \t]*(.*)$`)
+
+// releaseAsFooter returns the trimmed value of the last "Release-As:"
+// footer line in body, "" when there is none or its value is empty.
+func releaseAsFooter(body string) string {
+	value := ""
+	for _, line := range strings.Split(body, "\n") {
+		m := releaseAsPattern.FindStringSubmatch(strings.TrimSpace(line))
+		if m == nil {
+			continue
+		}
+		if v := strings.TrimSpace(m[1]); v != "" {
+			value = v
+		}
+	}
+	return value
 }
 
 func parseHeader(header, fallbackType string) Message {
