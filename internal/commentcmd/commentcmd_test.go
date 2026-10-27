@@ -1,0 +1,344 @@
+// Copyright 2026 Simon Ostendorf
+// SPDX-License-Identifier: Apache-2.0
+
+package commentcmd_test
+
+import (
+	"testing"
+
+	"github.com/ostendorf-cloud/release-me/internal/commentcmd"
+)
+
+const mention = "@release-me"
+
+func TestParse(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		body        string
+		association string
+		want        commentcmd.Outcome
+	}{
+		{
+			name: "an unrelated comment never matches",
+			body: "Looks good to me, thanks for the quick turnaround!",
+			want: commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "the mention alone names no command",
+			body:        "@release-me",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: true, Allowed: true},
+		},
+		{
+			name:        "the mention alone followed by trailing punctuation names no command",
+			body:        "@release-me, any thoughts?",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: true, Allowed: true},
+		},
+		{
+			name:        "the mention indented on its own line still matches",
+			body:        "Thanks for looking at this.\n  @release-me release-as 1.2.3",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "1.2.3", Valid: true,
+			},
+		},
+		{
+			name:        "a valid release-as command from an owner",
+			body:        "@release-me release-as 1.2.3",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "1.2.3", Valid: true,
+			},
+		},
+		{
+			name:        "a valid release-as command from a member",
+			body:        "@release-me release-as 2.0.0 to recover from the burned tags",
+			association: "MEMBER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "2.0.0", Valid: true,
+			},
+		},
+		{
+			name:        "a valid release-as command from a collaborator",
+			body:        "@release-me release-as 1.0.0",
+			association: "COLLABORATOR",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "1.0.0", Valid: true,
+			},
+		},
+		{
+			name:        "a valid release-notes command",
+			body:        "@release-me release-notes Run the migration before upgrading.",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseNotes,
+				Notes: "Run the migration before upgrading.", Valid: true,
+			},
+		},
+		{
+			name:        "a release-notes command spanning several lines",
+			body:        "@release-me release-notes Line one.\nLine two.\n",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseNotes,
+				Notes: "Line one.\nLine two.", Valid: true,
+			},
+		},
+		{
+			name:        "release-notes with no text clears the notes",
+			body:        "@release-me release-notes",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseNotes, Notes: "", Valid: true,
+			},
+		},
+		{
+			name:        "a command from an unauthorized association is still parsed, but not allowed",
+			body:        "@release-me release-as 1.2.3",
+			association: "NONE",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: false, Command: commentcmd.KindReleaseAs, Version: "1.2.3", Valid: true,
+			},
+		},
+		{
+			name:        "a command with no association at all is not allowed",
+			body:        "@release-me release-as 1.2.3",
+			association: "",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: false, Command: commentcmd.KindReleaseAs, Version: "1.2.3", Valid: true,
+			},
+		},
+		{
+			name:        "a malformed version is rejected, never silently accepted",
+			body:        "@release-me release-as latest",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Valid: false,
+				Reason: `"latest" after release-as is not a parseable X.Y.Z version`,
+			},
+		},
+		{
+			name:        "a release-as missing a major component is rejected",
+			body:        "@release-me release-as 1.2",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Valid: false,
+				Reason: `"1.2" after release-as is not a parseable X.Y.Z version`,
+			},
+		},
+		{
+			name:        "release-as accepts a leading v",
+			body:        "@release-me release-as v3.4.5",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "3.4.5", Valid: true,
+			},
+		},
+		{
+			name:        "a decoy mention on an earlier line does not stop the real command below it",
+			body:        "cc @release-me-fan, unrelated.\n@release-me release-as 2.0.0 please.",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "2.0.0", Valid: true,
+			},
+		},
+		{
+			name:        "a decoy mention that opens its own line but continues past the boundary names no command",
+			body:        "@release-me-fan, nothing else here.",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a mention glued to an email-like token never matches",
+			body:        "contact foo@release-me for details",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a mention that does not open its own line never matches",
+			body:        "please see cc @release-me release-as 1.2.3",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "an unrecognized word after the mention names no command",
+			body:        "@release-me what do you think?",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: true, Allowed: true},
+		},
+		{
+			name:        "a quoted command inside a blockquote line never executes",
+			body:        "> @release-me release-as 9.9.9\n\nNo, we should not do that.",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command inside an inline code span never executes",
+			body:        "Do not run `@release-me release-as 9.9.9`, it is wrong.",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command inside a fenced code block never executes",
+			body:        "```\n@release-me release-as 9.9.9\n```\nexample only",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command inside an HTML comment never executes",
+			body:        "<!-- @release-me release-as 9.9.9 -->",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command on its own line inside a multi-line HTML comment never executes",
+			body:        "<!--\n@release-me release-as 9.9.9\n-->",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command inside an unterminated fenced code block never executes",
+			body:        "```\n@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command inside an unterminated HTML comment never executes",
+			body:        "<!--\n@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command inside a multi-line double-backtick inline code span never executes",
+			body:        "``\n@release-me release-as 9.9.9\n``",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command lazily continuing a blockquote with no repeated marker never executes",
+			body:        "> No, we should not do that.\n@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a command after a blank line following a blockquote still executes",
+			body:        "> quoted text\n\n@release-me release-as 9.9.9",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "9.9.9", Valid: true,
+			},
+		},
+		{
+			name:        "an indented, unterminated fenced code block never executes",
+			body:        "some text\n   ```\n@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a fence opened with tildes closes only on a tilde run of at least the same length",
+			body:        "~~~~\n@release-me release-as 9.9.9\n~~~\nstill inside\n~~~~\nnow outside\n@release-me release-as 1.2.3",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "1.2.3", Valid: true,
+			},
+		},
+		{
+			name:        "an inline code span closes only on a run of exactly the same backtick count",
+			body:        "``@release-me release-as 9.9.9` still inside``",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a closing fence embedded mid-line, not alone on its own line, never closes the fence",
+			body:        "```\nignore ``` @release-me release-as 9.9.9\n```\n",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a longer closing run embedded mid-line also never closes the fence",
+			body:        "```\nsome content ```` @release-me release-as 9.9.9\n```\n",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "an indented code block, four spaces after a blank line, never executes",
+			body:        "Some comment text.\n\n    @release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "an indented code block with a tab indent never executes",
+			body:        "Some comment text.\n\n\t@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a mention right after an inline code span on the same line never opens the line",
+			body:        "`x` @release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a mention glued directly to an inline code span on the same line never opens the line",
+			body:        "`x`@release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "a mention right after inline raw HTML on the same line never opens the line",
+			body:        "<b></b> @release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+		{
+			name:        "text before an inline code span on the same line still correctly never opens the line",
+			body:        "note `x` @release-me release-as 9.9.9",
+			association: "OWNER",
+			want:        commentcmd.Outcome{Matched: false},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := commentcmd.Parse(tc.body, mention, tc.association)
+			if got != tc.want {
+				t.Fatalf("Parse() = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseWithACustomMention(t *testing.T) {
+	t.Parallel()
+	got := commentcmd.Parse("@my-release-bot release-as 1.0.0", "@my-release-bot", "OWNER")
+	want := commentcmd.Outcome{Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Version: "1.0.0", Valid: true}
+	if got != want {
+		t.Fatalf("Parse() = %+v, want %+v", got, want)
+	}
+}
+
+func TestAuthorized(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		association string
+		want        bool
+	}{
+		{association: "OWNER", want: true},
+		{association: "MEMBER", want: true},
+		{association: "COLLABORATOR", want: true},
+		{association: "CONTRIBUTOR", want: false},
+		{association: "FIRST_TIME_CONTRIBUTOR", want: false},
+		{association: "NONE", want: false},
+		{association: "", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.association, func(t *testing.T) {
+			t.Parallel()
+			if got := commentcmd.Authorized(tc.association); got != tc.want {
+				t.Fatalf("Authorized(%q) = %v, want %v", tc.association, got, tc.want)
+			}
+		})
+	}
+}

@@ -59,6 +59,27 @@ func TestDefaultSetsTheAuthor(t *testing.T) {
 	}
 }
 
+func TestDefaultSetsTheCommentMention(t *testing.T) {
+	t.Parallel()
+	got := config.Default().CommentMention
+	if got != "@release-me" {
+		t.Fatalf("CommentMention = %q, want %q", got, "@release-me")
+	}
+}
+
+func TestLoadReadsACustomCommentMention(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, "comment-mention: \"@my-release-bot\"\n")
+
+	got, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.CommentMention != "@my-release-bot" {
+		t.Fatalf("CommentMention = %q, want %q", got.CommentMention, "@my-release-bot")
+	}
+}
+
 func TestLoadReadsConfiguredKeys(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -80,8 +101,9 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:     config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
-				Versioning: config.DefaultVersioning,
+				Author:         config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning:     config.DefaultVersioning,
+				CommentMention: config.DefaultCommentMention,
 			},
 		},
 		{
@@ -128,6 +150,7 @@ files:
 				MajorTag:               true,
 				Versioning:             config.DefaultVersioning,
 				DraftUntilAssetsAttach: true,
+				CommentMention:         config.DefaultCommentMention,
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
 					{Path: "deploy/values.yaml", Updater: "marker"},
@@ -149,8 +172,9 @@ files:
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:     config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
-				Versioning: config.DefaultVersioning,
+				Author:         config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning:     config.DefaultVersioning,
+				CommentMention: config.DefaultCommentMention,
 			},
 		},
 		{
@@ -167,8 +191,9 @@ files:
 					Pending: "needs-release", Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:     config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
-				Versioning: config.DefaultVersioning,
+				Author:         config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning:     config.DefaultVersioning,
+				CommentMention: config.DefaultCommentMention,
 			},
 		},
 		{
@@ -185,8 +210,9 @@ files:
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:     config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
-				Versioning: config.DefaultVersioning,
+				Author:         config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
+				Versioning:     config.DefaultVersioning,
+				CommentMention: config.DefaultCommentMention,
 			},
 		},
 	}
@@ -242,6 +268,7 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			name:    "rejects a file key on an updater that takes none",
 			content: "files:\n  - path: cmd/cli/version.go\n    key: Version\n",
 		},
+		{name: "rejects an empty comment-mention", content: "comment-mention: \"\"\n"},
 		{name: "rejects an empty pending label", content: "labels:\n  pending: \"\"\n"},
 		{name: "rejects an empty tagged label", content: "labels:\n  tagged: \"\"\n"},
 		{name: "rejects one label for two pre-release types", content: "labels:\n  alpha: \"release: pre\"\n  rc: \"release: pre\"\n"},
