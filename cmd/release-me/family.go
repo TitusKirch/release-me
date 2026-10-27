@@ -130,7 +130,11 @@ func familyReleases(cfg config.Config, members []familyMember, logger *slog.Logg
 				continue
 			}
 		}
-		releases[m.comp.Name] = release{version: result, entries: m.entries, hiddenTypes: m.comp.HiddenTypes}
+		fromTag := ""
+		if m.ownHasTag {
+			fromTag = m.ownTag
+		}
+		releases[m.comp.Name] = release{version: result, entries: m.entries, hiddenTypes: m.comp.HiddenTypes, fromTag: fromTag}
 	}
 	return releases, true
 }

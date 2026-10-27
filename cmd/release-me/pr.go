@@ -187,6 +187,7 @@ func doPRComponent(
 
 	versionStr := rel.version.Version
 	entries := rel.entries
+	fromTag := rel.fromTag
 	versionOverride := ""
 	overrideValid := false
 	if existing != nil {
@@ -205,7 +206,7 @@ func doPRComponent(
 			return fmt.Errorf("release-me: component %s: pull request #%d: %w", comp.Name, existing.Number, err)
 		}
 		if isPre {
-			versionStr, entries, err = preReleaseEntries(ctx, f, dir, cfg, comp, familyTagPrefixes, owner, repoName, rel, preType, logger)
+			versionStr, entries, fromTag, err = preReleaseEntries(ctx, f, dir, cfg, comp, familyTagPrefixes, owner, repoName, rel, preType, logger)
 			if err != nil {
 				return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 			}
@@ -217,7 +218,10 @@ func doPRComponent(
 		entriesBody = noUserFacingChangesLine
 	}
 
-	plan, err := planReleaseBranch(ctx, dir, versionStr, []changelogUpdate{{path: comp.ChangelogPath, entriesBody: entriesBody}}, comp.Files, comp.Branch)
+	tag := comp.TagPrefix + versionStr
+	link := compareURL(f, owner, repoName, fromTag, tag)
+	update := changelogUpdate{path: comp.ChangelogPath, entriesBody: entriesBody, compareURL: link}
+	plan, err := planReleaseBranch(ctx, dir, versionStr, []changelogUpdate{update}, comp.Files, comp.Branch)
 	if err != nil {
 		return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
@@ -234,10 +238,9 @@ func doPRComponent(
 			date = d
 		}
 	}
-	section := fmt.Sprintf("## v%s (%s)\n\n%s\n", versionStr, date.Format("2006-01-02"), entriesBody)
+	section := changelog.RenderHeading(versionStr, date, link) + "\n\n" + entriesBody + "\n"
 
 	title := releasepr.Title(comp.Name, versionStr)
-	tag := comp.TagPrefix + versionStr
 	guideLabels := releasepr.GuideLabels{
 		Tagged: cfg.Labels.Tagged,
 		Alpha:  cfg.Labels.Alpha,
@@ -395,7 +398,10 @@ func doPRLocked(
 		if entriesBody == "" {
 			entriesBody = noUserFacingChangesLine
 		}
-		changelogs = append(changelogs, changelogUpdate{path: m.comp.ChangelogPath, entriesBody: entriesBody})
+		changelogs = append(changelogs, changelogUpdate{
+			path: m.comp.ChangelogPath, entriesBody: entriesBody,
+			compareURL: compareURL(f, owner, repoName, releases[m.comp.Name].fromTag, m.comp.TagPrefix+versionStr),
+		})
 		bodyParts = append(bodyParts, fmt.Sprintf("#### %s\n\n%s", m.comp.Name, entriesBody))
 		files = append(files, m.comp.Files...)
 	}
@@ -416,7 +422,10 @@ func doPRLocked(
 			date = d
 		}
 	}
-	section := fmt.Sprintf("## v%s (%s)\n\n%s\n", versionStr, date.Format("2006-01-02"), strings.Join(bodyParts, "\n\n"))
+	// The combined heading stays unlinked: every component carries a tag
+	// of its own, so there is no one compare view for the family. Each
+	// component's own CHANGELOG.md heading links its own.
+	section := changelog.RenderHeading(versionStr, date, "") + "\n\n" + strings.Join(bodyParts, "\n\n") + "\n"
 
 	tags := make([]string, 0, len(members))
 	for _, m := range members {
@@ -505,12 +514,15 @@ func lockedPreReleaseEntries(
 		if !ok {
 			continue
 		}
-		vStr, entries, err := preReleaseEntries(ctx, f, dir, cfg, m.comp, prefixes, owner, repoName, rel, preType, logger)
+		vStr, entries, fromTag, err := preReleaseEntries(ctx, f, dir, cfg, m.comp, prefixes, owner, repoName, rel, preType, logger)
 		if err != nil {
 			return "", nil, fmt.Errorf("component %s: %w", m.comp.Name, err)
 		}
 		versionStr = vStr
-		out[m.comp.Name] = release{version: version.Result{Version: vStr, Bump: rel.version.Bump, Reason: rel.version.Reason}, entries: entries, hiddenTypes: m.comp.HiddenTypes}
+		out[m.comp.Name] = release{
+			version: version.Result{Version: vStr, Bump: rel.version.Bump, Reason: rel.version.Reason},
+			entries: entries, hiddenTypes: m.comp.HiddenTypes, fromTag: fromTag,
+		}
 	}
 	return versionStr, out, nil
 }
@@ -655,13 +667,15 @@ func recordOverrideOutcome(ctx context.Context, number int, applied bool) {
 	rec.results[number] = applied
 }
 
-// changelogUpdate is one component's changelog file path and the entries
-// body (without the heading's date) doPR would prepend to it, one per
-// component of a locked family's combined branch, exactly one for
-// VersioningIndependent and VersioningLinked.
+// changelogUpdate is one component's changelog file path, the entries
+// body (without the heading's date) doPR would prepend to it and the
+// compare view its heading links to, "" for none, one per component of a
+// locked family's combined branch, exactly one for VersioningIndependent
+// and VersioningLinked.
 type changelogUpdate struct {
 	path        string
 	entriesBody string
+	compareURL  string
 	baseline    string
 }
 
@@ -739,7 +753,9 @@ func planReleaseBranch(ctx context.Context, dir, version string, changelogs []ch
 // changelog heading whose version differs from version counts as not
 // matching too, even when the entries underneath read the same: a
 // version-only difference, a pre-release label added, changed or removed
-// with no new entry, must still push.
+// with no new entry, must still push. So does a heading whose compare link
+// differs from the one c carries, a heading written before the link
+// existed included, so the branch picks the link up.
 func sameAsReleaseBranch(ctx context.Context, tmp, version string, changelogs []changelogUpdate, desiredFiles map[string]string, branch string) bool {
 	pushURL, err := gitOutput(ctx, tmp, "remote", "get-url", "--push", "origin")
 	if err != nil {
@@ -754,8 +770,8 @@ func sameAsReleaseBranch(ctx context.Context, tmp, version string, changelogs []
 		if !ok {
 			return false
 		}
-		existingVersion, ok := changelog.HeadingVersion(changelogContent)
-		if !ok || existingVersion != version {
+		existing, ok := changelog.ParseHeading(changelogContent)
+		if !ok || existing.Version != version || existing.CompareURL != c.compareURL {
 			return false
 		}
 		existingBody, ok := changelog.TopSection(changelogContent)
@@ -788,7 +804,7 @@ func (p *releasePlan) write(
 	}
 
 	for _, c := range p.changelogs {
-		section := fmt.Sprintf("## v%s (%s)\n\n%s\n", version, date.Format("2006-01-02"), c.entriesBody)
+		section := changelog.RenderHeading(version, date, c.compareURL) + "\n\n" + c.entriesBody + "\n"
 		fullChangelogPath := filepath.Join(p.tmp, c.path)
 		// A configured changelog may name a directory that does not exist
 		// yet; os.WriteFile creates the file only.
