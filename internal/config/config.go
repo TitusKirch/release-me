@@ -142,9 +142,10 @@ type File struct {
 // Labels is the "labels" key: the label names release-me expects on the
 // repository. Alpha, Beta and Rc select a pre-release type on the release
 // pull request; Pending and Tagged apply to every release, stable or not.
-// An empty Alpha, Beta or Rc turns that pre-release type off: release-me
-// neither expects the label on the repository nor reads it from a pull
-// request. Pending and Tagged are never empty.
+// An empty Alpha, Beta or Rc, configured as "" or false, turns that
+// pre-release type off: release-me neither expects the label on the
+// repository nor reads it from a pull request. Pending and Tagged are never
+// empty.
 type Labels struct {
 	Pending string
 	Tagged  string
@@ -338,11 +339,38 @@ type rawFile struct {
 // rawLabels mirrors Labels with pointer fields, so Load can tell a key left
 // out of the "labels" block apart from one set to its zero value.
 type rawLabels struct {
-	Pending *string `yaml:"pending"`
-	Tagged  *string `yaml:"tagged"`
-	Alpha   *string `yaml:"alpha"`
-	Beta    *string `yaml:"beta"`
-	Rc      *string `yaml:"rc"`
+	Pending *string          `yaml:"pending"`
+	Tagged  *string          `yaml:"tagged"`
+	Alpha   *preReleaseLabel `yaml:"alpha"`
+	Beta    *preReleaseLabel `yaml:"beta"`
+	Rc      *preReleaseLabel `yaml:"rc"`
+}
+
+// preReleaseLabel is one of "labels.alpha", "labels.beta" and "labels.rc":
+// a label name, or false for that pre-release type turned off, the same as
+// "". Without it yaml decodes an unquoted false into the label name "false".
+type preReleaseLabel string
+
+// UnmarshalYAML accepts a string, or the boolean false as the empty name.
+// true is rejected: it names no label and turns nothing off.
+func (l *preReleaseLabel) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode && node.Tag == "!!bool" {
+		var on bool
+		if err := node.Decode(&on); err != nil {
+			return err
+		}
+		if on {
+			return fmt.Errorf("line %d: a pre-release label is a name, or false to turn it off, not true", node.Line)
+		}
+		*l = ""
+		return nil
+	}
+	var name string
+	if err := node.Decode(&name); err != nil {
+		return err
+	}
+	*l = preReleaseLabel(name)
+	return nil
 }
 
 // rawAuthor mirrors Author with pointer fields, so Load can tell a key left
@@ -481,13 +509,13 @@ func Load(path string) (cfg Config, err error) {
 			cfg.Labels.Tagged = *r.Labels.Tagged
 		}
 		if r.Labels.Alpha != nil {
-			cfg.Labels.Alpha = *r.Labels.Alpha
+			cfg.Labels.Alpha = string(*r.Labels.Alpha)
 		}
 		if r.Labels.Beta != nil {
-			cfg.Labels.Beta = *r.Labels.Beta
+			cfg.Labels.Beta = string(*r.Labels.Beta)
 		}
 		if r.Labels.Rc != nil {
-			cfg.Labels.Rc = *r.Labels.Rc
+			cfg.Labels.Rc = string(*r.Labels.Rc)
 		}
 		if err := validateLabels(path, cfg.Labels); err != nil {
 			return Config{}, err
