@@ -25,7 +25,8 @@ type Kind string
 
 // The command words a comment may name after the configured mention.
 const (
-	// KindReleaseAs is "release-as X.Y.Z": force the next version.
+	// KindReleaseAs is "release-as X.Y.Z", or "release-as <component>
+	// X.Y.Z" on a shared release pull request: force the next version.
 	KindReleaseAs Kind = "release-as"
 	// KindReleaseNotes is "release-notes <text>": set the release-me-notes
 	// block.
@@ -72,6 +73,11 @@ type Outcome struct {
 	// without a "v" prefix. Set only when Command is KindReleaseAs and
 	// Valid is true.
 	Version string
+	// Component is the component a "release-as <component> X.Y.Z" command
+	// names, "" for a plain "release-as X.Y.Z". Only a shared release pull
+	// request with independent versions needs it; the caller decides
+	// whether the name is known and allowed there.
+	Component string
 	// Notes is Command's KindReleaseNotes argument, the free text that
 	// follows the command word to the end of the comment, trimmed. Set
 	// only when Command is KindReleaseNotes; Valid is always true for it.
@@ -252,31 +258,33 @@ func resolveCommand(out *Outcome, word, rest string) (done bool) {
 	}
 }
 
-// applyReleaseAs parses rest's first token as a semantic version, filling
-// out.Version and out.Valid on success, out.Reason on failure.
+// applyReleaseAs parses rest as "X.Y.Z" or "<component> X.Y.Z", filling
+// out.Version, out.Component and out.Valid on success, out.Reason on
+// failure. A first token that parses as a version is the version, so a
+// plain "release-as 1.2.3" never reads as naming a component.
 func applyReleaseAs(out *Outcome, rest string) {
-	arg := firstToken(rest)
-	if arg == "" {
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
 		out.Reason = "release-as needs a version, for example \"release-as 1.2.3\""
 		return
 	}
-	normalized, ok := parseVersion(arg)
-	if !ok {
-		out.Reason = fmt.Sprintf("%q after release-as is not a parseable X.Y.Z version", arg)
+	if normalized, ok := parseVersion(fields[0]); ok {
+		out.Version = normalized
+		out.Valid = true
 		return
 	}
+	if len(fields) < 2 {
+		out.Reason = fmt.Sprintf("%q after release-as is not a parseable X.Y.Z version", fields[0])
+		return
+	}
+	normalized, ok := parseVersion(fields[1])
+	if !ok {
+		out.Reason = fmt.Sprintf("%q after release-as %s is not a parseable X.Y.Z version", fields[1], fields[0])
+		return
+	}
+	out.Component = fields[0]
 	out.Version = normalized
 	out.Valid = true
-}
-
-// firstToken returns s's first whitespace-delimited token, "" when s holds
-// none.
-func firstToken(s string) string {
-	fields := strings.Fields(s)
-	if len(fields) == 0 {
-		return ""
-	}
-	return fields[0]
 }
 
 // parseVersion parses s, an optional "v" prefix stripped, as a semantic
