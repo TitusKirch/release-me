@@ -62,7 +62,7 @@ Three choices belong to the human; ask each once, recommendation first:
 - **Versioning**, only with more than one component: `independent` (each its own line),
   `linked` (one shared line, only changed components release) or `locked` (one shared line,
   every component releases together).
-- **Pre-releases:** wanted, or turned off with `alpha`, `beta` and `rc` set to `""` under
+- **Pre-releases:** wanted, or turned off with `alpha`, `beta` and `rc` set to `false` under
   `labels`, so the repository needs only the pending and tagged labels.
 - **Token:** a GitHub App (recommended: its release pull requests trigger checks and the
   release commit is attributed to its bot) or a repository token.
