@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
@@ -101,9 +102,10 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:         config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
-				Versioning:     config.DefaultVersioning,
-				CommentMention: config.DefaultCommentMention,
+				Author:             config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning:         config.DefaultVersioning,
+				ReleasePullRequest: config.ReleasePullRequestPerComponent,
+				CommentMention:     config.DefaultCommentMention,
 			},
 		},
 		{
@@ -125,6 +127,7 @@ author:
   name: renovate
   email: renovate@example.com
 major-tag: true
+release-pull-request: shared
 draft-until-assets-attach: true
 files:
   - path: cmd/cli/version.go
@@ -149,6 +152,7 @@ files:
 				Author:                 config.Author{Name: "renovate", Email: "renovate@example.com"},
 				MajorTag:               true,
 				Versioning:             config.DefaultVersioning,
+				ReleasePullRequest:     config.ReleasePullRequestShared,
 				DraftUntilAssetsAttach: true,
 				CommentMention:         config.DefaultCommentMention,
 				Files: []config.File{
@@ -172,9 +176,10 @@ files:
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:         config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
-				Versioning:     config.DefaultVersioning,
-				CommentMention: config.DefaultCommentMention,
+				Author:             config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning:         config.DefaultVersioning,
+				ReleasePullRequest: config.ReleasePullRequestPerComponent,
+				CommentMention:     config.DefaultCommentMention,
 			},
 		},
 		{
@@ -191,9 +196,10 @@ files:
 					Pending: "needs-release", Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:         config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
-				Versioning:     config.DefaultVersioning,
-				CommentMention: config.DefaultCommentMention,
+				Author:             config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning:         config.DefaultVersioning,
+				ReleasePullRequest: config.ReleasePullRequestPerComponent,
+				CommentMention:     config.DefaultCommentMention,
 			},
 		},
 		{
@@ -210,9 +216,10 @@ files:
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:         config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
-				Versioning:     config.DefaultVersioning,
-				CommentMention: config.DefaultCommentMention,
+				Author:             config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
+				Versioning:         config.DefaultVersioning,
+				ReleasePullRequest: config.ReleasePullRequestPerComponent,
+				CommentMention:     config.DefaultCommentMention,
 			},
 		},
 	}
@@ -593,6 +600,96 @@ components:
 		if c.Branch != want[i] {
 			t.Fatalf("component %s Branch = %q, want %q", c.Name, c.Branch, want[i])
 		}
+	}
+}
+
+func TestLoadReadsReleasePullRequest(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		content string
+		want    config.ReleasePullRequest
+	}{
+		{name: "defaults to per-component in independent", content: "", want: config.ReleasePullRequestPerComponent},
+		{name: "defaults to per-component in linked", content: "versioning: linked\n", want: config.ReleasePullRequestPerComponent},
+		{name: "defaults to shared in locked", content: "versioning: locked\n", want: config.ReleasePullRequestShared},
+		{name: "reads shared in independent", content: "release-pull-request: shared\n", want: config.ReleasePullRequestShared},
+		{
+			name: "reads shared in linked", content: "versioning: linked\nrelease-pull-request: shared\n",
+			want: config.ReleasePullRequestShared,
+		},
+		{
+			name: "accepts an explicit shared in locked", content: "versioning: locked\nrelease-pull-request: shared\n",
+			want: config.ReleasePullRequestShared,
+		},
+		{
+			name: "reads an explicit per-component in linked", content: "versioning: linked\nrelease-pull-request: per-component\n",
+			want: config.ReleasePullRequestPerComponent,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := config.Load(writeFile(t, tc.content))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got.ReleasePullRequest != tc.want {
+				t.Fatalf("ReleasePullRequest = %q, want %q", got.ReleasePullRequest, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsAnInvalidReleasePullRequest(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{name: "an unknown value", content: "release-pull-request: grouped\n", want: `release-pull-request "grouped" is not per-component or shared`},
+		{
+			name: "per-component in locked", content: "versioning: locked\nrelease-pull-request: per-component\n",
+			want: "release-pull-request per-component does not apply to versioning locked",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := config.Load(writeFile(t, tc.content))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load() error = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveSharesOneBranchAcrossEveryComponentWithASharedReleasePullRequest(t *testing.T) {
+	t.Parallel()
+	for _, versioning := range []string{"independent", "linked"} {
+		t.Run(versioning, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := config.Load(writeFile(t, "versioning: "+versioning+`
+release-pull-request: shared
+components:
+  backend:
+    path: backend
+  frontend:
+    path: frontend
+`))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if !cfg.SharedPullRequest() {
+				t.Fatalf("SharedPullRequest() = false, want true")
+			}
+			for _, c := range cfg.Resolve() {
+				if c.Branch != "release-me/main" {
+					t.Fatalf("component %s Branch = %q, want the shared %q", c.Name, c.Branch, "release-me/main")
+				}
+			}
+		})
 	}
 }
 

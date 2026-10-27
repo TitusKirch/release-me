@@ -59,10 +59,11 @@ const (
 	// the release pull request naming it may issue a "release-as" or
 	// "release-notes" command.
 	DefaultCommentMention = "@release-me"
-	// lockedBranch is the shared release branch every component carries in
-	// VersioningLocked: one release pull request for the whole family,
-	// instead of one branch per component.
-	lockedBranch = "release-me/main"
+	// sharedBranch is the release branch every component carries when its
+	// release pull request is shared, always in VersioningLocked and with
+	// "release-pull-request: shared": one release pull request for every
+	// component, instead of one branch per component.
+	sharedBranch = "release-me/main"
 )
 
 // Versioning names how a repository's configured components' versions
@@ -73,7 +74,8 @@ type Versioning string
 // accepts.
 const (
 	// VersioningIndependent versions every component on its own: its own
-	// tag line, its own bump, its own release pull request. The default.
+	// tag line, its own bump, its own release pull request unless
+	// "release-pull-request" is shared. The default.
 	VersioningIndependent Versioning = "independent"
 	// VersioningLocked bumps every component to the same new version and
 	// releases all of them together, changed or not, through one release
@@ -83,7 +85,8 @@ const (
 	// releases only a component with entries since its own last tag, at
 	// the family's next version: the highest version any component in the
 	// family carries, bumped by the highest bump type among the changed
-	// components.
+	// components. Each changed component gets its own release pull request
+	// unless "release-pull-request" is shared.
 	VersioningLinked Versioning = "linked"
 )
 
@@ -92,6 +95,24 @@ const (
 var validVersioning = map[Versioning]bool{
 	VersioningIndependent: true, VersioningLocked: true, VersioningLinked: true,
 }
+
+// ReleasePullRequest names how many release pull requests a repository's
+// configured components share.
+type ReleasePullRequest string
+
+// The values release-me.yaml's top-level "release-pull-request" key accepts.
+const (
+	// ReleasePullRequestPerComponent opens one release pull request per
+	// component, branch "release-me/<name>". The default in
+	// VersioningIndependent and VersioningLinked; VersioningLocked rejects
+	// it.
+	ReleasePullRequestPerComponent ReleasePullRequest = "per-component"
+	// ReleasePullRequestShared opens one release pull request, branch
+	// "release-me/main", carrying every component with something to release
+	// this run, each at its own version. Always the case in
+	// VersioningLocked.
+	ReleasePullRequestShared ReleasePullRequest = "shared"
+)
 
 // DefaultHiddenTypes is the hidden-types list applied when the key is left
 // out of release-me.yaml. DefaultFallbackType is hidden by default.
@@ -188,6 +209,12 @@ type Config struct {
 	// VersioningIndependent. It applies to the whole family; there is no
 	// per-component override.
 	Versioning Versioning
+	// ReleasePullRequest is the top-level "release-pull-request" key: one
+	// release pull request per component or one shared by every component.
+	// Left out, it is ReleasePullRequestShared in VersioningLocked and
+	// ReleasePullRequestPerComponent otherwise. A repository without
+	// "components" has one component, so the key changes nothing there.
+	ReleasePullRequest ReleasePullRequest
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
 	// key, default false: when true, release creates every release as a
 	// draft instead of publishing it immediately, and resumes publishing
@@ -281,11 +308,11 @@ func (cfg Config) Resolve() []ResolvedComponent {
 	}
 
 	branch := func(name string) string {
-		if cfg.Versioning == VersioningLocked {
-			// Locked keeps every component on one shared release pull
-			// request, branch "release-me/main", instead of one branch
-			// per component.
-			return lockedBranch
+		if cfg.SharedPullRequest() {
+			// A shared release pull request keeps every component on one
+			// branch, "release-me/main", instead of one branch per
+			// component.
+			return sharedBranch
 		}
 		return "release-me/" + name
 	}
@@ -395,6 +422,7 @@ type raw struct {
 	Author                 *rawAuthor `yaml:"author"`
 	MajorTag               *bool      `yaml:"major-tag"`
 	Versioning             *string    `yaml:"versioning"`
+	ReleasePullRequest     *string    `yaml:"release-pull-request"`
 	DraftUntilAssetsAttach *bool      `yaml:"draft-until-assets-attach"`
 	CommentMention         *string    `yaml:"comment-mention"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
@@ -432,10 +460,18 @@ func Default() Config {
 			Pending: DefaultPendingLabel, Tagged: DefaultTaggedLabel,
 			Alpha: DefaultAlphaLabel, Beta: DefaultBetaLabel, Rc: DefaultRcLabel,
 		},
-		Author:         Author{Name: DefaultAuthorName, Email: DefaultAuthorEmail},
-		Versioning:     DefaultVersioning,
-		CommentMention: DefaultCommentMention,
+		Author:             Author{Name: DefaultAuthorName, Email: DefaultAuthorEmail},
+		Versioning:         DefaultVersioning,
+		ReleasePullRequest: ReleasePullRequestPerComponent,
+		CommentMention:     DefaultCommentMention,
 	}
+}
+
+// SharedPullRequest reports whether every component shares one release
+// pull request, branch "release-me/main": always in VersioningLocked, and
+// with "release-pull-request: shared" in the other modes.
+func (cfg Config) SharedPullRequest() bool {
+	return cfg.Versioning == VersioningLocked || cfg.ReleasePullRequest == ReleasePullRequestShared
 }
 
 // Load reads release-me.yaml at path. A missing file yields Default(). An
@@ -544,6 +580,24 @@ func Load(path string) (cfg Config, err error) {
 		if !validVersioning[cfg.Versioning] {
 			return Config{}, fmt.Errorf("config: parse %s: versioning %q is not independent, locked or linked", path, *r.Versioning)
 		}
+	}
+	if cfg.Versioning == VersioningLocked {
+		cfg.ReleasePullRequest = ReleasePullRequestShared
+	}
+	if r.ReleasePullRequest != nil {
+		value := ReleasePullRequest(*r.ReleasePullRequest)
+		switch {
+		case value != ReleasePullRequestPerComponent && value != ReleasePullRequestShared:
+			return Config{}, fmt.Errorf(
+				"config: parse %s: release-pull-request %q is not per-component or shared", path, *r.ReleasePullRequest,
+			)
+		case value == ReleasePullRequestPerComponent && cfg.Versioning == VersioningLocked:
+			return Config{}, fmt.Errorf(
+				"config: parse %s: release-pull-request per-component does not apply to versioning locked, "+
+					"which releases every component through one shared release pull request", path,
+			)
+		}
+		cfg.ReleasePullRequest = value
 	}
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach
