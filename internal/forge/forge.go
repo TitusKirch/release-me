@@ -124,4 +124,11 @@ type Forge interface {
 	// release pull request's own comment thread, not a threaded reply to
 	// any one existing comment.
 	CreateComment(ctx context.Context, owner, repo string, number int, body string) error
+
+	// CompareURL returns the web address of the forge's compare view
+	// between the refs base and head, the tag a release is computed from
+	// and the tag it will get, for a changelog heading to link to. It is
+	// built from owner, repo and the refs alone, never read from the
+	// forge, so it makes no request and works before head exists.
+	CompareURL(owner, repo, base, head string) string
 }

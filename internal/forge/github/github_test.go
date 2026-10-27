@@ -818,3 +818,43 @@ func TestNew(t *testing.T) {
 		})
 	}
 }
+
+func TestCompareURLLinksTheWebHostOfTheAPIBaseURL(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		opts []gogithub.ClientOptionsFunc
+		want string
+	}{
+		{
+			name: "github.com by default",
+			want: "https://github.com/ostendorf-cloud/duxt/compare/duxt@v0.8.1...duxt@v0.9.0",
+		},
+		{
+			name: "a GitHub Enterprise Server host",
+			opts: []gogithub.ClientOptionsFunc{
+				gogithub.WithEnterpriseURLs("https://github.example.com/api/v3/", "https://github.example.com/api/uploads/"),
+			},
+			want: "https://github.example.com/ostendorf-cloud/duxt/compare/duxt@v0.8.1...duxt@v0.9.0",
+		},
+		{
+			name: "a GitHub Enterprise Cloud host with data residency",
+			opts: []gogithub.ClientOptionsFunc{
+				gogithub.WithEnterpriseURLs("https://api.octocorp.ghe.com/", "https://uploads.octocorp.ghe.com/"),
+			},
+			want: "https://octocorp.ghe.com/ostendorf-cloud/duxt/compare/duxt@v0.8.1...duxt@v0.9.0",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f, err := forgegithub.New("", tc.opts...)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			if got := f.CompareURL("ostendorf-cloud", "duxt", "duxt@v0.8.1", "duxt@v0.9.0"); got != tc.want {
+				t.Fatalf("CompareURL() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

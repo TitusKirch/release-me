@@ -437,3 +437,13 @@ func TestFakeCreateCommentReturnsTheConfiguredError(t *testing.T) {
 		t.Fatalf("CreatedComments = %+v, want none recorded", f.CreatedComments)
 	}
 }
+
+func TestFakeCompareURLHasGitHubsShape(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{}
+	got := f.CompareURL("ostendorf-cloud", "duxt", "duxt@v0.8.1", "duxt@v0.9.0")
+	want := "https://github.com/ostendorf-cloud/duxt/compare/duxt@v0.8.1...duxt@v0.9.0"
+	if got != want {
+		t.Fatalf("CompareURL() = %q, want %q", got, want)
+	}
+}

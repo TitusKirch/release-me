@@ -313,6 +313,12 @@ func (f *Fake) CreateComment(_ context.Context, owner, repo string, number int, 
 	return nil
 }
 
+// CompareURL implements forge.Forge, in the shape GitHub's compare view
+// has: "https://github.com/<owner>/<repo>/compare/<base>...<head>".
+func (f *Fake) CompareURL(owner, repo, base, head string) string {
+	return "https://github.com/" + owner + "/" + repo + "/compare/" + base + "..." + head
+}
+
 func (f *Fake) setPRLabels(number int, labels []string) {
 	if f.PRLabels == nil {
 		f.PRLabels = map[int][]string{}
