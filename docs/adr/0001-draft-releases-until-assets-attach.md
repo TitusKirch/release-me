@@ -56,7 +56,7 @@ sets `draft-until-assets-attach: true`.
 - `release.yaml` runs `goreleaser release --clean --skip=announce,validate,publish` right
   after release-me tags and drafts a release, to build archives and checksums without
   goreleaser ever calling the GitHub release API, then attaches those archives with
-  `gh release upload` and publishes with `gh release edit --tag <tag> --draft=false`, both
+  `gh release upload` and publishes with `gh release edit <tag> --draft=false`, both
   confirmed live to work against a draft. This is the workflow shape a repository runs once it
   sets `draft-until-assets-attach: true`; it carries no `publish.yaml` `assets` job at all.
 - A repository that leaves `draft-until-assets-attach` off keeps the workflow shape from

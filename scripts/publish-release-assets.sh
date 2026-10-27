@@ -18,7 +18,7 @@
 # when release-me released nothing this run.
 set -euo pipefail
 
-if [ -z "${TAGS}" ]; then
+if [ -z "${TAGS:-}" ]; then
   echo "nothing released, nothing to attach"
   exit 0
 fi

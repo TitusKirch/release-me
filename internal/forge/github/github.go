@@ -253,6 +253,12 @@ func releaseAlreadyExists(err error) bool {
 // repository, so it would read a still-draft release as not found. Listing
 // releases does include drafts, for a caller authenticated with push
 // access, the same access release-me already needs to create one.
+//
+// Every tagged pull request resuming a release pages through the full
+// release list again, so the resume scan is quadratic in release count.
+// Left as is: a cache would need invalidating on every CreateRelease in the
+// same run to stay correct, which is more than this repository's release
+// history currently justifies.
 func (f *Forge) IsReleaseDraft(ctx context.Context, owner, repo, tag string) (bool, error) {
 	opts := &gogithub.ListOptions{PerPage: 100}
 	for {
