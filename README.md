@@ -388,7 +388,8 @@ through the same logic a push to the default branch would run, so there is no wi
 the pull request's title and changelog still show a stale version: merging right after the
 command releases the version it just forced, not an old one. The reply confirms the update. A
 version that is not greater than the last released version is still ignored during that
-re-render, exactly as it always was, leaving the title and changelog untouched.
+re-render, exactly as it always was; the reply names the refusal instead, and the title and
+changelog stay untouched.
 
 Both commands work today through this repository's own `release.yaml` `comment` job; the
 composite action does not yet wire the `issue_comment` trigger for other repositories using
