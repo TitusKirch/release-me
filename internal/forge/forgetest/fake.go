@@ -8,6 +8,7 @@ package forgetest
 import (
 	"context"
 	"slices"
+	"strconv"
 
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 )
@@ -192,7 +193,7 @@ func (f *Fake) CreatePullRequest(_ context.Context, owner, repo, base, head, tit
 		Owner: owner, Repo: repo, Base: base, Head: head, Title: title, Body: body, Labels: labels,
 	})
 	f.setPRLabels(number, labels)
-	return forge.PullRequest{Number: number, Title: title, Body: body, Labels: labels}, nil
+	return forge.PullRequest{Number: number, Title: title, Body: body, Labels: labels, URL: pullRequestURL(owner, repo, number)}, nil
 }
 
 // UpdatePullRequest implements forge.Forge. It never touches labels.
@@ -200,7 +201,13 @@ func (f *Fake) UpdatePullRequest(_ context.Context, owner, repo string, number i
 	f.UpdatedPullRequests = append(f.UpdatedPullRequests, UpdatePullRequestCall{
 		Owner: owner, Repo: repo, Number: number, Title: title, Body: body,
 	})
-	return forge.PullRequest{Number: number, Title: title, Body: body, Labels: f.PRLabels[number]}, nil
+	return forge.PullRequest{Number: number, Title: title, Body: body, Labels: f.PRLabels[number], URL: pullRequestURL(owner, repo, number)}, nil
+}
+
+// pullRequestURL returns the web address of pull request number, in the
+// shape GitHub's has: "https://github.com/<owner>/<repo>/pull/<number>".
+func pullRequestURL(owner, repo string, number int) string {
+	return "https://github.com/" + owner + "/" + repo + "/pull/" + strconv.Itoa(number)
 }
 
 // Labels implements forge.Forge.
