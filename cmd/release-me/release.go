@@ -45,7 +45,8 @@ func computeRelease(
 	if err != nil {
 		return release{}, false, fmt.Errorf("release-me: component %s: history: %w", comp.Name, err)
 	}
-	raw, err = filterByComponent(ctx, dir, raw, comp.Path)
+	f = newPullRequestCache(f)
+	raw, err = newAttribution(dir, cfg, owner, repoName, f, logger).filter(ctx, raw, comp)
 	if err != nil {
 		return release{}, false, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
@@ -78,26 +79,6 @@ func walkEntries(ctx context.Context, dir, since, source string) ([]history.Entr
 	default:
 		return history.Walk(ctx, dir, since)
 	}
-}
-
-// filterByComponent keeps only the entries that touch path, through
-// history.Touches and history.Belongs. path "." matches every entry
-// without reading any commit's touched files.
-func filterByComponent(ctx context.Context, dir string, entries []history.Entry, path string) ([]history.Entry, error) {
-	if path == "." {
-		return entries, nil
-	}
-	filtered := make([]history.Entry, 0, len(entries))
-	for _, e := range entries {
-		paths, err := history.Touches(ctx, dir, e.SHA)
-		if err != nil {
-			return nil, fmt.Errorf("commit %s: %w", e.SHA, err)
-		}
-		if history.Belongs(paths, path) {
-			filtered = append(filtered, e)
-		}
-	}
-	return filtered, nil
 }
 
 // assembleEntries resolves each history entry's text through the forge when

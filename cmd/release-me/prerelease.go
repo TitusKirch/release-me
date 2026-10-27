@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -106,7 +107,7 @@ func preReleaseVersion(
 // the last stable tag, otherwise.
 func preReleaseEntries(
 	ctx context.Context, f forge.Forge, dir string, cfg config.Config, comp config.ResolvedComponent, familyTagPrefixes []string,
-	owner, repoName string, rel release, preType string,
+	owner, repoName string, rel release, preType string, logger *slog.Logger,
 ) (versionStr string, entries []changelog.Entry, err error) {
 	base, ok := version.ParseTag("v" + rel.version.Version)
 	if !ok {
@@ -125,7 +126,8 @@ func preReleaseEntries(
 	if err != nil {
 		return "", nil, fmt.Errorf("history since %s: %w", since, err)
 	}
-	raw, err = filterByComponent(ctx, dir, raw, comp.Path)
+	f = newPullRequestCache(f)
+	raw, err = newAttribution(dir, cfg, owner, repoName, f, logger).filter(ctx, raw, comp)
 	if err != nil {
 		return "", nil, err
 	}

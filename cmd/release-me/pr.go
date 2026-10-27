@@ -205,7 +205,7 @@ func doPRComponent(
 			return fmt.Errorf("release-me: component %s: pull request #%d: %w", comp.Name, existing.Number, err)
 		}
 		if isPre {
-			versionStr, entries, err = preReleaseEntries(ctx, f, dir, cfg, comp, familyTagPrefixes, owner, repoName, rel, preType)
+			versionStr, entries, err = preReleaseEntries(ctx, f, dir, cfg, comp, familyTagPrefixes, owner, repoName, rel, preType, logger)
 			if err != nil {
 				return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 			}
@@ -376,7 +376,7 @@ func doPRLocked(
 			return fmt.Errorf("release-me: locked family: pull request #%d: %w", existing.Number, err)
 		}
 		if isPre {
-			versionStr, releases, err = lockedPreReleaseEntries(ctx, f, dir, cfg, members, owner, repoName, releases, preType)
+			versionStr, releases, err = lockedPreReleaseEntries(ctx, f, dir, cfg, members, owner, repoName, releases, preType, logger)
 			if err != nil {
 				return fmt.Errorf("release-me: locked family: %w", err)
 			}
@@ -496,7 +496,7 @@ func doPRLocked(
 // the same rule preReleaseEntries applies to one component.
 func lockedPreReleaseEntries(
 	ctx context.Context, f forge.Forge, dir string, cfg config.Config, members []familyMember, owner, repoName string,
-	releases map[string]release, preType string,
+	releases map[string]release, preType string, logger *slog.Logger,
 ) (versionStr string, out map[string]release, err error) {
 	prefixes := familyTagPrefixes(members)
 	out = make(map[string]release, len(releases))
@@ -505,7 +505,7 @@ func lockedPreReleaseEntries(
 		if !ok {
 			continue
 		}
-		vStr, entries, err := preReleaseEntries(ctx, f, dir, cfg, m.comp, prefixes, owner, repoName, rel, preType)
+		vStr, entries, err := preReleaseEntries(ctx, f, dir, cfg, m.comp, prefixes, owner, repoName, rel, preType, logger)
 		if err != nil {
 			return "", nil, fmt.Errorf("component %s: %w", m.comp.Name, err)
 		}

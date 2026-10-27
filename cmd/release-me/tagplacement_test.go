@@ -165,7 +165,9 @@ func TestATaggedSquashCommitKeepsTheReleasedPullRequestOutOfTheNextRelease(t *te
 // right after it.
 func TestAComponentWithoutANewReleaseIsUnaffectedByAnotherComponentsRelease(t *testing.T) {
 	dir := newRepo(t)
-	commitEntry(t, dir, "chore: initial commit")
+	// The root commit changes a file outside both components: an empty
+	// one would count for every component.
+	writeFiles(t, dir, "chore: initial commit", map[string]string{"README.md": "monorepo\n"})
 	writeConfig(t, dir, "components:\n  frontend:\n    path: frontend\n  backend:\n    path: backend\n")
 
 	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
