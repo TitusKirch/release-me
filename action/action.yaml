@@ -63,6 +63,31 @@ outputs:
       publishes one itself; attach any assets and publish each tag yourself, for example with
       "gh release upload" and "gh release edit --draft=false".
     value: ${{ steps.release-me.outputs.tags }}
+  released:
+    description: >-
+      "true" when this run tagged a release for any component, "false" otherwise and always
+      in dry-run.
+    value: ${{ steps.release-me.outputs.released }}
+  components:
+    description: >-
+      JSON object keyed by every component this run handled, all configured ones unless the
+      component input limits it, each {"released", "version", "tag", "pr"}: version and tag
+      are empty unless released is true, pr is the release pull request object, as in prs,
+      opened, updated or found up to date for that component this run, null otherwise. Read
+      one with fromJSON(steps.<id>.outputs.components).<name>.released.
+    value: ${{ steps.release-me.outputs.components }}
+  pr:
+    description: >-
+      JSON object of the one release pull request this run opened, updated or found up to
+      date, {"number", "url", "branch", "components"}, empty when there was none or more than
+      one; read prs for those.
+    value: ${{ steps.release-me.outputs.pr }}
+  prs:
+    description: >-
+      JSON array of every release pull request this run opened, updated or found up to date,
+      each shaped as pr, "[]" when none or dry-run was set. A locked family or a shared
+      release pull request lists several components on one entry.
+    value: ${{ steps.release-me.outputs.prs }}
 
 runs:
   using: composite

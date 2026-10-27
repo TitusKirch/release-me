@@ -6,7 +6,10 @@
 # this run tagged a release for, one per released component. With
 # draft-until-assets-attach off, the default, each one already published;
 # on, each is still a draft, so a caller attaches assets and publishes
-# those releases itself.
+# those releases itself. Every other output, "released", "components",
+# "pr" and "prs", release-me writes itself to the file
+# RELEASE_ME_GITHUB_OUTPUT names, pointed here at the step's own
+# GITHUB_OUTPUT; a release-me older than those outputs ignores it.
 set -euo pipefail
 
 args=(run)
@@ -21,7 +24,7 @@ if [ "${VERBOSE}" = "true" ]; then
 fi
 
 output_file="${RUNNER_TEMP}/release-me-run-output.txt"
-"${RUNNER_TEMP}/release-me" "${args[@]}" | tee "${output_file}"
+RELEASE_ME_GITHUB_OUTPUT="${GITHUB_OUTPUT}" "${RUNNER_TEMP}/release-me" "${args[@]}" | tee "${output_file}"
 
 {
   echo "tags<<RELEASE_ME_TAGS_EOF"
