@@ -66,7 +66,7 @@ type MoveTagCall struct {
 // CreateReleaseCall records one call to CreateRelease.
 type CreateReleaseCall struct {
 	Owner, Repo, Tag, Name, Body string
-	Prerelease                   bool
+	Prerelease, Draft            bool
 }
 
 // Fake is a forge.Forge backed by fixed, pre-configured responses. It
@@ -115,6 +115,12 @@ type Fake struct {
 	// consulting ExistingTags.
 	TagExistsErr error
 
+	// SetLabelsErr, when set, is returned by SetLabels instead of
+	// recording the call or updating PRLabels, simulating a failed write
+	// that changes no remote state, the same as a real forge rejecting
+	// the request.
+	SetLabelsErr error
+
 	// ExistingReleases is the set of tag names CreateRelease treats as
 	// already released, returning forge.ErrReleaseExists instead of
 	// recording a call.
@@ -126,6 +132,14 @@ type Fake struct {
 	// forge.ErrReleaseExists, such as GitHub rejecting a tag name that was
 	// ever used by a now-deleted immutable release.
 	CreateReleaseErrs map[string]error
+
+	// ReleaseDrafts is the draft status IsReleaseDraft reports, by tag
+	// name: true for a draft, false for a published release. A
+	// successful CreateRelease call sets its tag here to whatever draft
+	// it was called with, the same as the real forge. A tag absent from
+	// this map has no release at all, as far as IsReleaseDraft is
+	// concerned, and is reported as forge.ErrReleaseNotFound.
+	ReleaseDrafts map[string]bool
 
 	// NextNumber is the pull request number CreatePullRequest assigns next.
 	NextNumber int
@@ -198,6 +212,9 @@ func (f *Fake) AddLabels(_ context.Context, owner, repo string, number int, labe
 
 // SetLabels implements forge.Forge.
 func (f *Fake) SetLabels(_ context.Context, owner, repo string, number int, labels []string) error {
+	if f.SetLabelsErr != nil {
+		return f.SetLabelsErr
+	}
 	f.SetLabelsCalls = append(f.SetLabelsCalls, SetLabelsCall{Owner: owner, Repo: repo, Number: number, Labels: labels})
 	f.setPRLabels(number, labels)
 	return nil
@@ -243,15 +260,31 @@ func (f *Fake) MoveTag(_ context.Context, owner, repo, tag, sha string) error {
 }
 
 // CreateRelease implements forge.Forge.
-func (f *Fake) CreateRelease(_ context.Context, owner, repo, tag, name, body string, prerelease bool) error {
+func (f *Fake) CreateRelease(_ context.Context, owner, repo, tag, name, body string, prerelease, draft bool) error {
 	if err, ok := f.CreateReleaseErrs[tag]; ok {
 		return err
 	}
 	if f.ExistingReleases[tag] {
 		return forge.ErrReleaseExists
 	}
-	f.CreatedReleases = append(f.CreatedReleases, CreateReleaseCall{Owner: owner, Repo: repo, Tag: tag, Name: name, Body: body, Prerelease: prerelease})
+	f.CreatedReleases = append(
+		f.CreatedReleases,
+		CreateReleaseCall{Owner: owner, Repo: repo, Tag: tag, Name: name, Body: body, Prerelease: prerelease, Draft: draft},
+	)
+	if f.ReleaseDrafts == nil {
+		f.ReleaseDrafts = map[string]bool{}
+	}
+	f.ReleaseDrafts[tag] = draft
 	return nil
+}
+
+// IsReleaseDraft implements forge.Forge.
+func (f *Fake) IsReleaseDraft(_ context.Context, _, _, tag string) (bool, error) {
+	draft, ok := f.ReleaseDrafts[tag]
+	if !ok {
+		return false, forge.ErrReleaseNotFound
+	}
+	return draft, nil
 }
 
 // MergeCommit implements forge.Forge.

@@ -187,6 +187,28 @@ func TestFakeSetLabelsRecordsTheCall(t *testing.T) {
 	}
 }
 
+// TestFakeSetLabelsReturnsTheConfiguredErrorAndChangesNothing proves the
+// fake mirrors a real forge rejecting the write: PRLabels stays whatever it
+// was before the call, and no call is recorded, so a caller checking either
+// one after a failed SetLabels sees no trace of it.
+func TestFakeSetLabelsReturnsTheConfiguredErrorAndChangesNothing(t *testing.T) {
+	t.Parallel()
+	wantErr := errors.New("forge unavailable")
+	f := &forgetest.Fake{PRLabels: map[int][]string{7: {"release: pending"}}, SetLabelsErr: wantErr}
+
+	err := f.SetLabels(context.Background(), "owner", "repo", 7, []string{"release: tagged"})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("SetLabels() error = %v, want %v", err, wantErr)
+	}
+	if len(f.SetLabelsCalls) != 0 {
+		t.Fatalf("SetLabelsCalls = %+v, want none recorded", f.SetLabelsCalls)
+	}
+	labels, _ := f.Labels(context.Background(), "owner", "repo", 7)
+	if !reflect.DeepEqual(labels, []string{"release: pending"}) {
+		t.Fatalf("Labels() = %v, want the original labels unchanged", labels)
+	}
+}
+
 func TestFakeRepositoryLabelsReturnsTheConfiguredList(t *testing.T) {
 	t.Parallel()
 	f := &forgetest.Fake{RepoLabels: []string{"release: pending", "release: tagged"}}
@@ -282,7 +304,7 @@ func TestFakeCreateReleaseRecordsTheCall(t *testing.T) {
 	t.Parallel()
 	f := &forgetest.Fake{}
 
-	if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false); err != nil {
+	if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false, true); err != nil {
 		t.Fatalf("CreateRelease() error = %v", err)
 	}
 	if len(f.CreatedReleases) != 1 || f.CreatedReleases[0].Tag != "v0.1.0" || f.CreatedReleases[0].Prerelease {
@@ -294,7 +316,7 @@ func TestFakeCreateReleaseRecordsAPreRelease(t *testing.T) {
 	t.Parallel()
 	f := &forgetest.Fake{}
 
-	if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0-alpha.1", "v0.1.0-alpha.1", "Release v0.1.0-alpha.1", true); err != nil {
+	if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0-alpha.1", "v0.1.0-alpha.1", "Release v0.1.0-alpha.1", true, true); err != nil {
 		t.Fatalf("CreateRelease() error = %v", err)
 	}
 	if len(f.CreatedReleases) != 1 || !f.CreatedReleases[0].Prerelease {
@@ -306,12 +328,73 @@ func TestFakeCreateReleaseReturnsErrReleaseExistsForAnExistingTag(t *testing.T) 
 	t.Parallel()
 	f := &forgetest.Fake{ExistingReleases: map[string]bool{"v0.1.0": true}}
 
-	err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false)
+	err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false, true)
 	if !errors.Is(err, forge.ErrReleaseExists) {
 		t.Fatalf("CreateRelease() error = %v, want %v", err, forge.ErrReleaseExists)
 	}
 	if len(f.CreatedReleases) != 0 {
 		t.Fatalf("CreatedReleases = %+v, want none", f.CreatedReleases)
+	}
+}
+
+func TestFakeCreateReleaseRecordsItAsADraftWhenAskedFor(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{}
+
+	if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false, true); err != nil {
+		t.Fatalf("CreateRelease() error = %v", err)
+	}
+	if len(f.CreatedReleases) != 1 || !f.CreatedReleases[0].Draft {
+		t.Fatalf("CreatedReleases = %+v, want Draft true", f.CreatedReleases)
+	}
+	draft, err := f.IsReleaseDraft(context.Background(), "owner", "repo", "v0.1.0")
+	if err != nil {
+		t.Fatalf("IsReleaseDraft() error = %v", err)
+	}
+	if !draft {
+		t.Fatalf("IsReleaseDraft() = %v, want true", draft)
+	}
+}
+
+func TestFakeCreateReleaseRecordsItAsPublishedWhenDraftIsFalse(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{}
+
+	if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false, false); err != nil {
+		t.Fatalf("CreateRelease() error = %v", err)
+	}
+	if len(f.CreatedReleases) != 1 || f.CreatedReleases[0].Draft {
+		t.Fatalf("CreatedReleases = %+v, want Draft false", f.CreatedReleases)
+	}
+	draft, err := f.IsReleaseDraft(context.Background(), "owner", "repo", "v0.1.0")
+	if err != nil {
+		t.Fatalf("IsReleaseDraft() error = %v", err)
+	}
+	if draft {
+		t.Fatalf("IsReleaseDraft() = %v, want false", draft)
+	}
+}
+
+func TestFakeIsReleaseDraftReportsAPublishedRelease(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{ReleaseDrafts: map[string]bool{"v0.1.0": false}}
+
+	draft, err := f.IsReleaseDraft(context.Background(), "owner", "repo", "v0.1.0")
+	if err != nil {
+		t.Fatalf("IsReleaseDraft() error = %v", err)
+	}
+	if draft {
+		t.Fatalf("IsReleaseDraft() = %v, want false", draft)
+	}
+}
+
+func TestFakeIsReleaseDraftReturnsErrReleaseNotFoundForAnUnknownTag(t *testing.T) {
+	t.Parallel()
+	f := &forgetest.Fake{}
+
+	_, err := f.IsReleaseDraft(context.Background(), "owner", "repo", "v0.1.0")
+	if !errors.Is(err, forge.ErrReleaseNotFound) {
+		t.Fatalf("IsReleaseDraft() error = %v, want %v", err, forge.ErrReleaseNotFound)
 	}
 }
 
