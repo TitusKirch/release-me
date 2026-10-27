@@ -88,9 +88,9 @@ changelog-source: all
 labels:
   pending: 'autorelease: pending'
   tagged: 'autorelease: tagged'
-  alpha: ""
-  beta: ""
-  rc: ""
+  alpha: false
+  beta: false
+  rc: false
 bump-minor-pre-major: true
 components:
   duxt:

@@ -480,7 +480,7 @@ func render(components []component, versioning, pending, tagged string) ([]byte,
 	add(labels, "pending", scalar(pending))
 	add(labels, "tagged", scalar(tagged))
 	for _, t := range []string{"alpha", "beta", "rc"} {
-		add(labels, t, &yaml.Node{Kind: yaml.ScalarNode, Value: "", Style: yaml.DoubleQuotedStyle})
+		add(labels, t, boolean(false))
 	}
 	add(doc, "labels", labels)
 
