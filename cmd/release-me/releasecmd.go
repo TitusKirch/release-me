@@ -24,7 +24,8 @@ func runRelease(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	ctx := context.Background()
+	out := &runOutputs{}
+	ctx := withOutputs(context.Background(), out)
 	dir, cfg, f, logger, err := setup(ctx, stderr, verbose)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -40,6 +41,10 @@ func runRelease(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if err := doRelease(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if err := emitOutputs(cfg, component, out); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
@@ -88,26 +93,13 @@ func doRelease(ctx context.Context, dir string, cfg config.Config, component str
 			if r.MajorTagMessage != "" {
 				printLine(stdout, comp.Name, multi, r.MajorTagMessage)
 			}
-			printReleasedTag(stdout, dryRun, r.Tag)
+			reportReleased(ctx, stdout, dryRun, r)
 		}
 	}
 	if !any {
 		fmt.Fprintln(stdout, "nothing to release")
 	}
 	return nil
-}
-
-// printReleasedTag prints tag in the stable, unprefixed "released-tag: <tag>"
-// shape run-release-me.sh greps for, to fill the composite action's "tags"
-// output: every tag this run tagged, including one already tagged by an
-// earlier, interrupted run, since its release still needs assets attached
-// and publishing. Writes nothing in dry-run: CreateRelease was never
-// called, so there is no release yet for anything to act on.
-func printReleasedTag(w io.Writer, dryRun bool, tag string) {
-	if dryRun {
-		return
-	}
-	fmt.Fprintf(w, "released-tag: %s\n", tag)
 }
 
 // doReleaseLocked tags and releases every configured component together,
@@ -137,7 +129,7 @@ func doReleaseLocked(
 		if r.MajorTagMessage != "" {
 			printLine(stdout, r.Name, multi, r.MajorTagMessage)
 		}
-		printReleasedTag(stdout, dryRun, r.Tag)
+		reportReleased(ctx, stdout, dryRun, r)
 	}
 	if !any {
 		fmt.Fprintln(stdout, "nothing to release")
@@ -188,7 +180,7 @@ func doReleaseShared(
 		if r.MajorTagMessage != "" {
 			printLine(stdout, r.Name, true, r.MajorTagMessage)
 		}
-		printReleasedTag(stdout, dryRun, r.Tag)
+		reportReleased(ctx, stdout, dryRun, r)
 	}
 	return nil
 }

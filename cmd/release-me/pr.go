@@ -45,7 +45,8 @@ func runPR(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	ctx := context.Background()
+	out := &runOutputs{}
+	ctx := withOutputs(context.Background(), out)
 	dir, cfg, f, logger, err := setup(ctx, stderr, verbose)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -61,6 +62,10 @@ func runPR(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if err := doPR(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if err := emitOutputs(cfg, component, out); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
@@ -257,6 +262,7 @@ func doPRComponent(
 
 	switch {
 	case existing != nil && !plan.changed && body == existing.Body:
+		recordPR(ctx, dryRun, *existing, comp.Branch, []string{comp.Name})
 		printLine(stdout, comp.Name, multi, "release pull request up to date")
 		return nil
 
@@ -268,12 +274,14 @@ func doPRComponent(
 			printLine(stdout, comp.Name, multi, fmt.Sprintf("would update %s", title))
 			return nil
 		}
-		if _, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body); err != nil {
+		updated, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body)
+		if err != nil {
 			return fmt.Errorf("release-me: component %s: update release pull request #%d: %w", comp.Name, existing.Number, err)
 		}
 		if err := ensurePendingLabel(ctx, f, owner, repoName, existing.Number, existing.Labels, cfg.Labels.Pending); err != nil {
 			return err
 		}
+		recordPR(ctx, dryRun, updated, comp.Branch, []string{comp.Name})
 		printLine(stdout, comp.Name, multi, fmt.Sprintf("updated %s", title))
 		return nil
 
@@ -292,16 +300,19 @@ func doPRComponent(
 		}
 
 		if existing == nil {
-			if _, err := f.CreatePullRequest(ctx, owner, repoName, base, comp.Branch, title, body, []string{cfg.Labels.Pending}); err != nil {
+			created, err := f.CreatePullRequest(ctx, owner, repoName, base, comp.Branch, title, body, []string{cfg.Labels.Pending})
+			if err != nil {
 				return fmt.Errorf(
 					"release-me: component %s: create release pull request: pushed branch %s but the pull request failed: %w",
 					comp.Name, comp.Branch, err,
 				)
 			}
+			recordPR(ctx, dryRun, created, comp.Branch, []string{comp.Name})
 			printLine(stdout, comp.Name, multi, fmt.Sprintf("created %s", title))
 			return nil
 		}
-		if _, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body); err != nil {
+		updated, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body)
+		if err != nil {
 			return fmt.Errorf(
 				"release-me: component %s: update release pull request #%d: pushed branch %s but the update failed: %w",
 				comp.Name, existing.Number, comp.Branch, err,
@@ -310,6 +321,7 @@ func doPRComponent(
 		if err := ensurePendingLabel(ctx, f, owner, repoName, existing.Number, existing.Labels, cfg.Labels.Pending); err != nil {
 			return err
 		}
+		recordPR(ctx, dryRun, updated, comp.Branch, []string{comp.Name})
 		printLine(stdout, comp.Name, multi, fmt.Sprintf("updated %s", title))
 		return nil
 	}
@@ -447,20 +459,22 @@ func doPRLocked(
 	}
 	body := releasepr.Body(versionStr, strings.Join(tags, ", "), guideLabels, notes, versionOverride, section)
 
-	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, "locked family", existing, plan, date, title, body, dryRun, stdout)
+	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, "locked family", names, existing, plan, date, title, body, dryRun, stdout)
 }
 
 // publishSharedPR creates, updates or leaves alone the one release pull
 // request every component shares, on branch, the same three outcomes
 // doPRComponent decides for one component's own: up to date, a body only
 // update with no push, or a push followed by the create or update. who
-// names the locked family or the shared release pull request in an error.
+// names the locked family or the shared release pull request in an error;
+// components names every component the pull request releases.
 func publishSharedPR(
-	ctx context.Context, cfg config.Config, f forge.Forge, owner, repoName, base, branch, who string,
+	ctx context.Context, cfg config.Config, f forge.Forge, owner, repoName, base, branch, who string, components []string,
 	existing *forge.PullRequest, plan *releasePlan, date time.Time, title, body string, dryRun bool, stdout io.Writer,
 ) error {
 	switch {
 	case existing != nil && !plan.changed && body == existing.Body:
+		recordPR(ctx, dryRun, *existing, branch, components)
 		fmt.Fprintln(stdout, "release pull request up to date")
 		return nil
 
@@ -469,12 +483,14 @@ func publishSharedPR(
 			fmt.Fprintf(stdout, "would update %s\n", title)
 			return nil
 		}
-		if _, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body); err != nil {
+		updated, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body)
+		if err != nil {
 			return fmt.Errorf("release-me: %s: update release pull request #%d: %w", who, existing.Number, err)
 		}
 		if err := ensurePendingLabel(ctx, f, owner, repoName, existing.Number, existing.Labels, cfg.Labels.Pending); err != nil {
 			return err
 		}
+		recordPR(ctx, dryRun, updated, branch, components)
 		fmt.Fprintf(stdout, "updated %s\n", title)
 		return nil
 
@@ -493,15 +509,18 @@ func publishSharedPR(
 		}
 
 		if existing == nil {
-			if _, err := f.CreatePullRequest(ctx, owner, repoName, base, branch, title, body, []string{cfg.Labels.Pending}); err != nil {
+			created, err := f.CreatePullRequest(ctx, owner, repoName, base, branch, title, body, []string{cfg.Labels.Pending})
+			if err != nil {
 				return fmt.Errorf(
 					"release-me: %s: create release pull request: pushed branch %s but the pull request failed: %w", who, branch, err,
 				)
 			}
+			recordPR(ctx, dryRun, created, branch, components)
 			fmt.Fprintf(stdout, "created %s\n", title)
 			return nil
 		}
-		if _, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body); err != nil {
+		updated, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body)
+		if err != nil {
 			return fmt.Errorf(
 				"release-me: %s: update release pull request #%d: pushed branch %s but the update failed: %w",
 				who, existing.Number, branch, err,
@@ -510,6 +529,7 @@ func publishSharedPR(
 		if err := ensurePendingLabel(ctx, f, owner, repoName, existing.Number, existing.Labels, cfg.Labels.Pending); err != nil {
 			return err
 		}
+		recordPR(ctx, dryRun, updated, branch, components)
 		fmt.Fprintf(stdout, "updated %s\n", title)
 		return nil
 	}

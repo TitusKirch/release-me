@@ -17,7 +17,8 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	ctx := context.Background()
+	out := &runOutputs{}
+	ctx := withOutputs(context.Background(), out)
 	dir, cfg, f, logger, err := setup(ctx, stderr, verbose)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -37,6 +38,10 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if err := doRelease(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if err := emitOutputs(cfg, component, out); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}

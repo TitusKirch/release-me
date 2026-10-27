@@ -192,7 +192,11 @@ func doPRShared(
 
 	title := tagrelease.SharedTitle(titled)
 	body := releasepr.SharedBody(releases, guideLabels(cfg), perComponentVersion, notes, versionOverride, section)
-	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, sharedWho, existing, plan, date, title, body, dryRun, stdout)
+	names := make([]string, 0, len(members))
+	for _, m := range members {
+		names = append(names, m.comp.Name)
+	}
+	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, sharedWho, names, existing, plan, date, title, body, dryRun, stdout)
 }
 
 // sharedMembers computes every component's release for a shared release
