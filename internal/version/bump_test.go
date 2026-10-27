@@ -4,6 +4,7 @@
 package version_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/version"
@@ -156,6 +157,141 @@ func TestChangedReportsWhetherAnyChangeBumpsTheVersion(t *testing.T) {
 			t.Parallel()
 			if got := version.Changed(tc.changes); got != tc.want {
 				t.Fatalf("Changed(%+v) = %v, want %v", tc.changes, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNextLetsAReleaseAsFooterWinOverTheComputedBump(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name         string
+		last         version.Semver
+		lastOK       bool
+		changes      []version.Change
+		want         version.Result
+		wantReleased bool
+	}{
+		{
+			name:   "forces the footer's version over a feature's minor bump",
+			last:   version.Semver{Major: 1, Minor: 2, Patch: 3},
+			lastOK: true,
+			changes: []version.Change{
+				{Type: "feat"},
+				{Type: "chore", ReleaseAs: "2.0.0"},
+			},
+			want:         version.Result{Version: "2.0.0", Bump: version.BumpForced, Reason: "Release-As footer"},
+			wantReleased: true,
+		},
+		{
+			name:         "releases on a footer alone, without a bumping change",
+			last:         version.Semver{Major: 1, Minor: 2, Patch: 3},
+			lastOK:       true,
+			changes:      []version.Change{{Type: "chore", ReleaseAs: "1.3.0"}},
+			want:         version.Result{Version: "1.3.0", Bump: version.BumpForced, Reason: "Release-As footer"},
+			wantReleased: true,
+		},
+		{
+			name:         "replaces the initial version without a tag",
+			changes:      []version.Change{{Type: "feat", ReleaseAs: "1.0.0"}},
+			want:         version.Result{Version: "1.0.0", Bump: version.BumpForced, Reason: "Release-As footer"},
+			wantReleased: true,
+		},
+		{
+			name:         "falls back to the computed bump for a footer not ahead of the last tag",
+			last:         version.Semver{Major: 1, Minor: 2, Patch: 3},
+			lastOK:       true,
+			changes:      []version.Change{{Type: "fix", ReleaseAs: "1.2.3"}},
+			want:         version.Result{Version: "1.2.4", Bump: version.BumpPatch, Reason: "fix"},
+			wantReleased: true,
+		},
+		{
+			name:    "releases nothing for a refused footer without a bumping change",
+			last:    version.Semver{Major: 1, Minor: 2, Patch: 3},
+			lastOK:  true,
+			changes: []version.Change{{Type: "chore", ReleaseAs: "1.0.0"}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, released := version.Next(tc.last, tc.lastOK, tc.changes, "0.1.0", false)
+			if got != tc.want || released != tc.wantReleased {
+				t.Fatalf("Next() = %+v, %v, want %+v, %v", got, released, tc.want, tc.wantReleased)
+			}
+		})
+	}
+}
+
+func TestReleaseAsPicksTheHighestUsableFooter(t *testing.T) {
+	t.Parallel()
+	last := version.Semver{Major: 1, Minor: 2, Patch: 3}
+	cases := []struct {
+		name        string
+		lastOK      bool
+		changes     []version.Change
+		want        string
+		wantRefused []string
+	}{
+		{
+			name:    "picks the highest of several, whatever their order",
+			lastOK:  true,
+			changes: []version.Change{{ReleaseAs: "1.5.0"}, {ReleaseAs: "2.0.0"}, {ReleaseAs: "1.9.0"}},
+			want:    "2.0.0",
+		},
+		{
+			name:    "accepts a v prefix",
+			lastOK:  true,
+			changes: []version.Change{{ReleaseAs: "v1.4.0"}},
+			want:    "1.4.0",
+		},
+		{
+			name:        "refuses a value that does not parse",
+			lastOK:      true,
+			changes:     []version.Change{{ReleaseAs: "next"}},
+			wantRefused: []string{"next"},
+		},
+		{
+			name:        "refuses a pre-release value",
+			lastOK:      true,
+			changes:     []version.Change{{ReleaseAs: "2.0.0-rc.1"}},
+			wantRefused: []string{"2.0.0-rc.1"},
+		},
+		{
+			name:        "refuses a value equal to or below the last tag, keeping a usable one",
+			lastOK:      true,
+			changes:     []version.Change{{ReleaseAs: "1.2.3"}, {ReleaseAs: "1.3.0"}, {ReleaseAs: "1.0.0"}},
+			want:        "1.3.0",
+			wantRefused: []string{"1.2.3", "1.0.0"},
+		},
+		{
+			name:    "accepts any version without a tag",
+			changes: []version.Change{{ReleaseAs: "0.0.1"}},
+			want:    "0.0.1",
+		},
+		{
+			name:    "ignores a change without a footer",
+			lastOK:  true,
+			changes: []version.Change{{Type: "feat"}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			forced, ok, refused := version.ReleaseAs(last, tc.lastOK, tc.changes)
+			got := ""
+			if ok {
+				got = forced.String()
+			}
+			if got != tc.want {
+				t.Fatalf("ReleaseAs() forced = %q, want %q", got, tc.want)
+			}
+			var gotRefused []string
+			for _, r := range refused {
+				gotRefused = append(gotRefused, r.Value)
+			}
+			if !slices.Equal(gotRefused, tc.wantRefused) {
+				t.Fatalf("ReleaseAs() refused = %+v, want values %v", refused, tc.wantRefused)
 			}
 		})
 	}
