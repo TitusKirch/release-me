@@ -55,6 +55,10 @@ func runPR(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "release-me: %v\n", err)
 		return 2
 	}
+	if err := rejectComponentForShared(cfg, component); err != nil {
+		fmt.Fprintf(stderr, "release-me: %v\n", err)
+		return 2
+	}
 
 	if err := doPR(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -97,10 +101,12 @@ func doPR(ctx context.Context, dir string, cfg config.Config, component string, 
 		return err
 	}
 
-	switch cfg.Versioning {
-	case config.VersioningLocked:
+	switch {
+	case cfg.Versioning == config.VersioningLocked:
 		return doPRLocked(ctx, dir, cfg, owner, repoName, base, f, logger, dryRun, stdout)
-	case config.VersioningLinked:
+	case sharedOutsideLocked(cfg):
+		return doPRShared(ctx, dir, cfg, owner, repoName, base, f, logger, dryRun, stdout)
+	case cfg.Versioning == config.VersioningLinked:
 		return doPRLinked(ctx, dir, cfg, components, owner, repoName, base, f, logger, dryRun, multi, stdout)
 	default:
 		for _, comp := range components {
@@ -197,7 +203,7 @@ func doPRComponent(
 		}
 		versionOverride, versionStr, overrideValid = applyVersionOverride(existing.Body, versionStr, last, hasLast, logger, comp.Name, existing.Number)
 		if versionOverride != "" {
-			recordOverrideOutcome(ctx, existing.Number, overrideValid)
+			recordOverrideOutcome(ctx, existing.Number, "", overrideValid)
 		}
 	}
 	if existing != nil && !overrideValid {
@@ -370,7 +376,7 @@ func doPRLocked(
 		last, hasLast := familyLastVersion(members)
 		versionOverride, versionStr, overrideValid = applyVersionOverride(existing.Body, versionStr, last, hasLast, logger, "locked family", existing.Number)
 		if versionOverride != "" {
-			recordOverrideOutcome(ctx, existing.Number, overrideValid)
+			recordOverrideOutcome(ctx, existing.Number, "", overrideValid)
 		}
 	}
 	if existing != nil && !overrideValid {
@@ -441,6 +447,18 @@ func doPRLocked(
 	}
 	body := releasepr.Body(versionStr, strings.Join(tags, ", "), guideLabels, notes, versionOverride, section)
 
+	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, "locked family", existing, plan, date, title, body, dryRun, stdout)
+}
+
+// publishSharedPR creates, updates or leaves alone the one release pull
+// request every component shares, on branch, the same three outcomes
+// doPRComponent decides for one component's own: up to date, a body only
+// update with no push, or a push followed by the create or update. who
+// names the locked family or the shared release pull request in an error.
+func publishSharedPR(
+	ctx context.Context, cfg config.Config, f forge.Forge, owner, repoName, base, branch, who string,
+	existing *forge.PullRequest, plan *releasePlan, date time.Time, title, body string, dryRun bool, stdout io.Writer,
+) error {
 	switch {
 	case existing != nil && !plan.changed && body == existing.Body:
 		fmt.Fprintln(stdout, "release pull request up to date")
@@ -452,7 +470,7 @@ func doPRLocked(
 			return nil
 		}
 		if _, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body); err != nil {
-			return fmt.Errorf("release-me: locked family: update release pull request #%d: %w", existing.Number, err)
+			return fmt.Errorf("release-me: %s: update release pull request #%d: %w", who, existing.Number, err)
 		}
 		if err := ensurePendingLabel(ctx, f, owner, repoName, existing.Number, existing.Labels, cfg.Labels.Pending); err != nil {
 			return err
@@ -471,13 +489,13 @@ func doPRLocked(
 		}
 
 		if err := plan.write(ctx, cfg, existing, branch, date, title); err != nil {
-			return fmt.Errorf("release-me: locked family: %w", err)
+			return fmt.Errorf("release-me: %s: %w", who, err)
 		}
 
 		if existing == nil {
 			if _, err := f.CreatePullRequest(ctx, owner, repoName, base, branch, title, body, []string{cfg.Labels.Pending}); err != nil {
 				return fmt.Errorf(
-					"release-me: locked family: create release pull request: pushed branch %s but the pull request failed: %w", branch, err,
+					"release-me: %s: create release pull request: pushed branch %s but the pull request failed: %w", who, branch, err,
 				)
 			}
 			fmt.Fprintf(stdout, "created %s\n", title)
@@ -485,8 +503,8 @@ func doPRLocked(
 		}
 		if _, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body); err != nil {
 			return fmt.Errorf(
-				"release-me: locked family: update release pull request #%d: pushed branch %s but the update failed: %w",
-				existing.Number, branch, err,
+				"release-me: %s: update release pull request #%d: pushed branch %s but the update failed: %w",
+				who, existing.Number, branch, err,
 			)
 		}
 		if err := ensurePendingLabel(ctx, f, owner, repoName, existing.Number, existing.Labels, cfg.Labels.Pending); err != nil {
@@ -612,19 +630,29 @@ func applyVersionOverride(
 	if !found {
 		return "", computed, false
 	}
+	overridden, ok = checkVersionOverride(raw, computed, last, hasLast, logger, who, number)
+	return raw, overridden, ok
+}
 
-	sv, parseOK := version.ParseTag("v" + raw)
+// checkVersionOverride is applyVersionOverride's decision for one value
+// already read out of the block: value, as a version, when it parses and
+// is strictly greater than last, ok true; computed otherwise, with the
+// reason logged.
+func checkVersionOverride(
+	value, computed string, last version.Semver, hasLast bool, logger *slog.Logger, who string, number int,
+) (overridden string, ok bool) {
+	sv, parseOK := version.ParseTag("v" + value)
 	switch {
 	case !parseOK:
 		logger.Warn("ignoring a release-me-version override that does not parse as a version",
-			"component", who, "number", number, "value", raw)
-		return raw, computed, false
+			"component", who, "number", number, "value", value)
+		return computed, false
 	case hasLast && !last.Less(sv):
 		logger.Warn("ignoring a release-me-version override that is not greater than the last released version",
-			"component", who, "number", number, "value", raw, "last", last.String())
-		return raw, computed, false
+			"component", who, "number", number, "value", value, "last", last.String())
+		return computed, false
 	default:
-		return raw, sv.String(), true
+		return sv.String(), true
 	}
 }
 
@@ -639,7 +667,16 @@ func applyVersionOverride(
 // command's own run never wires one in, so recordOverrideOutcome is a
 // no-op and costs nothing there.
 type overrideRecorder struct {
-	results map[int]bool
+	results map[overrideKey]bool
+}
+
+// overrideKey names the override an overrideRecorder entry is about: the
+// pull request number, and the component a "<component> X.Y.Z" line in a
+// shared release pull request with independent versions names, "" for the
+// one version every other release pull request carries.
+type overrideKey struct {
+	number    int
+	component string
 }
 
 // overrideRecorderKey is the unexported context key an *overrideRecorder
@@ -656,15 +693,17 @@ func withOverrideRecorder(ctx context.Context, rec *overrideRecorder) context.Co
 // recordOverrideOutcome records, for pull request number, whether a
 // release-me-version override found on its body actually won this run,
 // when ctx carries an *overrideRecorder; it does nothing otherwise.
-func recordOverrideOutcome(ctx context.Context, number int, applied bool) {
+// component is "" except for one component's line in a shared release
+// pull request with independent versions.
+func recordOverrideOutcome(ctx context.Context, number int, component string, applied bool) {
 	rec, ok := ctx.Value(overrideRecorderKey{}).(*overrideRecorder)
 	if !ok {
 		return
 	}
 	if rec.results == nil {
-		rec.results = make(map[int]bool)
+		rec.results = make(map[overrideKey]bool)
 	}
-	rec.results[number] = applied
+	rec.results[overrideKey{number: number, component: component}] = applied
 }
 
 // changelogUpdate is one component's changelog file path, the version its

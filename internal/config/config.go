@@ -314,7 +314,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			// component.
 			return sharedBranch
 		}
-		return "release-me/" + name
+		return PerComponentBranch(name)
 	}
 
 	out := make([]ResolvedComponent, 0, len(cfg.Components))
@@ -469,9 +469,18 @@ func Default() Config {
 
 // SharedPullRequest reports whether every component shares one release
 // pull request, branch "release-me/main": always in VersioningLocked, and
-// with "release-pull-request: shared" in the other modes.
+// with "release-pull-request: shared" and a "components" key in the other
+// modes. A repository without "components" has the one implicit "main"
+// component, whose own release pull request already is the only one.
 func (cfg Config) SharedPullRequest() bool {
-	return cfg.Versioning == VersioningLocked || cfg.ReleasePullRequest == ReleasePullRequestShared
+	return cfg.Versioning == VersioningLocked ||
+		(cfg.ReleasePullRequest == ReleasePullRequestShared && len(cfg.Components) > 0)
+}
+
+// PerComponentBranch returns the release branch a component named name
+// carries with one release pull request per component, "release-me/<name>".
+func PerComponentBranch(name string) string {
+	return "release-me/" + name
 }
 
 // Load reads release-me.yaml at path. A missing file yields Default(). An

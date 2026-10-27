@@ -118,7 +118,7 @@ func doComment(
 		// specific question for this pull request.
 		rec := &overrideRecorder{}
 		recomputeErr := doPR(withOverrideRecorder(ctx, rec), dir, cfg, "", f, logger, false, stdout)
-		applied, known := rec.results[flags.prNumber]
+		applied, known := rec.results[overrideKey{number: flags.prNumber}]
 
 		switch {
 		case recomputeErr != nil || !known:

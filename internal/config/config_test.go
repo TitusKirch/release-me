@@ -693,6 +693,20 @@ components:
 	}
 }
 
+func TestSharedPullRequestChangesNothingWithoutComponents(t *testing.T) {
+	t.Parallel()
+	cfg, err := config.Load(writeFile(t, "release-pull-request: shared\n"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.SharedPullRequest() {
+		t.Fatal("SharedPullRequest() = true, want false: the implicit main component's own pull request is the only one")
+	}
+	if got := cfg.Resolve()[0].Branch; got != "release-me/main" {
+		t.Fatalf("Branch = %q, want release-me/main", got)
+	}
+}
+
 func TestResolveUsesAConfiguredTagPrefixAndDerivesTheRest(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, `components:

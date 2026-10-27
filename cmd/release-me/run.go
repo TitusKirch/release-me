@@ -27,6 +27,10 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "release-me: %v\n", err)
 		return 2
 	}
+	if err := rejectComponentForShared(cfg, component); err != nil {
+		fmt.Fprintf(stderr, "release-me: %v\n", err)
+		return 2
+	}
 
 	if err := doPR(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
