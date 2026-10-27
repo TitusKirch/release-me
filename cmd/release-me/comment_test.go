@@ -265,7 +265,8 @@ func TestDoCommentReleaseAsUpdatesALockedFamilysPullRequestImmediately(t *testin
 // parses but is not greater than the last released version is still
 // ignored by the immediate recompute, exactly the way doPR already ignores
 // it on a later scheduled run. The override is written for visibility, as
-// it always was, but the title and the changelog it drives never change.
+// it always was, but the title and the changelog it drives never change,
+// and the reply names the refusal instead of falsely claiming an update.
 func TestDoCommentReleaseAsThatIsNotForwardNeverChangesTheTitleOrChangelog(t *testing.T) {
 	dir, origin := newPRRepo(t)
 	commitEntry(t, dir, "feat: add the original feature")
@@ -309,6 +310,13 @@ func TestDoCommentReleaseAsThatIsNotForwardNeverChangesTheTitleOrChangelog(t *te
 	}
 	if len(f.CreatedComments) != 1 {
 		t.Fatalf("CreatedComments = %+v, want one reply", f.CreatedComments)
+	}
+	reply := f.CreatedComments[0].Body
+	if !strings.Contains(reply, "refused") {
+		t.Fatalf("reply = %q, want it to name the refusal instead of claiming the title and changelog updated", reply)
+	}
+	if strings.Contains(reply, "updated this pull request's title and changelog") {
+		t.Fatalf("reply = %q, want no false claim that the title and changelog were updated", reply)
 	}
 }
 
