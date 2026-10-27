@@ -74,13 +74,19 @@ func gatherFamily(
 // run: bump(highest version in the family, highest bump type among the
 // changed components). released is false when no member has anything to
 // release.
-func familyVersion(cfg config.Config, members []familyMember) (result version.Result, released bool) {
+//
+// A "Release-As" footer on any member's own changes forces the family's
+// version, the same way a release-as override on the locked family's
+// shared release pull request does, checked against the family's highest
+// version.
+func familyVersion(cfg config.Config, members []familyMember, logger *slog.Logger) (result version.Result, released bool) {
 	highest, highestOK := familyLastVersion(members)
 
 	var changes []version.Change
 	for _, m := range members {
 		changes = append(changes, m.changes...)
 	}
+	warnRefusedReleaseAs(logger, string(cfg.Versioning)+" family", highest, highestOK, changes)
 	return version.Next(highest, highestOK, changes, cfg.InitialVersion, cfg.BumpMinorPreMajor)
 }
 
@@ -105,17 +111,22 @@ func familyLastVersion(members []familyMember) (highest version.Semver, ok bool)
 // member in VersioningLinked, every member once anything in the family
 // changed in VersioningLocked, since locked releases every component
 // together, changed or not. released is false when nothing in the family
-// has anything to release.
-func familyReleases(cfg config.Config, members []familyMember) (releases map[string]release, released bool) {
-	result, released := familyVersion(cfg, members)
+// has anything to release. In VersioningLinked, a member whose own changes
+// carry a usable "Release-As" footer counts as changed, even when none of
+// them bumps the version.
+func familyReleases(cfg config.Config, members []familyMember, logger *slog.Logger) (releases map[string]release, released bool) {
+	result, released := familyVersion(cfg, members, logger)
 	if !released {
 		return nil, false
 	}
+	highest, highestOK := familyLastVersion(members)
 
 	releases = make(map[string]release, len(members))
 	for _, m := range members {
 		if cfg.Versioning == config.VersioningLinked && !version.Changed(m.changes) {
-			continue
+			if _, forces, _ := version.ReleaseAs(highest, highestOK, m.changes); !forces {
+				continue
+			}
 		}
 		releases[m.comp.Name] = release{version: result, entries: m.entries, hiddenTypes: m.comp.HiddenTypes}
 	}

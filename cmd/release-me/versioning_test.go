@@ -68,7 +68,7 @@ func TestLinkedFamilyFollowsTheIssueTable(t *testing.T) {
 		if err != nil {
 			t.Fatalf("gatherFamily() error = %v", err)
 		}
-		releases, released := familyReleases(cfg, members)
+		releases, released := familyReleases(cfg, members, logger)
 		if !released {
 			t.Fatal("familyReleases() released = false, want true")
 		}
