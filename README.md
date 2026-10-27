@@ -167,11 +167,30 @@ your working copy.
 anything, the same check `check` runs. The labels are shared across every component; the
 default branch is resolved once and shared too.
 
-Rerunning `pr` is judged on content, not on the rendered pull request body: the version in the
-changelog heading, the changelog entries for that version without the heading's date, and every
-configured file's bumped content are compared against the release branch's current tip. A version
-that differs from the one already on the branch, a pre-release label added, changed or removed,
-counts as changed even when the entries underneath read the same. A heading the comparison cannot
+The changelog heading, the same one `changelog` prints, links the version to the forge's compare
+view, between the tag the release's entries are collected since and the tag it will get:
+
+```markdown
+## [v0.9.0](https://github.com/owner/repo/compare/duxt@v0.8.1...duxt@v0.9.0) (2026-10-01)
+```
+
+The link starts at the component's last stable tag, with its own tag prefix; a pre-release tag
+never moves that base. A pre-release starts at the previous pre-release tag of the same
+version, `v0.9.0-rc.1...v0.9.0-rc.2`, when one exists, since its entries start there too, and at
+the last stable tag otherwise. A component's first release has nothing to compare against, so
+its heading carries no link: `## v0.1.0 (2026-10-01)`. On GitHub Enterprise the link points at
+the instance's own web host. A locked family's combined pull request body keeps one unlinked
+heading, as every component has a tag of its own; each component's `CHANGELOG.md` links its own.
+The heading in the GitHub release body is the one from the pull request body. Older headings
+without a link are read the same way as linked ones.
+
+Rerunning `pr` is judged on content, not on the rendered pull request body: the version and the
+compare link in the changelog heading, the changelog entries for that version without the
+heading's date, and every configured file's bumped content are compared against the release
+branch's current tip. A version that differs from the one already on the branch, a pre-release
+label added, changed or removed, counts as changed even when the entries underneath read the
+same, and so does a compare link that differs, a heading written before the link existed
+included. A heading the comparison cannot
 read, a hand edit or one from before this tool wrote it, counts as changed too, and pushes; the
 push rewrites it to this tool's own shape, so it settles after that one push. Equal content
 changes nothing, not even the pull request body, and nothing is pushed. A change pushes the
