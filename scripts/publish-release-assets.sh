@@ -46,7 +46,7 @@ worktree_dir=""
 
 cleanup() {
   if [ -n "${worktree_dir}" ] && [ -d "${worktree_dir}" ]; then
-    git worktree remove --force --quiet "${worktree_dir}"
+    git worktree remove --force "${worktree_dir}"
   fi
   git checkout --quiet "${original_ref}"
 }
@@ -96,6 +96,6 @@ while IFS= read -r tag; do
     gh release edit "${tag}" --draft=false
   )
 
-  git worktree remove --quiet "${worktree_dir}"
+  git worktree remove "${worktree_dir}"
   worktree_dir=""
 done <<<"${TAGS}"

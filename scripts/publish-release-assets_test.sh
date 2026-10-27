@@ -20,8 +20,15 @@ mkdir -p "${fake_bin}"
 # "restore the original ref" checkout has something to check out.
 # "worktree add" and "worktree remove" actually create and delete the
 # directory they are given, like the real git worktree would for the
-# script's own "cd" into it and later cleanup, skipping over every leading
-# flag to find it; "checkout" and "fetch" need no output at all.
+# script's own "cd" into it and later cleanup. Unlike real git, this fake
+# is not a general purpose git emulator, but for these two subcommands it
+# validates flags the same way real git does: "worktree add" only accepts
+# "--quiet" and "--detach", "worktree remove" only accepts "--force", and
+# anything else fails loudly with a message naming the flag, the same
+# shape as real git's own "error: unknown option" for a flag a subcommand
+# does not support. That is what caught "--quiet" on "worktree remove"
+# here, a flag real git worktree remove has never supported; "checkout"
+# and "fetch" need no output at all.
 cat <<'FAKE_GIT' >"${fake_bin}/git"
 #!/usr/bin/env bash
 echo "git $*" >>"${CALL_LOG}"
@@ -41,14 +48,35 @@ worktree_target_dir() {
   echo "${dir}"
 }
 
+validate_worktree_flags() {
+  local subcommand="$1" allowed="$2"
+  shift 2
+  local arg
+  for arg in "$@"; do
+    case "${arg}" in
+    -*)
+      case " ${allowed} " in
+      *" ${arg} "*) ;;
+      *)
+        echo "fake git: worktree ${subcommand}: unknown option \`${arg#--}'" >&2
+        exit 1
+        ;;
+      esac
+      ;;
+    esac
+  done
+}
+
 case "$1 $2" in
 "worktree add")
   shift 2
+  validate_worktree_flags "add" "--quiet --detach" "$@"
   mkdir -p "$(worktree_target_dir "$@")"
   exit 0
   ;;
 "worktree remove")
   shift 2
+  validate_worktree_flags "remove" "--force" "$@"
   rm -rf "$(worktree_target_dir "$@")"
   exit 0
   ;;
@@ -275,7 +303,7 @@ git worktree add --quiet --detach ${work}/worktree-1 v1.0.0-draft
 goreleaser release --clean --skip=announce,validate,publish
 gh release upload v1.0.0-draft dist/fixture_linux_amd64.tar.gz dist/fixture_1.0.0_checksums.txt --clobber
 gh release edit v1.0.0-draft --draft=false
-git worktree remove --quiet ${work}/worktree-1
+git worktree remove ${work}/worktree-1
 git checkout --quiet fake-sha"
 
 run_case "an already published release is left alone" "v1.0.0-published" \
@@ -293,7 +321,7 @@ git worktree add --quiet --detach ${work}/worktree-1 v1.0.0-draft
 goreleaser release --clean --skip=announce,validate,publish
 gh release upload v1.0.0-draft dist/fixture_linux_amd64.tar.gz dist/fixture_1.0.0_checksums.txt --clobber
 gh release edit v1.0.0-draft --draft=false
-git worktree remove --quiet ${work}/worktree-1
+git worktree remove ${work}/worktree-1
 gh release view v2.0.0-published --json isDraft --jq .isDraft
 git checkout --quiet fake-sha"
 
