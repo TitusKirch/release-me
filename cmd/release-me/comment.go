@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/commentcmd"
 	"github.com/ostendorf-cloud/release-me/internal/config"
@@ -102,7 +103,14 @@ func doComment(
 		return reply(ctx, f, owner, repoName, flags.prNumber, stdout, "the %q command was refused: %s.", outcome.Command, outcome.Reason)
 
 	case outcome.Command == commentcmd.KindReleaseAs:
+		target, refusal := releaseAsTarget(cfg, pr, outcome.Component)
+		if refusal != "" {
+			return reply(ctx, f, owner, repoName, flags.prNumber, stdout, "the %q command was refused: %s.", outcome.Command, refusal)
+		}
 		newBody := releasepr.SetVersionOverride(pr.Body, outcome.Version)
+		if target != "" {
+			newBody = releasepr.SetComponentVersionOverride(pr.Body, target, outcome.Version)
+		}
 		if _, err := f.UpdatePullRequest(ctx, owner, repoName, flags.prNumber, pr.Title, newBody); err != nil {
 			return fmt.Errorf("release-me: comment: update pull request #%d: %w", flags.prNumber, err)
 		}
@@ -118,7 +126,7 @@ func doComment(
 		// specific question for this pull request.
 		rec := &overrideRecorder{}
 		recomputeErr := doPR(withOverrideRecorder(ctx, rec), dir, cfg, "", f, logger, false, stdout)
-		applied, known := rec.results[overrideKey{number: flags.prNumber}]
+		applied, known := rec.results[overrideKey{number: flags.prNumber, component: target}]
 
 		switch {
 		case recomputeErr != nil || !known:
@@ -135,9 +143,9 @@ func doComment(
 					"pull request, falling back to the next scheduled run", "pr", flags.prNumber)
 			}
 			return reply(ctx, f, owner, repoName, flags.prNumber, stdout,
-				"forced the next version to %s. The override is saved, but updating this pull request's title "+
+				"forced the next version%s to %s. The override is saved, but updating this pull request's title "+
 					"and changelog right now did not succeed; the next scheduled run will update them instead.",
-				outcome.Version)
+				ofComponent(target), outcome.Version)
 
 		case !applied:
 			// Written for visibility, same as a hand-edited override
@@ -146,13 +154,13 @@ func doComment(
 			// which commentcmd.Parse already ruled out above, or it is not
 			// strictly greater than the last released version.
 			return reply(ctx, f, owner, repoName, flags.prNumber, stdout,
-				"the release-as version %q was refused: it is not greater than the last released version, "+
-					"so this pull request's title and changelog were not updated.", outcome.Version)
+				"the release-as version %q was refused: it is not greater than the last released version%s, "+
+					"so this pull request's title and changelog were not updated.", outcome.Version, ofComponent(target))
 
 		default:
 			return reply(ctx, f, owner, repoName, flags.prNumber, stdout,
-				"forced the next version to %s and updated this pull request's title and changelog to match.",
-				outcome.Version)
+				"forced the next version%s to %s and updated this pull request's title and changelog to match.",
+				ofComponent(target), outcome.Version)
 		}
 
 	default: // commentcmd.KindReleaseNotes
@@ -162,6 +170,54 @@ func doComment(
 		}
 		return reply(ctx, f, owner, repoName, flags.prNumber, stdout, "set the release notes.")
 	}
+}
+
+// releaseAsTarget decides which component a "release-as" command on pr
+// forces the version of. target is "" for the one version every release
+// pull request but a shared one with independent versions carries: a
+// component's own, a locked family's or a linked family's, where naming a
+// component is refused, since there is nothing to pick between. In a
+// shared release pull request with independent versions, target is the
+// component named, which must be one the pull request releases, or the one
+// component it releases when none is named; naming none while it releases
+// several is refused as ambiguous. refusal, when not "", is the reason the
+// command is refused, and nothing is written.
+func releaseAsTarget(cfg config.Config, pr forge.PullRequest, component string) (target, refusal string) {
+	if !sharedOutsideLocked(cfg) || cfg.Versioning != config.VersioningIndependent {
+		if component == "" {
+			return "", ""
+		}
+		why := "this pull request releases one component"
+		if cfg.SharedPullRequest() {
+			why = "every component in this pull request shares one version"
+		}
+		return "", fmt.Sprintf("%s, so release-as takes no component, only `release-as X.Y.Z`", why)
+	}
+
+	names := releasepr.ComponentNames(releasepr.ExtractChangelog(pr.Body))
+	switch {
+	case len(names) == 0:
+		return "", "this pull request carries no component sections: with `release-pull-request: shared`, " +
+			"only the shared release pull request takes release-as"
+	case component == "" && len(names) == 1:
+		return names[0], ""
+	case component == "":
+		return "", fmt.Sprintf("this pull request releases %s, each at its own version: name the component, "+
+			"`release-as <component> X.Y.Z`", strings.Join(names, ", "))
+	case !slices.Contains(names, component):
+		return "", fmt.Sprintf("component %q is not part of this pull request, which releases %s", component, strings.Join(names, ", "))
+	default:
+		return component, ""
+	}
+}
+
+// ofComponent renders " of <name>" for a reply naming the component a
+// release-as command forced, "" when it names none.
+func ofComponent(name string) string {
+	if name == "" {
+		return ""
+	}
+	return " of " + name
 }
 
 // isReleasePullRequest reports whether prLabels carries one of labels'
