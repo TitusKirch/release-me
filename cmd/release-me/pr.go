@@ -134,7 +134,7 @@ func doPRLinked(
 	if err != nil {
 		return err
 	}
-	releases, released := familyReleases(cfg, members)
+	releases, released := familyReleases(cfg, members, logger)
 	prefixes := familyTagPrefixes(members)
 
 	for _, comp := range components {
@@ -319,7 +319,7 @@ func doPRLocked(
 	if err != nil {
 		return err
 	}
-	releases, released := familyReleases(cfg, members)
+	releases, released := familyReleases(cfg, members, logger)
 	if !released {
 		fmt.Fprintln(stdout, "nothing to release")
 		return nil

@@ -66,7 +66,7 @@ func runNext(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	releases, released := familyReleases(cfg, members)
+	releases, released := familyReleases(cfg, members, logger)
 	if !released {
 		return 0
 	}
