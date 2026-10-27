@@ -50,7 +50,7 @@ func runComment(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	if err := doComment(ctx, cfg, f, logger, owner, repoName, flags, stdout); err != nil {
+	if err := doComment(ctx, dir, cfg, f, logger, owner, repoName, flags, stdout); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
@@ -59,9 +59,11 @@ func runComment(args []string, stdout, stderr io.Writer) int {
 
 // doComment implements runComment against an already set up configuration
 // and forge, so tests exercise it with a fake forge instead of the
-// network.
+// network. dir is the local git checkout doPR needs to recompute a release
+// pull request's title and changelog immediately after a "release-as"
+// command: it is unused by every other command and every rejection path.
 func doComment(
-	ctx context.Context, cfg config.Config, f forge.Forge, logger *slog.Logger, owner, repoName string, flags commentFlags, stdout io.Writer,
+	ctx context.Context, dir string, cfg config.Config, f forge.Forge, logger *slog.Logger, owner, repoName string, flags commentFlags, stdout io.Writer,
 ) error {
 	outcome := commentcmd.Parse(flags.body, cfg.CommentMention, flags.association)
 	if !outcome.Matched {
@@ -104,10 +106,26 @@ func doComment(
 		if _, err := f.UpdatePullRequest(ctx, owner, repoName, flags.prNumber, pr.Title, newBody); err != nil {
 			return fmt.Errorf("release-me: comment: update pull request #%d: %w", flags.prNumber, err)
 		}
+
+		// The override is durably written at this point; everything from
+		// here on is best-effort. Recompute every configured component's
+		// release pull request now, the same logic and the same "pr" code
+		// path the next scheduled run would use, so this one does not have
+		// to wait for it. A failure here never undoes the write above and
+		// never fails the command: the next scheduled run still applies the
+		// override exactly as it always has, so the fallback this reply
+		// names is real, not a false promise.
+		if err := doPR(ctx, dir, cfg, "", f, logger, false, stdout); err != nil {
+			logger.Error("release-as: could not recompute the title and changelog immediately, "+
+				"falling back to the next scheduled run", "pr", flags.prNumber, "error", err)
+			return reply(ctx, f, owner, repoName, flags.prNumber, stdout,
+				"forced the next version to %s. The override is saved, but updating this pull request's title "+
+					"and changelog right now did not succeed; the next scheduled run will update them instead.",
+				outcome.Version)
+		}
 		return reply(ctx, f, owner, repoName, flags.prNumber, stdout,
-			"forced the next version to %s. This pull request's title and changelog still show the "+
-				"previously computed version until the next scheduled run updates them; merging before "+
-				"then releases that old version, not %s.", outcome.Version, outcome.Version)
+			"forced the next version to %s and updated this pull request's title and changelog to match.",
+			outcome.Version)
 
 	default: // commentcmd.KindReleaseNotes
 		newBody := releasepr.SetNotes(pr.Body, outcome.Notes)
