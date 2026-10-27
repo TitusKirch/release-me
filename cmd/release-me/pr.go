@@ -220,8 +220,8 @@ func doPRComponent(
 
 	tag := comp.TagPrefix + versionStr
 	link := compareURL(f, owner, repoName, fromTag, tag)
-	update := changelogUpdate{path: comp.ChangelogPath, entriesBody: entriesBody, compareURL: link}
-	plan, err := planReleaseBranch(ctx, dir, versionStr, []changelogUpdate{update}, comp.Files, comp.Branch)
+	update := changelogUpdate{path: comp.ChangelogPath, version: versionStr, entriesBody: entriesBody, compareURL: link}
+	plan, err := planReleaseBranch(ctx, dir, []changelogUpdate{update}, filesAt(comp.Files, versionStr), comp.Branch)
 	if err != nil {
 		return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
@@ -281,7 +281,7 @@ func doPRComponent(
 			return nil
 		}
 
-		if err := plan.write(ctx, cfg, existing, comp.Branch, versionStr, date, title); err != nil {
+		if err := plan.write(ctx, cfg, existing, comp.Branch, date, title); err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
 
@@ -388,7 +388,7 @@ func doPRLocked(
 
 	changelogs := make([]changelogUpdate, 0, len(members))
 	bodyParts := make([]string, 0, len(members))
-	var files []config.File
+	var files []fileUpdate
 	for _, m := range members {
 		var entries []changelog.Entry
 		if rel, ok := releases[m.comp.Name]; ok {
@@ -399,14 +399,14 @@ func doPRLocked(
 			entriesBody = noUserFacingChangesLine
 		}
 		changelogs = append(changelogs, changelogUpdate{
-			path: m.comp.ChangelogPath, entriesBody: entriesBody,
+			path: m.comp.ChangelogPath, version: versionStr, entriesBody: entriesBody,
 			compareURL: compareURL(f, owner, repoName, releases[m.comp.Name].fromTag, m.comp.TagPrefix+versionStr),
 		})
 		bodyParts = append(bodyParts, fmt.Sprintf("#### %s\n\n%s", m.comp.Name, entriesBody))
-		files = append(files, m.comp.Files...)
+		files = append(files, filesAt(m.comp.Files, versionStr)...)
 	}
 
-	plan, err := planReleaseBranch(ctx, dir, versionStr, changelogs, files, branch)
+	plan, err := planReleaseBranch(ctx, dir, changelogs, files, branch)
 	if err != nil {
 		return fmt.Errorf("release-me: locked family: %w", err)
 	}
@@ -470,7 +470,7 @@ func doPRLocked(
 			return nil
 		}
 
-		if err := plan.write(ctx, cfg, existing, branch, versionStr, date, title); err != nil {
+		if err := plan.write(ctx, cfg, existing, branch, date, title); err != nil {
 			return fmt.Errorf("release-me: locked family: %w", err)
 		}
 
@@ -667,16 +667,34 @@ func recordOverrideOutcome(ctx context.Context, number int, applied bool) {
 	rec.results[number] = applied
 }
 
-// changelogUpdate is one component's changelog file path, the entries
-// body (without the heading's date) doPR would prepend to it and the
-// compare view its heading links to, "" for none, one per component of a
-// locked family's combined branch, exactly one for VersioningIndependent
-// and VersioningLinked.
+// changelogUpdate is one component's changelog file path, the version its
+// heading names, the entries body (without the heading's date) doPR would
+// prepend to it and the compare view its heading links to, "" for none,
+// one per component of a shared release branch, exactly one for a
+// component's own.
 type changelogUpdate struct {
 	path        string
+	version     string
 	entriesBody string
 	compareURL  string
 	baseline    string
+}
+
+// fileUpdate is one configured file doPR bumps, with the version it bumps
+// it to: the component's own, so components sharing a release branch at
+// different versions each bump their own files to their own version.
+type fileUpdate struct {
+	file    config.File
+	version string
+}
+
+// filesAt pairs every file in files with version.
+func filesAt(files []config.File, version string) []fileUpdate {
+	out := make([]fileUpdate, 0, len(files))
+	for _, f := range files {
+		out = append(out, fileUpdate{file: f, version: version})
+	}
+	return out
 }
 
 // releasePlan is the release branch content doPR would write, computed
@@ -695,8 +713,9 @@ type releasePlan struct {
 // for every entry of changelogs and files, and compares it against
 // branch's current tip, fetched into compareRef. A branch that does not
 // exist on the remote yet is always "changed": there is nothing to compare
-// it against.
-func planReleaseBranch(ctx context.Context, dir, version string, changelogs []changelogUpdate, files []config.File, branch string) (*releasePlan, error) {
+// it against. Several entries naming the same file apply one after another
+// to the same content, so each one's own key or marker keeps its update.
+func planReleaseBranch(ctx context.Context, dir string, changelogs []changelogUpdate, files []fileUpdate, branch string) (*releasePlan, error) {
 	tmp, err := os.MkdirTemp("", "release-me-pr-")
 	if err != nil {
 		return nil, fmt.Errorf("release-me: temporary worktree: %w", err)
@@ -720,18 +739,23 @@ func planReleaseBranch(ctx context.Context, dir, version string, changelogs []ch
 	}
 
 	plan.desiredFiles = make(map[string]string, len(files))
-	for _, file := range files {
-		content, err := os.ReadFile(filepath.Join(tmp, file.Path))
-		if err != nil {
-			plan.cleanup()
-			return nil, fmt.Errorf("release-me: read %s: %w", file.Path, err)
+	for _, fu := range files {
+		file, version := fu.file, fu.version
+		content, seen := plan.desiredFiles[file.Path]
+		if !seen {
+			raw, err := os.ReadFile(filepath.Join(tmp, file.Path))
+			if err != nil {
+				plan.cleanup()
+				return nil, fmt.Errorf("release-me: read %s: %w", file.Path, err)
+			}
+			content = string(raw)
 		}
 		entry, ok := updater.Updaters[file.Updater]
 		if !ok {
 			plan.cleanup()
 			return nil, fmt.Errorf("release-me: file %s: unknown updater %q", file.Path, file.Updater)
 		}
-		newContent, err := entry.Update(string(content), file.Key, version)
+		newContent, err := entry.Update(content, file.Key, version)
 		if err != nil {
 			plan.cleanup()
 			if file.Key != "" {
@@ -742,21 +766,21 @@ func planReleaseBranch(ctx context.Context, dir, version string, changelogs []ch
 		plan.desiredFiles[file.Path] = newContent
 	}
 
-	plan.changed = !sameAsReleaseBranch(ctx, tmp, version, plan.changelogs, plan.desiredFiles, branch)
+	plan.changed = !sameAsReleaseBranch(ctx, tmp, plan.changelogs, plan.desiredFiles, branch)
 	return plan, nil
 }
 
-// sameAsReleaseBranch reports whether every changelogs entry, at version,
-// and every desiredFiles entry already match branch's current tip. It
-// fetches the branch into compareRef to read it; a branch that does not
-// exist remotely yet, or any read failure, is reported as not matching. A
-// changelog heading whose version differs from version counts as not
+// sameAsReleaseBranch reports whether every changelogs entry, at its own
+// version, and every desiredFiles entry already match branch's current
+// tip. It fetches the branch into compareRef to read it; a branch that
+// does not exist remotely yet, or any read failure, is reported as not
+// matching. A changelog heading whose version differs from c's counts as not
 // matching too, even when the entries underneath read the same: a
 // version-only difference, a pre-release label added, changed or removed
 // with no new entry, must still push. So does a heading whose compare link
 // differs from the one c carries, a heading written before the link
 // existed included, so the branch picks the link up.
-func sameAsReleaseBranch(ctx context.Context, tmp, version string, changelogs []changelogUpdate, desiredFiles map[string]string, branch string) bool {
+func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelogUpdate, desiredFiles map[string]string, branch string) bool {
 	pushURL, err := gitOutput(ctx, tmp, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return false
@@ -771,7 +795,7 @@ func sameAsReleaseBranch(ctx context.Context, tmp, version string, changelogs []
 			return false
 		}
 		existing, ok := changelog.ParseHeading(changelogContent)
-		if !ok || existing.Version != version || existing.CompareURL != c.compareURL {
+		if !ok || existing.Version != c.version || existing.CompareURL != c.compareURL {
 			return false
 		}
 		existingBody, ok := changelog.TopSection(changelogContent)
@@ -797,14 +821,14 @@ func sameAsReleaseBranch(ctx context.Context, tmp, version string, changelogs []
 // defeat it. The commit carries cfg's configured author and committer,
 // never written into any git config, only passed to that one subprocess.
 func (p *releasePlan) write(
-	ctx context.Context, cfg config.Config, existing *forge.PullRequest, branch, version string, date time.Time, commitMessage string,
+	ctx context.Context, cfg config.Config, existing *forge.PullRequest, branch string, date time.Time, commitMessage string,
 ) error {
 	if err := gitRun(ctx, p.tmp, "checkout", "--quiet", "-B", branch); err != nil {
 		return fmt.Errorf("release-me: checkout %s: %w", branch, err)
 	}
 
 	for _, c := range p.changelogs {
-		section := changelog.RenderHeading(version, date, c.compareURL) + "\n\n" + c.entriesBody + "\n"
+		section := changelog.RenderHeading(c.version, date, c.compareURL) + "\n\n" + c.entriesBody + "\n"
 		fullChangelogPath := filepath.Join(p.tmp, c.path)
 		// A configured changelog may name a directory that does not exist
 		// yet; os.WriteFile creates the file only.
