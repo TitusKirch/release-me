@@ -172,17 +172,19 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	if err != nil {
 		return Result{}, err
 	}
+	// release-please groups every package into one release pull request
+	// unless separate-pull-requests is true; release-me's own default is one
+	// per component, so the grouped default is written out. locked always
+	// shares one already.
+	sharedPR := false
 	if len(components) > 1 && versioning != "locked" {
-		var separate bool
+		separate := false
 		if raw, ok := topValues["separate-pull-requests"]; ok {
 			if err := json.Unmarshal(raw, &separate); err != nil {
 				return Result{}, fmt.Errorf("migrate: separate-pull-requests: %w", err)
 			}
 		}
-		if !separate {
-			warn("separate-pull-requests: release-please grouped every package into one release pull request; " +
-				"release-me opens one per component")
-		}
+		sharedPR = !separate
 	}
 
 	pending, err := label(topValues["label"], "autorelease: pending", "label", warn)
@@ -201,7 +203,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		}
 	}
 
-	out, err := render(components, versioning, pending, tagged)
+	out, err := render(components, versioning, sharedPR, pending, tagged)
 	if err != nil {
 		return Result{}, err
 	}
@@ -466,7 +468,7 @@ func repoPath(pkgPath, file string) string {
 // the implicit main component and needs no components key; everything else
 // is a components mapping in release-please's package order, carrying only
 // the keys whose value differs from what release-me would derive.
-func render(components []component, versioning, pending, tagged string) ([]byte, error) {
+func render(components []component, versioning string, sharedPR bool, pending, tagged string) ([]byte, error) {
 	doc := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(m *yaml.Node, key string, value *yaml.Node) {
 		m.Content = append(m.Content, scalar(key), value)
@@ -475,6 +477,9 @@ func render(components []component, versioning, pending, tagged string) ([]byte,
 	add(doc, "changelog-source", scalar("all"))
 	if versioning != "" {
 		add(doc, "versioning", scalar(versioning))
+	}
+	if sharedPR {
+		add(doc, "release-pull-request", scalar("shared"))
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
 	add(labels, "pending", scalar(pending))
