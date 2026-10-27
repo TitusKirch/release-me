@@ -5,6 +5,7 @@ package history
 
 import (
 	"context"
+	"slices"
 	"strings"
 )
 
@@ -54,4 +55,25 @@ func Belongs(paths []string, componentPath string) bool {
 		}
 	}
 	return false
+}
+
+// Counts reports whether a commit counts for the component name at
+// componentPath. paths are the files the commit changed, the shape Touches
+// returns, and named the components its "Release-Component" footers name,
+// already narrowed to configured components.
+//
+// A commit named for the component counts for it, whatever files it
+// changed. Otherwise a commit that changed files counts through Belongs,
+// and a commit that changed none counts for every component when no
+// footer names one, the way release-please treats an empty commit, and
+// only for the named ones when a footer does. componentPath "." matches
+// every commit, as in Belongs.
+func Counts(paths, named []string, name, componentPath string) bool {
+	if componentPath == "." || slices.Contains(named, name) {
+		return true
+	}
+	if len(paths) == 0 {
+		return len(named) == 0
+	}
+	return Belongs(paths, componentPath)
 }
