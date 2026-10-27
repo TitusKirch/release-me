@@ -98,6 +98,66 @@ func TestParseUsesTheGivenFallbackType(t *testing.T) {
 	}
 }
 
+func TestParseReadsAReleaseAsFooter(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		text string
+		want string
+	}{
+		{
+			name: "reads the footer of a commit forcing a release",
+			text: "chore: release 2.0.0\n\nRelease-As: 2.0.0",
+			want: "2.0.0",
+		},
+		{
+			name: "reads the key in any case",
+			text: "chore: release 2.0.0\n\nrelease-as: 2.0.0",
+			want: "2.0.0",
+		},
+		{
+			name: "keeps a v prefix as written",
+			text: "feat: add the next command\n\nRELEASE-AS: v1.4.0",
+			want: "v1.4.0",
+		},
+		{
+			name: "reads the footer below other trailers of a squash merge",
+			text: "feat(cli): add the next command (#42)\n\n* feat: add the flag\n\n" +
+				"Release-As: 1.0.0\nCo-authored-by: Jane Doe <jane@example.com>",
+			want: "1.0.0",
+		},
+		{
+			name: "takes the last of two footers",
+			text: "chore: release\n\nRelease-As: 1.5.0\nRelease-As: 1.6.0",
+			want: "1.6.0",
+		},
+		{
+			name: "ignores the footer that is not at the start of a line",
+			text: "docs: explain the footer\n\nwrite Release-As: 1.0.0 to force a version",
+			want: "",
+		},
+		{
+			name: "ignores the header line",
+			text: "Release-As: 1.0.0",
+			want: "",
+		},
+		{
+			name: "ignores an empty value",
+			text: "chore: release\n\nRelease-As:",
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := conventional.Parse(tc.text, conventional.FallbackType).ReleaseAs
+			if got != tc.want {
+				t.Fatalf("Parse(%q).ReleaseAs = %q, want %q", tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseOverride(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
