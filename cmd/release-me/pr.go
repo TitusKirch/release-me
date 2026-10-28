@@ -104,16 +104,18 @@ func doPR(ctx context.Context, dir string, cfg config.Config, component string, 
 	case config.VersioningLinked:
 		return doPRLinked(ctx, dir, cfg, components, owner, repoName, base, f, logger, dryRun, multi, stdout)
 	default:
-		for _, comp := range components {
-			rel, released, err := computeRelease(ctx, dir, cfg, comp, owner, repoName, f, logger)
-			if err != nil {
-				return err
-			}
-			if !released {
-				printLine(stdout, comp.Name, multi, "nothing to release")
+		// Every release is computed before the first pull request is
+		// written, so the reads computeReleases caches never span a write.
+		results, err := computeReleases(ctx, dir, cfg, components, owner, repoName, f, logger)
+		if err != nil {
+			return err
+		}
+		for _, r := range results {
+			if !r.released {
+				printLine(stdout, r.comp.Name, multi, "nothing to release")
 				continue
 			}
-			if err := doPRComponent(ctx, dir, cfg, comp, []string{comp.TagPrefix}, rel, owner, repoName, base, f, logger, dryRun, multi, stdout); err != nil {
+			if err := doPRComponent(ctx, dir, cfg, r.comp, []string{r.comp.TagPrefix}, r.rel, owner, repoName, base, f, logger, dryRun, multi, stdout); err != nil {
 				return err
 			}
 		}
@@ -206,7 +208,7 @@ func doPRComponent(
 			return fmt.Errorf("release-me: component %s: pull request #%d: %w", comp.Name, existing.Number, err)
 		}
 		if isPre {
-			versionStr, entries, err = preReleaseEntries(ctx, f, dir, cfg, comp, familyTagPrefixes, owner, repoName, rel, preType)
+			versionStr, entries, err = preReleaseEntries(ctx, f, dir, cfg, comp, familyTagPrefixes, owner, repoName, rel, preType, logger)
 			if err != nil {
 				return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 			}
@@ -377,7 +379,7 @@ func doPRLocked(
 			return fmt.Errorf("release-me: locked family: pull request #%d: %w", existing.Number, err)
 		}
 		if isPre {
-			versionStr, releases, err = lockedPreReleaseEntries(ctx, f, dir, cfg, members, owner, repoName, releases, preType)
+			versionStr, releases, err = lockedPreReleaseEntries(ctx, f, dir, cfg, members, owner, repoName, releases, preType, logger)
 			if err != nil {
 				return fmt.Errorf("release-me: locked family: %w", err)
 			}
@@ -497,7 +499,7 @@ func doPRLocked(
 // the same rule preReleaseEntries applies to one component.
 func lockedPreReleaseEntries(
 	ctx context.Context, f forge.Forge, dir string, cfg config.Config, members []familyMember, owner, repoName string,
-	releases map[string]release, preType string,
+	releases map[string]release, preType string, logger *slog.Logger,
 ) (versionStr string, out map[string]release, err error) {
 	prefixes := familyTagPrefixes(members)
 	out = make(map[string]release, len(releases))
@@ -506,7 +508,7 @@ func lockedPreReleaseEntries(
 		if !ok {
 			continue
 		}
-		vStr, entries, err := preReleaseEntries(ctx, f, dir, cfg, m.comp, prefixes, owner, repoName, rel, preType)
+		vStr, entries, err := preReleaseEntries(ctx, f, dir, cfg, m.comp, prefixes, owner, repoName, rel, preType, logger)
 		if err != nil {
 			return "", nil, fmt.Errorf("component %s: %w", m.comp.Name, err)
 		}

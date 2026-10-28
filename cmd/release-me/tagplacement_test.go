@@ -82,7 +82,7 @@ func TestATaggedMergeCommitKeepsTheReleasedPullRequestOutOfTheNextRelease(t *tes
 	nextForge := &forgetest.Fake{Responses: map[int]forgetest.Response{
 		12: {PullRequest: forge.PullRequest{Title: "feat: add the follow up feature", URL: "https://example.invalid/pull/12"}},
 	}}
-	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp2, "owner", "repo", nextForge, discardLogger())
+	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp2, nextForge, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease() error = %v", err)
 	}
@@ -136,7 +136,7 @@ func TestATaggedSquashCommitKeepsTheReleasedPullRequestOutOfTheNextRelease(t *te
 	writeFiles(t, dir, "feat: add the follow up feature (#12)", map[string]string{"after.go": "package after\n"})
 
 	comp2 := resolvedComponent(config.ChangelogSourceSquash)
-	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp2, "owner", "repo", &forgetest.Fake{}, discardLogger())
+	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp2, &forgetest.Fake{}, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease() error = %v", err)
 	}
@@ -165,7 +165,9 @@ func TestATaggedSquashCommitKeepsTheReleasedPullRequestOutOfTheNextRelease(t *te
 // right after it.
 func TestAComponentWithoutANewReleaseIsUnaffectedByAnotherComponentsRelease(t *testing.T) {
 	dir := newRepo(t)
-	commitEntry(t, dir, "chore: initial commit")
+	// The root commit changes a file outside both components: an empty
+	// one would count for every component.
+	writeFiles(t, dir, "chore: initial commit", map[string]string{"README.md": "monorepo\n"})
 	writeConfig(t, dir, "components:\n  frontend:\n    path: frontend\n  backend:\n    path: backend\n")
 
 	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
@@ -223,7 +225,7 @@ func TestAComponentWithoutANewReleaseIsUnaffectedByAnotherComponentsRelease(t *t
 	frontendForge := &forgetest.Fake{Responses: map[int]forgetest.Response{
 		10: {PullRequest: forge.PullRequest{Title: "feat: add the frontend widget", URL: "https://example.invalid/pull/10"}},
 	}}
-	frontendRel, frontendReleased, err := computeRelease(t.Context(), dir, cfg, frontendRC, "owner", "repo", frontendForge, discardLogger())
+	frontendRel, frontendReleased, err := computeRelease(t.Context(), dir, cfg, frontendRC, frontendForge, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease(frontend) error = %v", err)
 	}
@@ -242,7 +244,7 @@ func TestAComponentWithoutANewReleaseIsUnaffectedByAnotherComponentsRelease(t *t
 		t.Fatalf("frontend entries = %+v, want its own feature entry", frontendRel.entries)
 	}
 
-	_, backendReleased, err := computeRelease(t.Context(), dir, cfg, backendRC, "owner", "repo", &forgetest.Fake{}, discardLogger())
+	_, backendReleased, err := computeRelease(t.Context(), dir, cfg, backendRC, &forgetest.Fake{}, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease(backend) error = %v", err)
 	}

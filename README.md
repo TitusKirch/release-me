@@ -412,7 +412,10 @@ The footer counts on any commit release-me reads for a component since that comp
 tag: a direct commit, a squash merge's commit body, a merged pull request's body, and in
 `all` or `nested` mode every commit on the branch. A pull request with an [override
 block](#override-block) contributes only its block's lines, so a footer on it is not read.
-The commit must touch the component's `path`, the same attribution its changelog entry gets.
+The footer forces the components the commit counts for, the same attribution its changelog
+entry gets: those whose `path` it touches and those a
+[Release-Component footer](#release-component-footer) names, or every component for an empty
+commit. An empty commit carrying both footers forces only the named components.
 
 The footer is read only from the message's trailer block, the way `git interpret-trailers`
 finds it: the last paragraph below the first line, and only when every line in it is a
@@ -438,6 +441,45 @@ footer of `2.0.0` and the `rc` label.
 
 A `release-me-version` block on the release pull request, from a `release-as` comment or a
 hand edit, wins over every footer.
+
+### Release-Component footer
+
+With `components`, a commit counts for every component whose `path` it touches. Two rules
+reach a component beyond that, to attribute a change after the fact, a docs-only `feat` for
+one:
+
+- A commit that changes no files counts for every component, the way release-please treats an
+  empty commit. A merge commit is compared against its first parent, so it is empty only when
+  its whole branch is.
+- A `Release-Component: <name>` footer attributes the commit to the named component on top of
+  the components its files touch. The key is case-insensitive, the footer may repeat, and one
+  footer may list several names separated by commas. On an empty commit, the footer narrows it
+  to the named components instead of every one.
+
+```text
+feat(duxt): document the layout prop
+
+Release-Component: duxt
+```
+
+The footer is read where a [Release-As footer](#release-as-footer) is: the commit's own
+message, a squash merge's commit body, a merged pull request's body, and in `all` mode every
+commit on the branch. In `nested` mode the messages of the commits a merge introduced
+attribute the whole merge; `first-parent` and `squash` never read those.
+
+Inside a message, the footer is read only from the trailer block, exactly as a `Release-As`
+footer is: the last paragraph below the first line, and only when every line in it is a
+`Key: value` trailer. A `Release-Component:` line anywhere else is inert text: in an earlier
+paragraph, fenced, quoted with `>`, in a list item, inside an HTML comment, or in a last
+paragraph that also holds prose. The fenced example above, quoted into a pull request body,
+therefore attributes nothing.
+
+A name no component carries reaches no component. It is logged as a warning, never failing
+the run, and the commit counts only for what its files and its other names reach: an empty
+commit naming only unknown components counts for none, never for every one, so a typo shows
+as a missing entry rather than an entry in every changelog. Without `components`, every
+commit already counts for the implicit `main` component, so the footer is not read at all, and
+a footer naming anything else changes nothing, without a warning.
 
 ### Changelog modes
 
@@ -680,7 +722,9 @@ files:
 
   A first parent entry belongs to every component whose path it touches, through the files a
   merge commit's branch changed; a pull request touching several components lands in every one
-  of their changelogs. The component at path `.`, explicit or implicit, matches every entry.
+  of their changelogs. An empty commit lands in every component, and a
+  [Release-Component footer](#release-component-footer) adds the components it names. The
+  component at path `.`, explicit or implicit, matches every entry.
   Two components with overlapping paths, or an unknown name on `--component`, are configuration
   errors.
 

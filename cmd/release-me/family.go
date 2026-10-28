@@ -36,6 +36,8 @@ func gatherFamily(
 	ctx context.Context, dir string, cfg config.Config, owner, repoName string, f forge.Forge, logger *slog.Logger,
 ) ([]familyMember, error) {
 	components := cfg.Resolve()
+	f = newPullRequestCache(f)
+	attr := newAttribution(dir, cfg, owner, repoName, f, logger)
 	members := make([]familyMember, 0, len(components))
 	for _, comp := range components {
 		tag, last, hasTag, err := history.LastTag(ctx, dir, comp.TagPrefix)
@@ -52,13 +54,13 @@ func gatherFamily(
 		if err != nil {
 			return nil, fmt.Errorf("release-me: component %s: history: %w", comp.Name, err)
 		}
-		raw, err = filterByComponent(ctx, dir, raw, comp.Path)
+		raw, err = attr.filter(ctx, raw, comp)
 		if err != nil {
 			return nil, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
 		logger.Debug("history entries", "component", comp.Name, "count", len(raw), "source", comp.ChangelogSource)
 
-		changes, entries, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType, comp.ChangelogSource, dir)
+		changes, entries, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType, comp.ChangelogSource, attr.subCommits)
 		if err != nil {
 			return nil, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}

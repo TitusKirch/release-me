@@ -125,3 +125,80 @@ func TestBelongsTreatsAFileNamedLikeAComponentPathAsASeparateFile(t *testing.T) 
 		t.Fatal("Belongs() = true, want false: frontend-tools is not nested under frontend")
 	}
 }
+
+func TestCountsAttributesACommitThroughItsFilesAndItsFooter(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		paths []string
+		named []string
+		want  map[string]bool
+	}{
+		{
+			name:  "a commit changing one component's files counts for that component only",
+			paths: []string{"packages/duxt/src/layout.ts"},
+			want:  map[string]bool{"duxt": true, "api": false, "main": true},
+		},
+		{
+			name:  "a commit naming a component counts for it on top of its files",
+			paths: []string{"packages/api/handler.go"},
+			named: []string{"duxt"},
+			want:  map[string]bool{"duxt": true, "api": true, "main": true},
+		},
+		{
+			name:  "a commit outside every component counts for the one it names",
+			paths: []string{"docs/layout.md"},
+			named: []string{"duxt"},
+			want:  map[string]bool{"duxt": true, "api": false, "main": true},
+		},
+		{
+			name: "an empty commit counts for every component",
+			want: map[string]bool{"duxt": true, "api": true, "main": true},
+		},
+		{
+			name:  "an empty commit naming a component counts for that component only",
+			named: []string{"duxt"},
+			want:  map[string]bool{"duxt": true, "api": false, "main": true},
+		},
+		{
+			name:  "an empty commit naming only an unknown component counts for none",
+			named: []string{"duxtt"},
+			want:  map[string]bool{"duxt": false, "api": false, "main": true},
+		},
+		{
+			name:  "a commit naming only an unknown component still counts through its files",
+			paths: []string{"packages/api/handler.go"},
+			named: []string{"duxtt"},
+			want:  map[string]bool{"duxt": false, "api": true, "main": true},
+		},
+	}
+	components := map[string]string{"duxt": "packages/duxt", "api": "packages/api", "main": "."}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			for name, path := range components {
+				if got := history.Counts(tc.paths, tc.named, name, path); got != tc.want[name] {
+					t.Errorf("Counts(%q, %q, %q, %q) = %v, want %v", tc.paths, tc.named, name, path, got, tc.want[name])
+				}
+			}
+		})
+	}
+}
+
+func TestTouchesReturnsNoPathsForAnEmptyCommit(t *testing.T) {
+	t.Parallel()
+	dir := newRepo(t)
+	writeFile(t, dir, "frontend/README.md", "frontend\n")
+	runGit(t, dir, "add", ".")
+	commitEntry(t, dir, "chore: scaffold the frontend", "")
+	commitEntry(t, dir, "feat(frontend): document the layout prop", "Release-Component: frontend")
+	sha := strings.TrimSpace(runGitOutput(t, dir, "rev-parse", "HEAD"))
+
+	paths, err := history.Touches(context.Background(), dir, sha)
+	if err != nil {
+		t.Fatalf("Touches() error = %v", err)
+	}
+	if len(paths) != 0 {
+		t.Fatalf("Touches() = %q, want no paths for an empty commit", paths)
+	}
+}
