@@ -807,9 +807,10 @@ files:
   every example above already is. A configured component gets tag prefix `<name>/v`, branch
   `release-me/<name>`, or `release-me/main` when the release pull request is shared, changelog
   `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A name holds ASCII letters,
-  digits, `-`, `_` and `.` only and does not start with `.` or `-` or contain `..`; anything
-  else is a configuration error naming the component and the character, since the name has to
-  survive the tag prefix, the branch, the shared pull request title release reads back, the
+  digits, `-`, `_` and `.` only, does not start with `.` or `-`, does not end with `.` or
+  `.lock` and does not contain `..`; anything else is a configuration error naming the
+  component and the character, since the name has to survive the tag prefix, the branch, the
+  shared pull request title release reads back, the
   [Release-Component footer](#release-component-footer) and the compare link.
   `tag-prefix` replaces the derived prefix, for a component whose existing tags follow
   another scheme, such as `api@v1.4.0`: release-me continues from its last such tag instead of
