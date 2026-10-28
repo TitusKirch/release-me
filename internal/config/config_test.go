@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
@@ -293,6 +294,10 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 		{name: "rejects a tag prefix with whitespace", content: "components:\n  web:\n    path: web\n    tag-prefix: \"web v\"\n"},
 		{name: "rejects a tag prefix with a double dot", content: "components:\n  web:\n    path: web\n    tag-prefix: web..v\n"},
 		{name: "rejects a tag prefix starting with a dash", content: "components:\n  web:\n    path: web\n    tag-prefix: -web@v\n"},
+		{name: "rejects a tag prefix with an opening parenthesis", content: "components:\n  api:\n    path: api\n    tag-prefix: \"(api@v\"\n"},
+		{name: "rejects a tag prefix with parentheses", content: "components:\n  api:\n    path: api\n    tag-prefix: \"(api)v\"\n"},
+		{name: "rejects a tag prefix with a hash", content: "components:\n  pkg:\n    path: pkg\n    tag-prefix: \"pkg#v\"\n"},
+		{name: "rejects a tag prefix with a percent sign", content: "components:\n  web:\n    path: web\n    tag-prefix: \"web%20v\"\n"},
 		{
 			name:    "rejects two components configured with the same tag prefix",
 			content: "components:\n  web:\n    path: web\n    tag-prefix: app@v\n  api:\n    path: api\n    tag-prefix: app@v\n",
@@ -624,6 +629,21 @@ func TestLoadAcceptsATagPrefixThatStartsWithAnother(t *testing.T) {
 
 	if _, err := config.Load(path); err != nil {
 		t.Fatalf("Load() error = %v, want nil", err)
+	}
+}
+
+func TestLoadNamesTheComponentAndTheCharacterThatBreaksTheCompareLink(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, "components:\n  api:\n    path: api\n    tag-prefix: \"(api)v\"\n")
+
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("Load() error = nil, want an error")
+	}
+	for _, want := range []string{"component api", `"("`, "compare link"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Load() error = %q, want it to contain %q", err, want)
+		}
 	}
 }
 
