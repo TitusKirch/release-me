@@ -772,6 +772,8 @@ func TestLoadRejectsAComponentNameReleaseMeCannotReadBack(t *testing.T) {
 		{name: "a leading dot", component: `".api"`, want: `starts with "."`},
 		{name: "a leading dash", component: `"-api"`, want: `starts with "."`},
 		{name: "a double dot", component: `"api..v2"`, want: `".."`},
+		{name: "a trailing dot", component: `"api."`, want: `ends with "."`},
+		{name: "a trailing .lock breaks the derived tag prefix", component: `"api.lock"`, want: `".lock"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
