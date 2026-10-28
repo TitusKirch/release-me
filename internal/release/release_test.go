@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/forge"
@@ -934,5 +935,168 @@ func TestRunLockedResumesOnlyTheComponentWhoseReleaseIsStillADraft(t *testing.T)
 	}
 	if len(f.CreatedTags) != 0 || len(f.CreatedReleases) != 0 || len(f.SetLabelsCalls) != 0 {
 		t.Fatalf("resume wrote something: tags=%+v releases=%+v labels=%+v", f.CreatedTags, f.CreatedReleases, f.SetLabelsCalls)
+	}
+}
+
+func TestSharedTitleRoundTrips(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		releases []release.TitleRelease
+		want     string
+	}{
+		{
+			name:     "one component",
+			releases: []release.TitleRelease{{Name: "api", Version: "1.3.0"}},
+			want:     "chore: release api v1.3.0",
+		},
+		{
+			name:     "every component at its own version",
+			releases: []release.TitleRelease{{Name: "api", Version: "1.3.0"}, {Name: "web", Version: "0.4.1-rc.1"}},
+			want:     "chore: release api v1.3.0, web v0.4.1-rc.1",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			title := release.SharedTitle(tc.releases)
+			if title != tc.want {
+				t.Fatalf("SharedTitle() = %q, want %q", title, tc.want)
+			}
+			got, ok := release.ParseSharedTitle(title)
+			if !ok || !reflect.DeepEqual(got, tc.releases) {
+				t.Fatalf("ParseSharedTitle(%q) = %+v, %v, want %+v", title, got, ok, tc.releases)
+			}
+		})
+	}
+}
+
+func TestParseSharedTitleRejectsOtherTitles(t *testing.T) {
+	t.Parallel()
+	for _, title := range []string{
+		"chore(api): release v1.3.0",
+		"chore: release v1.3.0 (api, web)",
+		"chore: release api 1.3.0",
+		"feat: add the next command",
+	} {
+		if got, ok := release.ParseSharedTitle(title); ok {
+			t.Errorf("ParseSharedTitle(%q) = %+v, true, want false", title, got)
+		}
+	}
+}
+
+// sharedBody is a shared release pull request body as pr renders it: the
+// notes block, then one "#### <name>" slice per component, each with its
+// own heading.
+const sharedBody = "Release api v1.3.0, web v0.4.1-rc.1\n\n```release-me-notes\nShip it.\n```\n\n" +
+	"<details>\n<summary>Changelog</summary>\n\n" +
+	"#### api\n\n## [v1.3.0](https://github.com/owner/repo/compare/api/v1.2.0...api/v1.3.0) (2026-03-14)\n\n" +
+	"### Features\n\n- add the export endpoint\n\n" +
+	"#### web\n\n## v0.4.1-rc.1 (2026-03-14)\n\n### Bug Fixes\n\n- keep the session on reload\n\n</details>\n"
+
+func TestRunSharedTagsAndReleasesEveryComponentAtItsOwnVersion(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{
+		Number: 12, Title: "chore: release api v1.3.0, web v0.4.1-rc.1", Body: sharedBody,
+		Labels: []string{"release: pending", "release: rc"}, Merged: true,
+	}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{12: "cafe1234"},
+		PRLabels:     map[int][]string{12: {"release: pending", "release: rc"}},
+	}
+	comps := []release.Component{
+		{Name: "api", Branch: "release-me/main", TagPrefix: "api/v", Multi: true, MajorTag: true},
+		{Name: "web", Branch: "release-me/main", TagPrefix: "web/v", Multi: true, MajorTag: true},
+		{Name: "docs", Branch: "release-me/main", TagPrefix: "docs/v", Multi: true},
+	}
+
+	results, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger())
+	if err != nil {
+		t.Fatalf("RunShared() error = %v", err)
+	}
+
+	wantTags := []forgetest.CreateTagCall{
+		{Owner: "owner", Repo: "repo", Tag: "api/v1.3.0", SHA: "cafe1234"},
+		{Owner: "owner", Repo: "repo", Tag: "api/v1", SHA: "cafe1234"},
+		{Owner: "owner", Repo: "repo", Tag: "web/v0.4.1-rc.1", SHA: "cafe1234"},
+	}
+	if !reflect.DeepEqual(f.CreatedTags, wantTags) {
+		t.Fatalf("CreatedTags = %+v, want %+v", f.CreatedTags, wantTags)
+	}
+	wantReleases := []forgetest.CreateReleaseCall{
+		{
+			Owner: "owner", Repo: "repo", Tag: "api/v1.3.0", Name: "api v1.3.0",
+			Body: "Ship it.\n\n## [v1.3.0](https://github.com/owner/repo/compare/api/v1.2.0...api/v1.3.0) (2026-03-14)\n\n" +
+				"### Features\n\n- add the export endpoint",
+		},
+		{
+			Owner: "owner", Repo: "repo", Tag: "web/v0.4.1-rc.1", Name: "web v0.4.1-rc.1",
+			Body:       "Ship it.\n\n## v0.4.1-rc.1 (2026-03-14)\n\n### Bug Fixes\n\n- keep the session on reload",
+			Prerelease: true,
+		},
+	}
+	if !reflect.DeepEqual(f.CreatedReleases, wantReleases) {
+		t.Fatalf("CreatedReleases = %+v, want %+v", f.CreatedReleases, wantReleases)
+	}
+	if len(f.SetLabelsCalls) != 1 || !reflect.DeepEqual(f.SetLabelsCalls[0].Labels, []string{"release: tagged"}) {
+		t.Fatalf("SetLabelsCalls = %+v, want one swap of pending and rc to release: tagged", f.SetLabelsCalls)
+	}
+	if len(results) != 2 || results[0].Name != "api" || results[1].Name != "web" {
+		t.Fatalf("RunShared() = %+v, want one result each for api and web", results)
+	}
+}
+
+func TestRunSharedRejectsATitleNamingAnUnconfiguredComponent(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{
+		Number: 12, Title: "chore: release api v1.3.0, mobile v2.0.0", Body: sharedBody,
+		Labels: []string{"release: pending"}, Merged: true,
+	}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		MergeCommits: map[int]string{12: "cafe1234"},
+	}
+	comps := []release.Component{{Name: "api", Branch: "release-me/main", TagPrefix: "api/v", Multi: true}}
+
+	_, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger())
+	if err == nil || !strings.Contains(err.Error(), "component mobile is not configured") {
+		t.Fatalf("RunShared() error = %v, want it to name the unconfigured component", err)
+	}
+	if len(f.CreatedTags) != 0 {
+		t.Fatalf("CreatedTags = %+v, want none before every component is known", f.CreatedTags)
+	}
+}
+
+func TestRunSharedResumesADraftLeftByAnEarlierRun(t *testing.T) {
+	t.Parallel()
+	pr := forge.PullRequest{
+		Number: 12, Title: "chore: release api v1.3.0, web v0.4.1-rc.1", Body: sharedBody,
+		Labels: []string{"release: tagged"}, Merged: true,
+	}
+	f := &forgetest.Fake{
+		ListResponses: []forgetest.ListResponse{
+			{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+		},
+		ReleaseDrafts: map[string]bool{"api/v1.3.0": false, "web/v0.4.1-rc.1": true},
+	}
+	comps := []release.Component{
+		{Name: "api", Branch: "release-me/main", TagPrefix: "api/v", Multi: true},
+		{Name: "web", Branch: "release-me/main", TagPrefix: "web/v", Multi: true},
+	}
+
+	results, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, true, false, discardLogger())
+	if err != nil {
+		t.Fatalf("RunShared() error = %v", err)
+	}
+	if len(results) != 1 || results[0].Tag != "web/v0.4.1-rc.1" {
+		t.Fatalf("RunShared() = %+v, want only the web draft resumed", results)
+	}
+	if len(f.CreatedTags) != 0 || len(f.CreatedReleases) != 0 {
+		t.Fatalf("CreatedTags = %+v, CreatedReleases = %+v, want nothing written on resume", f.CreatedTags, f.CreatedReleases)
 	}
 }

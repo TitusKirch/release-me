@@ -59,10 +59,11 @@ const (
 	// the release pull request naming it may issue a "release-as" or
 	// "release-notes" command.
 	DefaultCommentMention = "@release-me"
-	// lockedBranch is the shared release branch every component carries in
-	// VersioningLocked: one release pull request for the whole family,
-	// instead of one branch per component.
-	lockedBranch = "release-me/main"
+	// sharedBranch is the release branch every component carries when its
+	// release pull request is shared, always in VersioningLocked and with
+	// "release-pull-request: shared": one release pull request for every
+	// component, instead of one branch per component.
+	sharedBranch = "release-me/main"
 )
 
 // Versioning names how a repository's configured components' versions
@@ -73,7 +74,8 @@ type Versioning string
 // accepts.
 const (
 	// VersioningIndependent versions every component on its own: its own
-	// tag line, its own bump, its own release pull request. The default.
+	// tag line, its own bump, its own release pull request unless
+	// "release-pull-request" is shared. The default.
 	VersioningIndependent Versioning = "independent"
 	// VersioningLocked bumps every component to the same new version and
 	// releases all of them together, changed or not, through one release
@@ -83,7 +85,8 @@ const (
 	// releases only a component with entries since its own last tag, at
 	// the family's next version: the highest version any component in the
 	// family carries, bumped by the highest bump type among the changed
-	// components.
+	// components. Each changed component gets its own release pull request
+	// unless "release-pull-request" is shared.
 	VersioningLinked Versioning = "linked"
 )
 
@@ -92,6 +95,24 @@ const (
 var validVersioning = map[Versioning]bool{
 	VersioningIndependent: true, VersioningLocked: true, VersioningLinked: true,
 }
+
+// ReleasePullRequest names how many release pull requests a repository's
+// configured components share.
+type ReleasePullRequest string
+
+// The values release-me.yaml's top-level "release-pull-request" key accepts.
+const (
+	// ReleasePullRequestPerComponent opens one release pull request per
+	// component, branch "release-me/<name>". The default in
+	// VersioningIndependent and VersioningLinked; VersioningLocked rejects
+	// it.
+	ReleasePullRequestPerComponent ReleasePullRequest = "per-component"
+	// ReleasePullRequestShared opens one release pull request, branch
+	// "release-me/main", carrying every component with something to release
+	// this run, each at its own version. Always the case in
+	// VersioningLocked.
+	ReleasePullRequestShared ReleasePullRequest = "shared"
+)
 
 // DefaultHiddenTypes is the hidden-types list applied when the key is left
 // out of release-me.yaml. DefaultFallbackType is hidden by default.
@@ -188,6 +209,12 @@ type Config struct {
 	// VersioningIndependent. It applies to the whole family; there is no
 	// per-component override.
 	Versioning Versioning
+	// ReleasePullRequest is the top-level "release-pull-request" key: one
+	// release pull request per component or one shared by every component.
+	// Left out, it is ReleasePullRequestShared in VersioningLocked and
+	// ReleasePullRequestPerComponent otherwise. A repository without
+	// "components" has one component, so the key changes nothing there.
+	ReleasePullRequest ReleasePullRequest
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
 	// key, default false: when true, release creates every release as a
 	// draft instead of publishing it immediately, and resumes publishing
@@ -281,13 +308,13 @@ func (cfg Config) Resolve() []ResolvedComponent {
 	}
 
 	branch := func(name string) string {
-		if cfg.Versioning == VersioningLocked {
-			// Locked keeps every component on one shared release pull
-			// request, branch "release-me/main", instead of one branch
-			// per component.
-			return lockedBranch
+		if cfg.SharedPullRequest() {
+			// A shared release pull request keeps every component on one
+			// branch, "release-me/main", instead of one branch per
+			// component.
+			return sharedBranch
 		}
-		return "release-me/" + name
+		return PerComponentBranch(name)
 	}
 
 	out := make([]ResolvedComponent, 0, len(cfg.Components))
@@ -395,6 +422,7 @@ type raw struct {
 	Author                 *rawAuthor `yaml:"author"`
 	MajorTag               *bool      `yaml:"major-tag"`
 	Versioning             *string    `yaml:"versioning"`
+	ReleasePullRequest     *string    `yaml:"release-pull-request"`
 	DraftUntilAssetsAttach *bool      `yaml:"draft-until-assets-attach"`
 	CommentMention         *string    `yaml:"comment-mention"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
@@ -432,10 +460,27 @@ func Default() Config {
 			Pending: DefaultPendingLabel, Tagged: DefaultTaggedLabel,
 			Alpha: DefaultAlphaLabel, Beta: DefaultBetaLabel, Rc: DefaultRcLabel,
 		},
-		Author:         Author{Name: DefaultAuthorName, Email: DefaultAuthorEmail},
-		Versioning:     DefaultVersioning,
-		CommentMention: DefaultCommentMention,
+		Author:             Author{Name: DefaultAuthorName, Email: DefaultAuthorEmail},
+		Versioning:         DefaultVersioning,
+		ReleasePullRequest: ReleasePullRequestPerComponent,
+		CommentMention:     DefaultCommentMention,
 	}
+}
+
+// SharedPullRequest reports whether every component shares one release
+// pull request, branch "release-me/main": always in VersioningLocked, and
+// with "release-pull-request: shared" and a "components" key in the other
+// modes. A repository without "components" has the one implicit "main"
+// component, whose own release pull request already is the only one.
+func (cfg Config) SharedPullRequest() bool {
+	return cfg.Versioning == VersioningLocked ||
+		(cfg.ReleasePullRequest == ReleasePullRequestShared && len(cfg.Components) > 0)
+}
+
+// PerComponentBranch returns the release branch a component named name
+// carries with one release pull request per component, "release-me/<name>".
+func PerComponentBranch(name string) string {
+	return "release-me/" + name
 }
 
 // Load reads release-me.yaml at path. A missing file yields Default(). An
@@ -545,6 +590,24 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: versioning %q is not independent, locked or linked", path, *r.Versioning)
 		}
 	}
+	if cfg.Versioning == VersioningLocked {
+		cfg.ReleasePullRequest = ReleasePullRequestShared
+	}
+	if r.ReleasePullRequest != nil {
+		value := ReleasePullRequest(*r.ReleasePullRequest)
+		switch {
+		case value != ReleasePullRequestPerComponent && value != ReleasePullRequestShared:
+			return Config{}, fmt.Errorf(
+				"config: parse %s: release-pull-request %q is not per-component or shared", path, *r.ReleasePullRequest,
+			)
+		case value == ReleasePullRequestPerComponent && cfg.Versioning == VersioningLocked:
+			return Config{}, fmt.Errorf(
+				"config: parse %s: release-pull-request per-component does not apply to versioning locked, "+
+					"which releases every component through one shared release pull request", path,
+			)
+		}
+		cfg.ReleasePullRequest = value
+	}
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach
 	}
@@ -569,6 +632,9 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, err
 		}
 		cfg.Components = components
+		if err := validateFileUpdates(path, cfg); err != nil {
+			return Config{}, err
+		}
 	}
 	return cfg, nil
 }
@@ -616,6 +682,9 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		name := node.Content[i].Value
 		valueNode := node.Content[i+1]
+		if err := ValidateComponentName(name); err != nil {
+			return nil, fmt.Errorf("config: parse %s: component %q: name %w", path, name, err)
+		}
 
 		data, err := yaml.Marshal(valueNode)
 		if err != nil {
@@ -662,6 +731,39 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 		components = append(components, c)
 	}
 	return components, nil
+}
+
+// ValidateComponentName rejects a component name release-me cannot carry
+// through every place it puts one: the derived tag prefix "<name>/v", the
+// branch "release-me/<name>", the shared release pull request title
+// "chore: release <name> vX.Y.Z, ...", which release reads back after the
+// merge, the comma separated Release-Component footer and the changelog
+// compare link. A name holds ASCII letters, digits, "-", "_" and "." only, and
+// neither starts with "." or "-", ends with "." or ".lock", nor holds "..",
+// which git refuses in a tag or branch name. migrate calls it to vet a name it derived.
+func ValidateComponentName(name string) error {
+	for _, r := range name {
+		if !isComponentNameRune(r) {
+			return fmt.Errorf(`contains %q: a component name holds ASCII letters, digits, "-", "_" and "." only`, string(r))
+		}
+	}
+	switch {
+	case name == "":
+		return errors.New("is empty")
+	case strings.HasPrefix(name, ".") || strings.HasPrefix(name, "-"):
+		return errors.New(`starts with "." or "-", which git refuses at the start of a tag or branch name`)
+	case strings.HasSuffix(name, ".") || strings.HasSuffix(name, ".lock"):
+		return errors.New(`ends with "." or ".lock", which git refuses in a tag or branch name`)
+	case strings.Contains(name, ".."):
+		return errors.New(`contains "..", which git refuses in a tag or branch name`)
+	}
+	return nil
+}
+
+// isComponentNameRune reports whether r may appear in a component name:
+// an ASCII letter or digit, "-", "_" or ".".
+func isComponentNameRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.'
 }
 
 // validateComponentPaths rejects two components whose paths overlap: equal,
@@ -771,6 +873,43 @@ func validateChangelogPaths(path string, components []Component) error {
 				return fmt.Errorf("config: parse %s: component %q and %q write the same changelog %q",
 					path, a.Name, b.Name, pa)
 			}
+		}
+	}
+	return nil
+}
+
+// validateFileUpdates rejects two components bumping the same version in
+// one file: the same path with the same key, an empty key, as the marker
+// and helm updaters carry, counting as equal. Their files are compared as
+// resolved, so two components inheriting the top-level "files" collide
+// too. Both updates would apply to the same value, so the component later
+// in release-me.yaml would silently overwrite the other's version. Only
+// VersioningIndependent is checked: in VersioningLocked and
+// VersioningLinked every component a run releases carries the family's
+// one next version, so both write the same value.
+func validateFileUpdates(path string, cfg Config) error {
+	if cfg.Versioning != VersioningIndependent {
+		return nil
+	}
+	type target struct{ path, key string }
+	owner := make(map[target]string)
+	for _, comp := range cfg.Resolve() {
+		seen := make(map[target]bool)
+		for _, f := range comp.Files {
+			t := target{path: stdpath.Clean(f.Path), key: f.Key}
+			if seen[t] {
+				continue
+			}
+			seen[t] = true
+			if other, ok := owner[t]; ok {
+				where := fmt.Sprintf("%q", t.path)
+				if t.key != "" {
+					where += fmt.Sprintf(" at key %q", t.key)
+				}
+				return fmt.Errorf("config: parse %s: component %q and %q bump the same version in %s, "+
+					"one would overwrite the other's", path, other, comp.Name, where)
+			}
+			owner[t] = comp.Name
 		}
 	}
 	return nil

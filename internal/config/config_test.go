@@ -102,9 +102,10 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:         config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
-				Versioning:     config.DefaultVersioning,
-				CommentMention: config.DefaultCommentMention,
+				Author:             config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning:         config.DefaultVersioning,
+				ReleasePullRequest: config.ReleasePullRequestPerComponent,
+				CommentMention:     config.DefaultCommentMention,
 			},
 		},
 		{
@@ -126,6 +127,7 @@ author:
   name: renovate
   email: renovate@example.com
 major-tag: true
+release-pull-request: shared
 draft-until-assets-attach: true
 files:
   - path: cmd/cli/version.go
@@ -150,6 +152,7 @@ files:
 				Author:                 config.Author{Name: "renovate", Email: "renovate@example.com"},
 				MajorTag:               true,
 				Versioning:             config.DefaultVersioning,
+				ReleasePullRequest:     config.ReleasePullRequestShared,
 				DraftUntilAssetsAttach: true,
 				CommentMention:         config.DefaultCommentMention,
 				Files: []config.File{
@@ -173,9 +176,10 @@ files:
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:         config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
-				Versioning:     config.DefaultVersioning,
-				CommentMention: config.DefaultCommentMention,
+				Author:             config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning:         config.DefaultVersioning,
+				ReleasePullRequest: config.ReleasePullRequestPerComponent,
+				CommentMention:     config.DefaultCommentMention,
 			},
 		},
 		{
@@ -192,9 +196,10 @@ files:
 					Pending: "needs-release", Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:         config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
-				Versioning:     config.DefaultVersioning,
-				CommentMention: config.DefaultCommentMention,
+				Author:             config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
+				Versioning:         config.DefaultVersioning,
+				ReleasePullRequest: config.ReleasePullRequestPerComponent,
+				CommentMention:     config.DefaultCommentMention,
 			},
 		},
 		{
@@ -211,9 +216,10 @@ files:
 					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
-				Author:         config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
-				Versioning:     config.DefaultVersioning,
-				CommentMention: config.DefaultCommentMention,
+				Author:             config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
+				Versioning:         config.DefaultVersioning,
+				ReleasePullRequest: config.ReleasePullRequestPerComponent,
+				CommentMention:     config.DefaultCommentMention,
 			},
 		},
 	}
@@ -601,6 +607,110 @@ components:
 	}
 }
 
+func TestLoadReadsReleasePullRequest(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		content string
+		want    config.ReleasePullRequest
+	}{
+		{name: "defaults to per-component in independent", content: "", want: config.ReleasePullRequestPerComponent},
+		{name: "defaults to per-component in linked", content: "versioning: linked\n", want: config.ReleasePullRequestPerComponent},
+		{name: "defaults to shared in locked", content: "versioning: locked\n", want: config.ReleasePullRequestShared},
+		{name: "reads shared in independent", content: "release-pull-request: shared\n", want: config.ReleasePullRequestShared},
+		{
+			name: "reads shared in linked", content: "versioning: linked\nrelease-pull-request: shared\n",
+			want: config.ReleasePullRequestShared,
+		},
+		{
+			name: "accepts an explicit shared in locked", content: "versioning: locked\nrelease-pull-request: shared\n",
+			want: config.ReleasePullRequestShared,
+		},
+		{
+			name: "reads an explicit per-component in linked", content: "versioning: linked\nrelease-pull-request: per-component\n",
+			want: config.ReleasePullRequestPerComponent,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := config.Load(writeFile(t, tc.content))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got.ReleasePullRequest != tc.want {
+				t.Fatalf("ReleasePullRequest = %q, want %q", got.ReleasePullRequest, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsAnInvalidReleasePullRequest(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{name: "an unknown value", content: "release-pull-request: grouped\n", want: `release-pull-request "grouped" is not per-component or shared`},
+		{
+			name: "per-component in locked", content: "versioning: locked\nrelease-pull-request: per-component\n",
+			want: "release-pull-request per-component does not apply to versioning locked",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := config.Load(writeFile(t, tc.content))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load() error = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveSharesOneBranchAcrossEveryComponentWithASharedReleasePullRequest(t *testing.T) {
+	t.Parallel()
+	for _, versioning := range []string{"independent", "linked"} {
+		t.Run(versioning, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := config.Load(writeFile(t, "versioning: "+versioning+`
+release-pull-request: shared
+components:
+  backend:
+    path: backend
+  frontend:
+    path: frontend
+`))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if !cfg.SharedPullRequest() {
+				t.Fatalf("SharedPullRequest() = false, want true")
+			}
+			for _, c := range cfg.Resolve() {
+				if c.Branch != "release-me/main" {
+					t.Fatalf("component %s Branch = %q, want the shared %q", c.Name, c.Branch, "release-me/main")
+				}
+			}
+		})
+	}
+}
+
+func TestSharedPullRequestChangesNothingWithoutComponents(t *testing.T) {
+	t.Parallel()
+	cfg, err := config.Load(writeFile(t, "release-pull-request: shared\n"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.SharedPullRequest() {
+		t.Fatal("SharedPullRequest() = true, want false: the implicit main component's own pull request is the only one")
+	}
+	if got := cfg.Resolve()[0].Branch; got != "release-me/main" {
+		t.Fatalf("Branch = %q, want release-me/main", got)
+	}
+}
+
 func TestResolveUsesAConfiguredTagPrefixAndDerivesTheRest(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, `components:
@@ -625,7 +735,7 @@ func TestLoadAcceptsATagPrefixThatStartsWithAnother(t *testing.T) {
 	t.Parallel()
 	// "web/v" and "web/v2/v" share a start, but a "web/v2/v1.0.0" tag never
 	// parses as a version of web, so the two cannot read each other's tags.
-	path := writeFile(t, "components:\n  web:\n    path: web\n  web/v2:\n    path: web-v2\n")
+	path := writeFile(t, "components:\n  web:\n    path: web\n  web-v2:\n    path: web-v2\n    tag-prefix: web/v2/v\n")
 
 	if _, err := config.Load(path); err != nil {
 		t.Fatalf("Load() error = %v, want nil", err)
@@ -644,6 +754,118 @@ func TestLoadNamesTheComponentAndTheCharacterThatBreaksTheCompareLink(t *testing
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("Load() error = %q, want it to contain %q", err, want)
 		}
+	}
+}
+
+func TestLoadRejectsAComponentNameReleaseMeCannotReadBack(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, component, want string
+	}{
+		{name: "a space breaks the shared release pull request title", component: `"my api"`, want: `" "`},
+		{name: "a comma breaks the Release-Component footer", component: `"api,web"`, want: `","`},
+		{name: "a parenthesis breaks the compare link", component: `"api(v2)"`, want: `"("`},
+		{name: "a hash breaks the compare link", component: `"api#2"`, want: `"#"`},
+		{name: "a slash nests the derived tag prefix", component: `"services/api"`, want: `"/"`},
+		{name: "a non-ASCII letter", component: `"büro"`, want: `"ü"`},
+		{name: "an empty name", component: `""`, want: "is empty"},
+		{name: "a leading dot", component: `".api"`, want: `starts with "."`},
+		{name: "a leading dash", component: `"-api"`, want: `starts with "."`},
+		{name: "a double dot", component: `"api..v2"`, want: `".."`},
+		{name: "a trailing dot", component: `"api."`, want: `ends with "."`},
+		{name: "a trailing .lock breaks the derived tag prefix", component: `"api.lock"`, want: `".lock"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := writeFile(t, "components:\n  "+tc.component+":\n    path: services/api\n")
+
+			_, err := config.Load(path)
+			if err == nil {
+				t.Fatal("Load() error = nil, want an error")
+			}
+			for _, want := range []string{"component " + tc.component, tc.want} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("Load() error = %q, want it to contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadRejectsTwoIndependentComponentsBumpingTheSameVersion(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, content, want string
+	}{
+		{
+			name: "the same key in one json file",
+			content: "components:\n  api:\n    path: api\n    files:\n      - path: deploy/versions.json\n        updater: json\n        key: version\n" +
+				"  web:\n    path: web\n    files:\n      - path: ./deploy/versions.json\n        updater: json\n        key: version\n",
+			want: `component "api" and "web" bump the same version in "deploy/versions.json" at key "version"`,
+		},
+		{
+			name: "one marker file",
+			content: "components:\n  api:\n    path: api\n    files:\n      - path: VERSION\n" +
+				"  web:\n    path: web\n    files:\n      - path: VERSION\n",
+			want: `component "api" and "web" bump the same version in "VERSION"`,
+		},
+		{
+			name:    "the top-level files both inherit",
+			content: "files:\n  - path: VERSION\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n",
+			want:    `component "api" and "web" bump the same version in "VERSION"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := config.Load(writeFile(t, tc.content))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load() error = %v, want one containing %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsComponentsSharingAFileWhereNoVersionCollides(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, content string
+	}{
+		{
+			name: "independent components bumping their own key of one file",
+			content: "components:\n  api:\n    path: api\n    files:\n      - path: deploy/versions.yaml\n        updater: yaml\n        key: api\n" +
+				"  web:\n    path: web\n    files:\n      - path: deploy/versions.yaml\n        updater: yaml\n        key: web\n",
+		},
+		{
+			name:    "locked components inheriting one marker file",
+			content: "versioning: locked\nfiles:\n  - path: VERSION\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n",
+		},
+		{
+			name:    "linked components inheriting one marker file",
+			content: "versioning: linked\nfiles:\n  - path: VERSION\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := config.Load(writeFile(t, tc.content)); err != nil {
+				t.Fatalf("Load() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsAComponentNameOfLettersDigitsDashUnderscoreAndDot(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, "components:\n  api-v2_core.go:\n    path: services/api\n")
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Components[0].Name; got != "api-v2_core.go" {
+		t.Fatalf("Name = %q, want %q", got, "api-v2_core.go")
 	}
 }
 

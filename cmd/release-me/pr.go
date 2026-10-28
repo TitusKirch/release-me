@@ -56,6 +56,10 @@ func runPR(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "release-me: %v\n", err)
 		return 2
 	}
+	if err := rejectComponentForShared(cfg, component); err != nil {
+		fmt.Fprintf(stderr, "release-me: %v\n", err)
+		return 2
+	}
 
 	if err := doPR(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -98,10 +102,12 @@ func doPR(ctx context.Context, dir string, cfg config.Config, component string, 
 		return err
 	}
 
-	switch cfg.Versioning {
-	case config.VersioningLocked:
+	switch {
+	case cfg.Versioning == config.VersioningLocked:
 		return doPRLocked(ctx, dir, cfg, owner, repoName, base, f, logger, dryRun, stdout)
-	case config.VersioningLinked:
+	case sharedOutsideLocked(cfg):
+		return doPRShared(ctx, dir, cfg, owner, repoName, base, f, logger, dryRun, stdout)
+	case cfg.Versioning == config.VersioningLinked:
 		return doPRLinked(ctx, dir, cfg, components, owner, repoName, base, f, logger, dryRun, multi, stdout)
 	default:
 		// Every release is computed before the first pull request is
@@ -200,7 +206,7 @@ func doPRComponent(
 		}
 		versionOverride, versionStr, overrideValid = applyVersionOverride(existing.Body, versionStr, last, hasLast, logger, comp.Name, existing.Number)
 		if versionOverride != "" {
-			recordOverrideOutcome(ctx, existing.Number, overrideValid)
+			recordOverrideOutcome(ctx, existing.Number, "", overrideValid)
 		}
 	}
 	if existing != nil && !overrideValid {
@@ -223,8 +229,8 @@ func doPRComponent(
 
 	tag := comp.TagPrefix + versionStr
 	link := compareURL(f, owner, repoName, fromTag, tag)
-	update := changelogUpdate{path: comp.ChangelogPath, entriesBody: entriesBody, compareURL: link}
-	plan, err := planReleaseBranch(ctx, dir, versionStr, []changelogUpdate{update}, comp.Files, comp.Branch)
+	update := changelogUpdate{path: comp.ChangelogPath, version: versionStr, entriesBody: entriesBody, compareURL: link}
+	plan, err := planReleaseBranch(ctx, dir, []changelogUpdate{update}, filesAt(comp.Files, versionStr), comp.Branch)
 	if err != nil {
 		return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
@@ -284,7 +290,7 @@ func doPRComponent(
 			return nil
 		}
 
-		if err := plan.write(ctx, cfg, existing, comp.Branch, versionStr, date, title); err != nil {
+		if err := plan.write(ctx, cfg, existing, comp.Branch, date, title); err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
 
@@ -373,7 +379,7 @@ func doPRLocked(
 		last, hasLast := familyLastVersion(members)
 		versionOverride, versionStr, overrideValid = applyVersionOverride(existing.Body, versionStr, last, hasLast, logger, "locked family", existing.Number)
 		if versionOverride != "" {
-			recordOverrideOutcome(ctx, existing.Number, overrideValid)
+			recordOverrideOutcome(ctx, existing.Number, "", overrideValid)
 		}
 	}
 	if existing != nil && !overrideValid {
@@ -391,7 +397,7 @@ func doPRLocked(
 
 	changelogs := make([]changelogUpdate, 0, len(members))
 	bodyParts := make([]string, 0, len(members))
-	var files []config.File
+	var files []fileUpdate
 	for _, m := range members {
 		var entries []changelog.Entry
 		if rel, ok := releases[m.comp.Name]; ok {
@@ -402,14 +408,14 @@ func doPRLocked(
 			entriesBody = noUserFacingChangesLine
 		}
 		changelogs = append(changelogs, changelogUpdate{
-			path: m.comp.ChangelogPath, entriesBody: entriesBody,
+			path: m.comp.ChangelogPath, version: versionStr, entriesBody: entriesBody,
 			compareURL: compareURL(f, owner, repoName, releases[m.comp.Name].fromTag, m.comp.TagPrefix+versionStr),
 		})
 		bodyParts = append(bodyParts, fmt.Sprintf("#### %s\n\n%s", m.comp.Name, entriesBody))
-		files = append(files, m.comp.Files...)
+		files = append(files, filesAt(m.comp.Files, versionStr)...)
 	}
 
-	plan, err := planReleaseBranch(ctx, dir, versionStr, changelogs, files, branch)
+	plan, err := planReleaseBranch(ctx, dir, changelogs, files, branch)
 	if err != nil {
 		return fmt.Errorf("release-me: locked family: %w", err)
 	}
@@ -444,6 +450,18 @@ func doPRLocked(
 	}
 	body := releasepr.Body(versionStr, strings.Join(tags, ", "), guideLabels, notes, versionOverride, section)
 
+	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, "locked family", existing, plan, date, title, body, dryRun, stdout)
+}
+
+// publishSharedPR creates, updates or leaves alone the one release pull
+// request every component shares, on branch, the same three outcomes
+// doPRComponent decides for one component's own: up to date, a body only
+// update with no push, or a push followed by the create or update. who
+// names the locked family or the shared release pull request in an error.
+func publishSharedPR(
+	ctx context.Context, cfg config.Config, f forge.Forge, owner, repoName, base, branch, who string,
+	existing *forge.PullRequest, plan *releasePlan, date time.Time, title, body string, dryRun bool, stdout io.Writer,
+) error {
 	switch {
 	case existing != nil && !plan.changed && body == existing.Body:
 		fmt.Fprintln(stdout, "release pull request up to date")
@@ -455,7 +473,7 @@ func doPRLocked(
 			return nil
 		}
 		if _, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body); err != nil {
-			return fmt.Errorf("release-me: locked family: update release pull request #%d: %w", existing.Number, err)
+			return fmt.Errorf("release-me: %s: update release pull request #%d: %w", who, existing.Number, err)
 		}
 		if err := ensurePendingLabel(ctx, f, owner, repoName, existing.Number, existing.Labels, cfg.Labels.Pending); err != nil {
 			return err
@@ -473,14 +491,14 @@ func doPRLocked(
 			return nil
 		}
 
-		if err := plan.write(ctx, cfg, existing, branch, versionStr, date, title); err != nil {
-			return fmt.Errorf("release-me: locked family: %w", err)
+		if err := plan.write(ctx, cfg, existing, branch, date, title); err != nil {
+			return fmt.Errorf("release-me: %s: %w", who, err)
 		}
 
 		if existing == nil {
 			if _, err := f.CreatePullRequest(ctx, owner, repoName, base, branch, title, body, []string{cfg.Labels.Pending}); err != nil {
 				return fmt.Errorf(
-					"release-me: locked family: create release pull request: pushed branch %s but the pull request failed: %w", branch, err,
+					"release-me: %s: create release pull request: pushed branch %s but the pull request failed: %w", who, branch, err,
 				)
 			}
 			fmt.Fprintf(stdout, "created %s\n", title)
@@ -488,8 +506,8 @@ func doPRLocked(
 		}
 		if _, err := f.UpdatePullRequest(ctx, owner, repoName, existing.Number, title, body); err != nil {
 			return fmt.Errorf(
-				"release-me: locked family: update release pull request #%d: pushed branch %s but the update failed: %w",
-				existing.Number, branch, err,
+				"release-me: %s: update release pull request #%d: pushed branch %s but the update failed: %w",
+				who, existing.Number, branch, err,
 			)
 		}
 		if err := ensurePendingLabel(ctx, f, owner, repoName, existing.Number, existing.Labels, cfg.Labels.Pending); err != nil {
@@ -607,9 +625,9 @@ func ensurePendingLabel(ctx context.Context, f forge.Forge, owner, repoName stri
 // tag exists at all, in which case any parseable version is accepted.
 // The rule is version.ParseForced's, a pre-release value accepted: the
 // block is transient, gone once the pull request merges, so it never
-// forces the same pre-release twice. who and number name the component or locked family and the pull
-// request in the warning logged when raw is present but unused this run,
-// never failing it.
+// forces the same pre-release twice. who and number name the component
+// or locked family and the pull request in the warning logged when raw is
+// present but unused this run, never failing it.
 func applyVersionOverride(
 	body, computed string, last version.Semver, hasLast bool, logger *slog.Logger, who string, number int,
 ) (raw, overridden string, ok bool) {
@@ -617,19 +635,29 @@ func applyVersionOverride(
 	if !found {
 		return "", computed, false
 	}
+	overridden, ok = checkVersionOverride(raw, computed, last, hasLast, logger, who, number)
+	return raw, overridden, ok
+}
 
-	sv, err := version.ParseForced(raw, last, hasLast, true)
+// checkVersionOverride is applyVersionOverride's decision for one value
+// already read out of the block: value, as a version, when it parses and
+// is strictly greater than last, ok true; computed otherwise, with the
+// reason logged.
+func checkVersionOverride(
+	value, computed string, last version.Semver, hasLast bool, logger *slog.Logger, who string, number int,
+) (overridden string, ok bool) {
+	sv, err := version.ParseForced(value, last, hasLast, true)
 	switch {
 	case errors.Is(err, version.ErrNotAVersion):
 		logger.Warn("ignoring a release-me-version override that does not parse as a version",
-			"component", who, "number", number, "value", raw)
-		return raw, computed, false
+			"component", who, "number", number, "value", value)
+		return computed, false
 	case err != nil:
 		logger.Warn("ignoring a release-me-version override that is not greater than the last released version",
-			"component", who, "number", number, "value", raw, "last", last.String())
-		return raw, computed, false
+			"component", who, "number", number, "value", value, "last", last.String())
+		return computed, false
 	default:
-		return raw, sv.String(), true
+		return sv.String(), true
 	}
 }
 
@@ -644,7 +672,16 @@ func applyVersionOverride(
 // command's own run never wires one in, so recordOverrideOutcome is a
 // no-op and costs nothing there.
 type overrideRecorder struct {
-	results map[int]bool
+	results map[overrideKey]bool
+}
+
+// overrideKey names the override an overrideRecorder entry is about: the
+// pull request number, and the component a "<component> X.Y.Z" line in a
+// shared release pull request with independent versions names, "" for the
+// one version every other release pull request carries.
+type overrideKey struct {
+	number    int
+	component string
 }
 
 // overrideRecorderKey is the unexported context key an *overrideRecorder
@@ -661,27 +698,47 @@ func withOverrideRecorder(ctx context.Context, rec *overrideRecorder) context.Co
 // recordOverrideOutcome records, for pull request number, whether a
 // release-me-version override found on its body actually won this run,
 // when ctx carries an *overrideRecorder; it does nothing otherwise.
-func recordOverrideOutcome(ctx context.Context, number int, applied bool) {
+// component is "" except for one component's line in a shared release
+// pull request with independent versions.
+func recordOverrideOutcome(ctx context.Context, number int, component string, applied bool) {
 	rec, ok := ctx.Value(overrideRecorderKey{}).(*overrideRecorder)
 	if !ok {
 		return
 	}
 	if rec.results == nil {
-		rec.results = make(map[int]bool)
+		rec.results = make(map[overrideKey]bool)
 	}
-	rec.results[number] = applied
+	rec.results[overrideKey{number: number, component: component}] = applied
 }
 
-// changelogUpdate is one component's changelog file path, the entries
-// body (without the heading's date) doPR would prepend to it and the
-// compare view its heading links to, "" for none, one per component of a
-// locked family's combined branch, exactly one for VersioningIndependent
-// and VersioningLinked.
+// changelogUpdate is one component's changelog file path, the version its
+// heading names, the entries body (without the heading's date) doPR would
+// prepend to it and the compare view its heading links to, "" for none,
+// one per component of a shared release branch, exactly one for a
+// component's own.
 type changelogUpdate struct {
 	path        string
+	version     string
 	entriesBody string
 	compareURL  string
 	baseline    string
+}
+
+// fileUpdate is one configured file doPR bumps, with the version it bumps
+// it to: the component's own, so components sharing a release branch at
+// different versions each bump their own files to their own version.
+type fileUpdate struct {
+	file    config.File
+	version string
+}
+
+// filesAt pairs every file in files with version.
+func filesAt(files []config.File, version string) []fileUpdate {
+	out := make([]fileUpdate, 0, len(files))
+	for _, f := range files {
+		out = append(out, fileUpdate{file: f, version: version})
+	}
+	return out
 }
 
 // releasePlan is the release branch content doPR would write, computed
@@ -700,8 +757,12 @@ type releasePlan struct {
 // for every entry of changelogs and files, and compares it against
 // branch's current tip, fetched into compareRef. A branch that does not
 // exist on the remote yet is always "changed": there is nothing to compare
-// it against.
-func planReleaseBranch(ctx context.Context, dir, version string, changelogs []changelogUpdate, files []config.File, branch string) (*releasePlan, error) {
+// it against. Several entries naming the same file apply one after another
+// to the same content, so each one's own key or marker keeps its update:
+// config refuses two independently versioned components bumping the same
+// key, or both a marker, in one file, and in locked and linked versioning
+// every entry carries the same version, so no entry overwrites another's.
+func planReleaseBranch(ctx context.Context, dir string, changelogs []changelogUpdate, files []fileUpdate, branch string) (*releasePlan, error) {
 	tmp, err := os.MkdirTemp("", "release-me-pr-")
 	if err != nil {
 		return nil, fmt.Errorf("release-me: temporary worktree: %w", err)
@@ -725,18 +786,23 @@ func planReleaseBranch(ctx context.Context, dir, version string, changelogs []ch
 	}
 
 	plan.desiredFiles = make(map[string]string, len(files))
-	for _, file := range files {
-		content, err := os.ReadFile(filepath.Join(tmp, file.Path))
-		if err != nil {
-			plan.cleanup()
-			return nil, fmt.Errorf("release-me: read %s: %w", file.Path, err)
+	for _, fu := range files {
+		file, version := fu.file, fu.version
+		content, seen := plan.desiredFiles[file.Path]
+		if !seen {
+			raw, err := os.ReadFile(filepath.Join(tmp, file.Path))
+			if err != nil {
+				plan.cleanup()
+				return nil, fmt.Errorf("release-me: read %s: %w", file.Path, err)
+			}
+			content = string(raw)
 		}
 		entry, ok := updater.Updaters[file.Updater]
 		if !ok {
 			plan.cleanup()
 			return nil, fmt.Errorf("release-me: file %s: unknown updater %q", file.Path, file.Updater)
 		}
-		newContent, err := entry.Update(string(content), file.Key, version)
+		newContent, err := entry.Update(content, file.Key, version)
 		if err != nil {
 			plan.cleanup()
 			if file.Key != "" {
@@ -747,15 +813,15 @@ func planReleaseBranch(ctx context.Context, dir, version string, changelogs []ch
 		plan.desiredFiles[file.Path] = newContent
 	}
 
-	plan.changed = !sameAsReleaseBranch(ctx, tmp, version, plan.changelogs, plan.desiredFiles, branch)
+	plan.changed = !sameAsReleaseBranch(ctx, tmp, plan.changelogs, plan.desiredFiles, branch)
 	return plan, nil
 }
 
-// sameAsReleaseBranch reports whether every changelogs entry, at version,
-// and every desiredFiles entry already match branch's current tip. It
-// fetches the branch into compareRef to read it; a branch that does not
-// exist remotely yet, or any read failure, is reported as not matching. A
-// changelog heading whose version differs from version counts as not
+// sameAsReleaseBranch reports whether every changelogs entry, at its own
+// version, and every desiredFiles entry already match branch's current
+// tip. It fetches the branch into compareRef to read it; a branch that
+// does not exist remotely yet, or any read failure, is reported as not
+// matching. A changelog heading whose version differs from c's counts as not
 // matching too, even when the entries underneath read the same: a
 // version-only difference, a pre-release label added, changed or removed
 // with no new entry, must still push. So does a heading whose compare link
@@ -765,7 +831,7 @@ func planReleaseBranch(ctx context.Context, dir, version string, changelogs []ch
 // would write does read back: when neither does, a push could never make
 // the comparison settle, so the heading is left out of it and only the
 // entries underneath and desiredFiles decide.
-func sameAsReleaseBranch(ctx context.Context, tmp, version string, changelogs []changelogUpdate, desiredFiles map[string]string, branch string) bool {
+func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelogUpdate, desiredFiles map[string]string, branch string) bool {
 	pushURL, err := gitOutput(ctx, tmp, "remote", "get-url", "--push", "origin")
 	if err != nil {
 		return false
@@ -781,9 +847,9 @@ func sameAsReleaseBranch(ctx context.Context, tmp, version string, changelogs []
 		}
 		existing, ok := changelog.ParseHeading(changelogContent)
 		switch {
-		case !ok && headingReadsBack(version, c.compareURL):
+		case !ok && headingReadsBack(c.version, c.compareURL):
 			return false
-		case ok && (existing.Version != version || existing.CompareURL != c.compareURL):
+		case ok && (existing.Version != c.version || existing.CompareURL != c.compareURL):
 			return false
 		}
 		existingBody, ok := changelog.TopSection(changelogContent)
@@ -817,14 +883,14 @@ func headingReadsBack(version, compareURL string) bool {
 // defeat it. The commit carries cfg's configured author and committer,
 // never written into any git config, only passed to that one subprocess.
 func (p *releasePlan) write(
-	ctx context.Context, cfg config.Config, existing *forge.PullRequest, branch, version string, date time.Time, commitMessage string,
+	ctx context.Context, cfg config.Config, existing *forge.PullRequest, branch string, date time.Time, commitMessage string,
 ) error {
 	if err := gitRun(ctx, p.tmp, "checkout", "--quiet", "-B", branch); err != nil {
 		return fmt.Errorf("release-me: checkout %s: %w", branch, err)
 	}
 
 	for _, c := range p.changelogs {
-		section := changelog.RenderHeading(version, date, c.compareURL) + "\n\n" + c.entriesBody + "\n"
+		section := changelog.RenderHeading(c.version, date, c.compareURL) + "\n\n" + c.entriesBody + "\n"
 		fullChangelogPath := filepath.Join(p.tmp, c.path)
 		// A configured changelog may name a directory that does not exist
 		// yet; os.WriteFile creates the file only.

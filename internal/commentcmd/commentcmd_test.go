@@ -137,6 +137,31 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name:        "release-as reads a component before the version",
+			body:        "@release-me release-as api 2.0.0",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Component: "api", Version: "2.0.0", Valid: true,
+			},
+		},
+		{
+			name:        "release-as with a component accepts a leading v",
+			body:        "@release-me release-as web v0.5.0 for the redesign",
+			association: "MEMBER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Component: "web", Version: "0.5.0", Valid: true,
+			},
+		},
+		{
+			name:        "release-as with a component rejects a malformed version",
+			body:        "@release-me release-as api next",
+			association: "OWNER",
+			want: commentcmd.Outcome{
+				Matched: true, Allowed: true, Command: commentcmd.KindReleaseAs, Valid: false,
+				Reason: `"next" after release-as api is not a parseable X.Y.Z version`,
+			},
+		},
+		{
 			name:        "a decoy mention on an earlier line does not stop the real command below it",
 			body:        "cc @release-me-fan, unrelated.\n@release-me release-as 2.0.0 please.",
 			association: "OWNER",

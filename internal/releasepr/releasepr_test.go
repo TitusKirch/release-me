@@ -4,6 +4,8 @@
 package releasepr_test
 
 import (
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -282,6 +284,16 @@ func TestExtractDate(t *testing.T) {
 			want:   "2026-03-14",
 		},
 		{
+			name: "reads the first component's heading date of a shared release pull request",
+			body: releasepr.SharedBody(
+				[]releasepr.Release{{Name: "api", Version: "1.3.0", Tag: "api/v1.3.0"}}, testLabels, true, "", "",
+				"#### api\n\n## [v1.3.0](https://github.com/ostendorf-cloud/release-me/compare/api/v1.2.0...api/v1.3.0) (2026-03-14)\n\n"+
+					"### Features\n\n- add the thing\n",
+			),
+			wantOK: true,
+			want:   "2026-03-14",
+		},
+		{
 			name: "reads the heading date of a pre-release version",
 			body: releasepr.Body(
 				"1.2.3-rc.1", "v1.2.3-rc.1", testLabels, "", "", "## v1.2.3-rc.1 (2026-03-14)\n\n### Features\n\n- add the thing\n",
@@ -492,5 +504,114 @@ func TestEscapeFenceIsIdempotent(t *testing.T) {
 	twice := releasepr.SetNotes(once, extracted)
 	if once != twice {
 		t.Fatalf("escaping is not idempotent:\nonce:  %q\ntwice: %q", once, twice)
+	}
+}
+
+func TestSharedBodyNamesEveryComponentVersionAndTag(t *testing.T) {
+	t.Parallel()
+	releases := []releasepr.Release{
+		{Name: "api", Version: "1.3.0", Tag: "api/v1.3.0"},
+		{Name: "web", Version: "0.4.1", Tag: "web/v0.4.1"},
+	}
+	section := "#### api\n\n## v1.3.0 (2026-03-14)\n\n### Features\n\n- add the thing\n\n" +
+		"#### web\n\n## v0.4.1 (2026-03-14)\n\n### Bug Fixes\n\n- fix the other thing\n"
+	tests := []struct {
+		name                string
+		perComponentVersion bool
+		wantGuide           string
+	}{
+		{name: "independent versions", perComponentVersion: true, wantGuide: "`release-as <component> X.Y.Z`"},
+		{name: "one shared version", perComponentVersion: false, wantGuide: "followed by `release-as X.Y.Z`"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			body := releasepr.SharedBody(releases, testLabels, tc.perComponentVersion, "", "", section)
+			for _, want := range []string{
+				"Release api v1.3.0, web v0.4.1\n",
+				"tags `api/v1.3.0, web/v0.4.1`",
+				tc.wantGuide,
+			} {
+				if !strings.Contains(body, want) {
+					t.Errorf("SharedBody() = %q, want it to contain %q", body, want)
+				}
+			}
+			if got := releasepr.ComponentSection(releasepr.ExtractChangelog(body), "web"); got !=
+				"## v0.4.1 (2026-03-14)\n\n### Bug Fixes\n\n- fix the other thing" {
+				t.Errorf("ComponentSection(web) = %q", got)
+			}
+			if got := releasepr.ComponentNames(releasepr.ExtractChangelog(body)); !slices.Equal(got, []string{"api", "web"}) {
+				t.Errorf("ComponentNames() = %v, want [api web]", got)
+			}
+		})
+	}
+}
+
+func TestComponentSectionIsEmptyForAComponentWithoutAHeading(t *testing.T) {
+	t.Parallel()
+	if got := releasepr.ComponentSection("#### api\n\n- add the thing\n", "web"); got != "" {
+		t.Fatalf("ComponentSection(web) = %q, want empty", got)
+	}
+}
+
+func TestVersionOverrides(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		raw          string
+		wantByName   map[string]string
+		wantUnscoped string
+	}{
+		{name: "an empty block", raw: "", wantByName: map[string]string{}},
+		{name: "one bare version", raw: "2.0.0", wantByName: map[string]string{}, wantUnscoped: "2.0.0"},
+		{
+			name: "one line per component", raw: "api 2.0.0\nweb 0.5.0",
+			wantByName: map[string]string{"api": "2.0.0", "web": "0.5.0"},
+		},
+		{
+			name: "the last line for a component counts", raw: "api 2.0.0\n\napi 3.0.0",
+			wantByName: map[string]string{"api": "3.0.0"},
+		},
+		{
+			name: "a line of another shape stays unscoped", raw: "api 2.0.0\napi is 3.0.0",
+			wantByName: map[string]string{"api": "2.0.0"}, wantUnscoped: "api is 3.0.0",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			byName, unscoped := releasepr.VersionOverrides(tc.raw)
+			if !maps.Equal(byName, tc.wantByName) || unscoped != tc.wantUnscoped {
+				t.Fatalf("VersionOverrides(%q) = %v, %q, want %v, %q", tc.raw, byName, unscoped, tc.wantByName, tc.wantUnscoped)
+			}
+		})
+	}
+}
+
+func TestSetComponentVersionOverrideAddsOrReplacesTheComponentLine(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "no block yet", body: "Release api v1.3.0\n", want: "api 2.0.0"},
+		{
+			name: "another component's line is kept", body: "Release api v1.3.0\n\n```release-me-version\nweb 0.5.0\n```\n",
+			want: "web 0.5.0\napi 2.0.0",
+		},
+		{
+			name: "the component's own line is replaced", body: "Release api v1.3.0\n\n```release-me-version\napi 1.9.0\nweb 0.5.0\n```\n",
+			want: "api 2.0.0\nweb 0.5.0",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := releasepr.ExtractVersionOverride(releasepr.SetComponentVersionOverride(tc.body, "api", "2.0.0"))
+			if !ok || got != tc.want {
+				t.Fatalf("override block = %q, %v, want %q", got, ok, tc.want)
+			}
+		})
 	}
 }

@@ -43,9 +43,42 @@ type GuideLabels struct {
 // values, so the guide always matches what merging and labelling actually
 // do.
 func Body(version, tag string, labels GuideLabels, notes, versionOverride, changelogSection string) string {
+	return render(fmt.Sprintf("Release v%s", version), tag, labels, false, notes, versionOverride, changelogSection)
+}
+
+// Release is one component a shared release pull request carries: its
+// name, the version it releases at and the tag merging creates for it.
+type Release struct {
+	Name    string
+	Version string
+	Tag     string
+}
+
+// SharedBody renders the body of a release pull request every component
+// shares, in VersioningIndependent or VersioningLinked with
+// "release-pull-request: shared": Body's shape, with a version line naming
+// every component in releases at its own version and a guide naming every
+// tag merging creates. perComponentVersion is true when the components'
+// versions are independent of each other, so the guide asks for one
+// "<component> X.Y.Z" line per component in the release-me-version block,
+// instead of one version for all of them. changelogSection carries one
+// "#### <name>" slice per component, as ComponentSection reads it back.
+func SharedBody(releases []Release, labels GuideLabels, perComponentVersion bool, notes, versionOverride, changelogSection string) string {
+	parts := make([]string, 0, len(releases))
+	tags := make([]string, 0, len(releases))
+	for _, r := range releases {
+		parts = append(parts, fmt.Sprintf("%s v%s", r.Name, r.Version))
+		tags = append(tags, r.Tag)
+	}
+	headline := "Release " + strings.Join(parts, ", ")
+	return render(headline, strings.Join(tags, ", "), labels, perComponentVersion, notes, versionOverride, changelogSection)
+}
+
+// render is the body Body and SharedBody share, below the headline line.
+func render(headline, tag string, labels GuideLabels, perComponentVersion bool, notes, versionOverride, changelogSection string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Release v%s\n\n", version)
-	b.WriteString(guideBlock(tag, labels))
+	b.WriteString(headline + "\n\n")
+	b.WriteString(guideBlock(tag, labels, perComponentVersion))
 
 	if versionOverride != "" {
 		b.WriteString("\n```release-me-version\n")
@@ -68,19 +101,30 @@ func Body(version, tag string, labels GuideLabels, notes, versionOverride, chang
 // guideBlock renders the collapsed "How this release works" section: one
 // line each for the merge, the notes block, the pre-release labels, the
 // override block and the push behaviour. The pre-release line names only
-// the enabled types and is left out when every type is turned off.
-func guideBlock(tag string, labels GuideLabels) string {
+// the enabled types and is left out when every type is turned off. The
+// override line asks for one "<component> X.Y.Z" line per component when
+// perComponentVersion is true.
+func guideBlock(tag string, labels GuideLabels, perComponentVersion bool) string {
 	var b strings.Builder
 	b.WriteString("<details>\n<summary>How this release works</summary>\n\n")
 	fmt.Fprintf(&b, "- Merging this pull request tags `%s`, creates the release and moves the label to `%s`. "+
 		"With `major-tag` enabled, the moving major tag follows a stable release.\n", tag, labels.Tagged)
 	b.WriteString("- Release notes: add a fenced block with the info string `release-me-notes` anywhere in this body. " +
 		"It is rendered above the entries in the changelog file and in the release and survives updates.\n")
-	b.WriteString("- Force the next version: add a fenced block with the info string `release-me-version` " +
-		"containing `X.Y.Z` anywhere in this body, or comment the configured mention followed by " +
-		"`release-as X.Y.Z`. It wins outright over the computed bump, pre-release label included, " +
-		"until the pull request merges or the block is removed; one that does not parse, or is not " +
-		"greater than the last released version, is ignored instead.\n")
+	if perComponentVersion {
+		b.WriteString("- Force the next version of a component: add a fenced block with the info string " +
+			"`release-me-version` containing one `<component> X.Y.Z` line per component anywhere in this body, " +
+			"or comment the configured mention followed by `release-as <component> X.Y.Z`. It wins outright " +
+			"over that component's computed bump, pre-release label included, until the pull request merges " +
+			"or the line is removed; one that does not parse, or is not greater than the component's last " +
+			"released version, is ignored instead.\n")
+	} else {
+		b.WriteString("- Force the next version: add a fenced block with the info string `release-me-version` " +
+			"containing `X.Y.Z` anywhere in this body, or comment the configured mention followed by " +
+			"`release-as X.Y.Z`. It wins outright over the computed bump, pre-release label included, " +
+			"until the pull request merges or the block is removed; one that does not parse, or is not " +
+			"greater than the last released version, is ignored instead.\n")
+	}
 	if enabled := preReleaseLabelList(labels); enabled != "" {
 		fmt.Fprintf(&b, "- Pre-release: add the label %s. The next run turns the version into `X.Y.Z-<type>.N`. "+
 			"Remove the label to go back to the stable version.\n", enabled)
@@ -165,6 +209,95 @@ func SetVersionOverride(body, version string) string {
 	return setFencedBlock(body, "release-me-version", versionBlock, version)
 }
 
+// VersionOverrides reads the text of a release-me-version block the way a
+// shared release pull request with independent versions reads it: a
+// "<component> X.Y.Z" line forces that component's version, the last such
+// line for a component counting, and any other non-empty line is kept as
+// unscoped, the last one counting, for the caller to apply where only one
+// component is released or to refuse otherwise. Values are returned as
+// written; the caller decides whether they parse.
+func VersionOverrides(raw string) (byComponent map[string]string, unscoped string) {
+	byComponent = map[string]string{}
+	for _, line := range strings.Split(raw, "\n") {
+		fields := strings.Fields(line)
+		switch len(fields) {
+		case 0:
+			continue
+		case 2:
+			byComponent[fields[0]] = fields[1]
+		default:
+			unscoped = strings.TrimSpace(line)
+		}
+	}
+	return byComponent, unscoped
+}
+
+// SetComponentVersionOverride returns body with its release-me-version
+// fenced block carrying the line "<name> <version>", replacing an earlier
+// line for name and keeping every other line, or a new block appended at
+// the end when body carries none yet: SetVersionOverride for one component
+// of a shared release pull request with independent versions.
+func SetComponentVersionOverride(body, name, version string) string {
+	raw, _ := ExtractVersionOverride(body)
+	var lines []string
+	replaced := false
+	for _, line := range strings.Split(raw, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if len(fields) == 2 && fields[0] == name {
+			if !replaced {
+				lines = append(lines, name+" "+version)
+				replaced = true
+			}
+			continue
+		}
+		lines = append(lines, strings.TrimSpace(line))
+	}
+	if !replaced {
+		lines = append(lines, name+" "+version)
+	}
+	return setFencedBlock(body, "release-me-version", versionBlock, strings.Join(lines, "\n"))
+}
+
+// componentHeading matches one component's heading inside the combined
+// changelog of a release pull request every component shares, "#### <name>"
+// on its own line. The fourth level keeps it apart from the
+// "### Features"-shaped section headings changelog.Sections renders inside
+// each component's own slice.
+var componentHeading = regexp.MustCompile(`(?m)^#### (.+)$`)
+
+// ComponentSection returns name's own slice of changelogText, the combined
+// changelog of a release pull request every component shares, locked or
+// not: the text between its "#### <name>" heading and the next one, or the
+// end. "" when name carries no heading.
+func ComponentSection(changelogText, name string) string {
+	locs := componentHeading.FindAllStringSubmatchIndex(changelogText, -1)
+	for i, loc := range locs {
+		if changelogText[loc[2]:loc[3]] != name {
+			continue
+		}
+		end := len(changelogText)
+		if i+1 < len(locs) {
+			end = locs[i+1][0]
+		}
+		return strings.TrimSpace(changelogText[loc[1]:end])
+	}
+	return ""
+}
+
+// ComponentNames returns the name of every "#### <name>" heading in
+// changelogText, the combined changelog of a shared release pull request,
+// in order: the components that pull request releases.
+func ComponentNames(changelogText string) []string {
+	var names []string
+	for _, m := range componentHeading.FindAllStringSubmatch(changelogText, -1) {
+		names = append(names, m[1])
+	}
+	return names
+}
+
 // setFencedBlock replaces pattern's match in body with a fenced block
 // carrying info and escapeFence(content), or appends that block at the end
 // of body when pattern does not match: the shape every comment command
@@ -217,20 +350,29 @@ func ExtractChangelog(body string) string {
 	return strings.TrimSpace(m[1])
 }
 
-// ExtractDate returns the date rendered in the changelog heading inside the
-// <details> block of a release pull request body, read by
-// changelog.ParseHeading, with a compare link or without. ok is false when
-// body carries no such block, or its heading carries no parseable date.
+// ExtractDate returns the date rendered in the first changelog heading
+// inside the <details> block of a release pull request body, read by
+// changelog.ParseHeading, with a compare link or without: the heading the
+// block opens with, or, for a shared release pull request whose block
+// opens with a "#### <name>" component heading, the first component's own.
+// ok is false when body carries no such block, or no heading with a
+// parseable date.
 func ExtractDate(body string) (date time.Time, ok bool) {
-	h, ok := changelog.ParseHeading(ExtractChangelog(body))
-	if !ok {
-		return time.Time{}, false
+	for _, line := range strings.Split(ExtractChangelog(body), "\n") {
+		if !strings.HasPrefix(line, "## ") {
+			continue
+		}
+		h, ok := changelog.ParseHeading(line)
+		if !ok {
+			continue
+		}
+		d, err := time.Parse("2006-01-02", h.Date)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return d, true
 	}
-	d, err := time.Parse("2006-01-02", h.Date)
-	if err != nil {
-		return time.Time{}, false
-	}
-	return d, true
+	return time.Time{}, false
 }
 
 // ReleaseBody renders the GitHub release body from a release pull request
