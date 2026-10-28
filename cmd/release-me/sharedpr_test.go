@@ -5,6 +5,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -311,25 +313,59 @@ func TestSharedReleasePullRequestReportsAPerComponentOneItSupersedes(t *testing.
 	}
 }
 
-func TestSharedReleaseStillTagsAPerComponentPullRequestMergedBeforeTheSwitch(t *testing.T) {
+func TestSharedReleasePullRequestIsWrittenWhenLookingForASupersededOneFails(t *testing.T) {
 	dir, _, cfg := newSharedRepo(t)
 	f := newFake()
 	f.ListResponses = []forgetest.ListResponse{
-		{Head: "release-me/api", State: "closed", PullRequests: []forge.PullRequest{{
-			Number: 4, Title: "chore(api): release v1.3.0", Labels: []string{"release: pending"}, Merged: true,
-			Body: "Release v1.3.0\n\n<details>\n<summary>Changelog</summary>\n\n## v1.3.0 (2026-03-14)\n\n" +
-				"### Features\n\n- export orders as CSV\n\n</details>\n",
-		}}},
+		{Head: "release-me/api", State: "open", Err: errors.New("GET /repos/owner/repo/pulls: 502 Bad Gateway")},
 	}
-	f.MergeCommits = map[int]string{4: "facade01"}
-	f.PRLabels = map[int][]string{4: {"release: pending"}}
-
 	var stdout bytes.Buffer
-	if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
-		t.Fatalf("doRelease() error = %v", err)
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v, want the informational lookup to never stop pr", err)
 	}
-	if len(f.CreatedTags) != 1 || f.CreatedTags[0].Tag != "api/v1.3.0" {
-		t.Fatalf("CreatedTags = %+v, want the leftover per-component pull request tagged", f.CreatedTags)
+	if len(f.CreatedPullRequests) != 1 || f.CreatedPullRequests[0].Head != "release-me/main" {
+		t.Fatalf("CreatedPullRequests = %+v, want the shared one created anyway", f.CreatedPullRequests)
+	}
+}
+
+func TestSharedReleaseSweepsAPerComponentBranchOnlyWhileItExistsOnTheRemote(t *testing.T) {
+	tests := []struct {
+		name       string
+		pushBranch bool
+		wantTags   []string
+	}{
+		{name: "tags a pull request merged before the switch while its branch exists", pushBranch: true, wantTags: []string{"api/v1.3.0"}},
+		{name: "skips the sweep once the branch is deleted", pushBranch: false, wantTags: nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, _, cfg := newSharedRepo(t)
+			if tc.pushBranch {
+				runGit(t, dir, "push", "-q", "origin", "HEAD:refs/heads/release-me/api")
+			}
+			f := newFake()
+			f.ListResponses = []forgetest.ListResponse{
+				{Head: "release-me/api", State: "closed", PullRequests: []forge.PullRequest{{
+					Number: 4, Title: "chore(api): release v1.3.0", Labels: []string{"release: pending"}, Merged: true,
+					Body: "Release v1.3.0\n\n<details>\n<summary>Changelog</summary>\n\n## v1.3.0 (2026-03-14)\n\n" +
+						"### Features\n\n- export orders as CSV\n\n</details>\n",
+				}}},
+			}
+			f.MergeCommits = map[int]string{4: "facade01"}
+			f.PRLabels = map[int][]string{4: {"release: pending"}}
+
+			var stdout bytes.Buffer
+			if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+				t.Fatalf("doRelease() error = %v", err)
+			}
+			var got []string
+			for _, c := range f.CreatedTags {
+				got = append(got, c.Tag)
+			}
+			if !reflect.DeepEqual(got, tc.wantTags) {
+				t.Fatalf("CreatedTags = %q, want %q", got, tc.wantTags)
+			}
+		})
 	}
 }
 
@@ -478,5 +514,53 @@ func TestSharedReleasePullRequestHonoursTheReleaseAsAndReleaseComponentFooters(t
 	}
 	if got, want := f.CreatedPullRequests[0].Title, "chore: release api v1.3.0, web v1.0.0, docs v2.1.0"; got != want {
 		t.Fatalf("title = %q, want %q", got, want)
+	}
+}
+
+func TestSharedReleasePullRequestRefusesATitlePastTheForgeLimitBeforeWritingAnything(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	var yaml strings.Builder
+	yaml.WriteString("release-pull-request: shared\ncomponents:\n")
+	files := map[string]string{}
+	for i := 1; i <= 14; i++ {
+		name := fmt.Sprintf("service-component-%02d", i)
+		fmt.Fprintf(&yaml, "  %s:\n    path: services/%s\n", name, name)
+		files["services/"+name+"/main.go"] = "package main\n"
+	}
+	writeConfig(t, dir, yaml.String())
+	writeFiles(t, dir, "feat: scaffold every service", files)
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	f := newFake()
+
+	var stdout bytes.Buffer
+	err = doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout)
+	if err == nil {
+		t.Fatal("doPR() error = nil, want the title refused")
+	}
+	for _, want := range []string{"title is 419 characters", "limit of 256", "service-component-01, ", "service-component-14", "per-component"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("doPR() error = %q, want it to contain %q", err, want)
+		}
+	}
+	if len(f.CreatedPullRequests) != 0 || bareRefExists(t, origin, "refs/heads/release-me/main") {
+		t.Fatalf("CreatedPullRequests = %+v, want nothing written before the refusal", f.CreatedPullRequests)
+	}
+}
+
+func TestSharedReleaseFailsWithoutNamingThePushURLWhenTheBranchLookupFails(t *testing.T) {
+	dir, _, cfg := newSharedRepo(t)
+	missing := filepath.Join(t.TempDir(), "x-access-token-s3cr3t")
+	runGit(t, dir, "config", "remote.origin.pushurl", missing)
+
+	var stdout bytes.Buffer
+	err := doRelease(t.Context(), dir, cfg, "", newFake(), discardLogger(), false, &stdout)
+	if err == nil {
+		t.Fatal("doRelease() error = nil, want the failed branch lookup reported")
+	}
+	if !strings.Contains(err.Error(), "list the per-component release branches") || strings.Contains(err.Error(), "s3cr3t") {
+		t.Fatalf("doRelease() error = %q, want the lookup named and the push URL left out", err)
 	}
 }

@@ -632,6 +632,9 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, err
 		}
 		cfg.Components = components
+		if err := validateFileUpdates(path, cfg); err != nil {
+			return Config{}, err
+		}
 	}
 	return cfg, nil
 }
@@ -679,6 +682,9 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		name := node.Content[i].Value
 		valueNode := node.Content[i+1]
+		if err := ValidateComponentName(name); err != nil {
+			return nil, fmt.Errorf("config: parse %s: component %q: name %w", path, name, err)
+		}
 
 		data, err := yaml.Marshal(valueNode)
 		if err != nil {
@@ -725,6 +731,37 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 		components = append(components, c)
 	}
 	return components, nil
+}
+
+// ValidateComponentName rejects a component name release-me cannot carry
+// through every place it puts one: the derived tag prefix "<name>/v", the
+// branch "release-me/<name>", the shared release pull request title
+// "chore: release <name> vX.Y.Z, ...", which release reads back after the
+// merge, the comma separated Release-Component footer and the changelog
+// compare link. A name holds ASCII letters, digits, "-", "_" and "." only, and
+// neither starts with "." or "-" nor holds "..", which git refuses in a
+// tag or branch name. migrate calls it to vet a name it derived.
+func ValidateComponentName(name string) error {
+	for _, r := range name {
+		if !isComponentNameRune(r) {
+			return fmt.Errorf(`contains %q: a component name holds ASCII letters, digits, "-", "_" and "." only`, string(r))
+		}
+	}
+	switch {
+	case name == "":
+		return errors.New("is empty")
+	case strings.HasPrefix(name, ".") || strings.HasPrefix(name, "-"):
+		return errors.New(`starts with "." or "-", which git refuses at the start of a tag or branch name`)
+	case strings.Contains(name, ".."):
+		return errors.New(`contains "..", which git refuses in a tag or branch name`)
+	}
+	return nil
+}
+
+// isComponentNameRune reports whether r may appear in a component name:
+// an ASCII letter or digit, "-", "_" or ".".
+func isComponentNameRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.'
 }
 
 // validateComponentPaths rejects two components whose paths overlap: equal,
@@ -834,6 +871,43 @@ func validateChangelogPaths(path string, components []Component) error {
 				return fmt.Errorf("config: parse %s: component %q and %q write the same changelog %q",
 					path, a.Name, b.Name, pa)
 			}
+		}
+	}
+	return nil
+}
+
+// validateFileUpdates rejects two components bumping the same version in
+// one file: the same path with the same key, an empty key, as the marker
+// and helm updaters carry, counting as equal. Their files are compared as
+// resolved, so two components inheriting the top-level "files" collide
+// too. Both updates would apply to the same value, so the component later
+// in release-me.yaml would silently overwrite the other's version. Only
+// VersioningIndependent is checked: in VersioningLocked and
+// VersioningLinked every component a run releases carries the family's
+// one next version, so both write the same value.
+func validateFileUpdates(path string, cfg Config) error {
+	if cfg.Versioning != VersioningIndependent {
+		return nil
+	}
+	type target struct{ path, key string }
+	owner := make(map[target]string)
+	for _, comp := range cfg.Resolve() {
+		seen := make(map[target]bool)
+		for _, f := range comp.Files {
+			t := target{path: stdpath.Clean(f.Path), key: f.Key}
+			if seen[t] {
+				continue
+			}
+			seen[t] = true
+			if other, ok := owner[t]; ok {
+				where := fmt.Sprintf("%q", t.path)
+				if t.key != "" {
+					where += fmt.Sprintf(" at key %q", t.key)
+				}
+				return fmt.Errorf("config: parse %s: component %q and %q bump the same version in %s, "+
+					"one would overwrite the other's", path, other, comp.Name, where)
+			}
+			owner[t] = comp.Name
 		}
 	}
 	return nil

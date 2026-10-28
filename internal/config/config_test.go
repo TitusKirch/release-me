@@ -735,7 +735,7 @@ func TestLoadAcceptsATagPrefixThatStartsWithAnother(t *testing.T) {
 	t.Parallel()
 	// "web/v" and "web/v2/v" share a start, but a "web/v2/v1.0.0" tag never
 	// parses as a version of web, so the two cannot read each other's tags.
-	path := writeFile(t, "components:\n  web:\n    path: web\n  web/v2:\n    path: web-v2\n")
+	path := writeFile(t, "components:\n  web:\n    path: web\n  web-v2:\n    path: web-v2\n    tag-prefix: web/v2/v\n")
 
 	if _, err := config.Load(path); err != nil {
 		t.Fatalf("Load() error = %v, want nil", err)
@@ -754,6 +754,116 @@ func TestLoadNamesTheComponentAndTheCharacterThatBreaksTheCompareLink(t *testing
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("Load() error = %q, want it to contain %q", err, want)
 		}
+	}
+}
+
+func TestLoadRejectsAComponentNameReleaseMeCannotReadBack(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, component, want string
+	}{
+		{name: "a space breaks the shared release pull request title", component: `"my api"`, want: `" "`},
+		{name: "a comma breaks the Release-Component footer", component: `"api,web"`, want: `","`},
+		{name: "a parenthesis breaks the compare link", component: `"api(v2)"`, want: `"("`},
+		{name: "a hash breaks the compare link", component: `"api#2"`, want: `"#"`},
+		{name: "a slash nests the derived tag prefix", component: `"services/api"`, want: `"/"`},
+		{name: "a non-ASCII letter", component: `"büro"`, want: `"ü"`},
+		{name: "an empty name", component: `""`, want: "is empty"},
+		{name: "a leading dot", component: `".api"`, want: `starts with "."`},
+		{name: "a leading dash", component: `"-api"`, want: `starts with "."`},
+		{name: "a double dot", component: `"api..v2"`, want: `".."`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := writeFile(t, "components:\n  "+tc.component+":\n    path: services/api\n")
+
+			_, err := config.Load(path)
+			if err == nil {
+				t.Fatal("Load() error = nil, want an error")
+			}
+			for _, want := range []string{"component " + tc.component, tc.want} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("Load() error = %q, want it to contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadRejectsTwoIndependentComponentsBumpingTheSameVersion(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, content, want string
+	}{
+		{
+			name: "the same key in one json file",
+			content: "components:\n  api:\n    path: api\n    files:\n      - path: deploy/versions.json\n        updater: json\n        key: version\n" +
+				"  web:\n    path: web\n    files:\n      - path: ./deploy/versions.json\n        updater: json\n        key: version\n",
+			want: `component "api" and "web" bump the same version in "deploy/versions.json" at key "version"`,
+		},
+		{
+			name: "one marker file",
+			content: "components:\n  api:\n    path: api\n    files:\n      - path: VERSION\n" +
+				"  web:\n    path: web\n    files:\n      - path: VERSION\n",
+			want: `component "api" and "web" bump the same version in "VERSION"`,
+		},
+		{
+			name:    "the top-level files both inherit",
+			content: "files:\n  - path: VERSION\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n",
+			want:    `component "api" and "web" bump the same version in "VERSION"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := config.Load(writeFile(t, tc.content))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load() error = %v, want one containing %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsComponentsSharingAFileWhereNoVersionCollides(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, content string
+	}{
+		{
+			name: "independent components bumping their own key of one file",
+			content: "components:\n  api:\n    path: api\n    files:\n      - path: deploy/versions.yaml\n        updater: yaml\n        key: api\n" +
+				"  web:\n    path: web\n    files:\n      - path: deploy/versions.yaml\n        updater: yaml\n        key: web\n",
+		},
+		{
+			name:    "locked components inheriting one marker file",
+			content: "versioning: locked\nfiles:\n  - path: VERSION\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n",
+		},
+		{
+			name:    "linked components inheriting one marker file",
+			content: "versioning: linked\nfiles:\n  - path: VERSION\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := config.Load(writeFile(t, tc.content)); err != nil {
+				t.Fatalf("Load() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsAComponentNameOfLettersDigitsDashUnderscoreAndDot(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, "components:\n  api-v2_core.go:\n    path: services/api\n")
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Components[0].Name; got != "api-v2_core.go" {
+		t.Fatalf("Name = %q, want %q", got, "api-v2_core.go")
 	}
 }
 

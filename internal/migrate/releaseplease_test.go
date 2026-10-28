@@ -238,6 +238,31 @@ func TestFromReleasePleaseNamesANodePackageAfterItsPackageJSON(t *testing.T) {
 	}
 }
 
+func TestFromReleasePleaseRenamesAComponentNameReleaseMeRefusesAndKeepsItsTags(t *testing.T) {
+	t.Parallel()
+	configJSON := `{"separate-pull-requests": true, "release-type": "simple",
+	  "plugins": [{"type": "linked-versions", "groupName": "platform", "components": ["acme/billing", "web"]}],
+	  "packages": {"services/billing": {"package-name": "acme/billing"}, "web": {"component": "web"}}}`
+
+	got, err := migrate.FromReleasePlease([]byte(configJSON), nil, files(nil))
+	if err != nil {
+		t.Fatalf("FromReleasePlease() error = %v", err)
+	}
+
+	cfg := load(t, got.YAML)
+	resolved := cfg.Resolve()
+	if resolved[0].Name != "acme-billing" || resolved[0].TagPrefix != "acme/billing-v" {
+		t.Fatalf("component = %q with tag prefix %q, want acme-billing with acme/billing-v", resolved[0].Name, resolved[0].TagPrefix)
+	}
+	if cfg.Versioning != config.VersioningLocked {
+		t.Fatalf("Versioning = %q, want locked: the plugin lists the package by its release-please name", cfg.Versioning)
+	}
+	want := `package services/billing: renamed component "acme/billing" to "acme-billing"`
+	if !slices.ContainsFunc(got.Warnings, func(w string) bool { return strings.Contains(w, want) }) {
+		t.Fatalf("Warnings = %q, want one containing %q", got.Warnings, want)
+	}
+}
+
 func TestFromReleasePleaseMapsLinkedVersionsOverEveryComponentToLocked(t *testing.T) {
 	t.Parallel()
 	configJSON := `{"plugins": [{"type": "linked-versions", "groupName": "family", "components": ["a", "b"]}],
@@ -362,6 +387,16 @@ func TestFromReleasePleaseRejectsInvalidInput(t *testing.T) {
 			name:       "rejects bare version tags",
 			configJSON: `{"packages": {"a": {"component": "a", "include-component-in-tag": false, "include-v-in-tag": false}}}`,
 			want:       "neither a component nor a v",
+		},
+		{
+			name:       "rejects a component name with nothing release-me allows in one",
+			configJSON: `{"packages": {"a": {"component": "@@"}}}`,
+			want:       `component name "@@" is empty`,
+		},
+		{
+			name:       "rejects two packages renamed to the same component",
+			configJSON: `{"packages": {"a": {"component": "api v2"}, "b": {"component": "api/v2"}}}`,
+			want:       `package a and package b both become component "api-v2"`,
 		},
 	}
 	for _, tc := range cases {

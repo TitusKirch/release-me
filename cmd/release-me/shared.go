@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ostendorf-cloud/release-me/internal/changelog"
 	"github.com/ostendorf-cloud/release-me/internal/config"
@@ -85,9 +86,7 @@ func doPRShared(
 	all := cfg.Resolve()
 	branch := all[0].Branch
 
-	if err := reportSupersededPRs(ctx, f, owner, repoName, all, branch, logger, stdout); err != nil {
-		return err
-	}
+	reportSupersededPRs(ctx, f, owner, repoName, all, branch, logger, stdout)
 
 	members, familyLast, familyHasLast, err := sharedMembers(ctx, dir, cfg, all, owner, repoName, f, logger, stdout)
 	if err != nil {
@@ -144,6 +143,15 @@ func doPRShared(
 		}
 	}
 
+	titled := make([]tagrelease.TitleRelease, 0, len(members))
+	for _, m := range members {
+		titled = append(titled, tagrelease.TitleRelease{Name: m.comp.Name, Version: m.versionStr})
+	}
+	title := tagrelease.SharedTitle(titled)
+	if err := checkSharedTitleLength(title, members); err != nil {
+		return err
+	}
+
 	changelogs := make([]changelogUpdate, 0, len(members))
 	var files []fileUpdate
 	for _, m := range members {
@@ -180,23 +188,42 @@ func doPRShared(
 	// version for a combined heading, and each component's GitHub release
 	// renders its slice exactly the way a release of its own would.
 	parts := make([]string, 0, len(members))
-	titled := make([]tagrelease.TitleRelease, 0, len(members))
 	releases := make([]releasepr.Release, 0, len(members))
 	for i, m := range members {
 		c := changelogs[i]
 		parts = append(parts, fmt.Sprintf("#### %s\n\n%s\n\n%s", m.comp.Name, changelog.RenderHeading(c.version, date, c.compareURL), c.entriesBody))
-		titled = append(titled, tagrelease.TitleRelease{Name: m.comp.Name, Version: m.versionStr})
 		releases = append(releases, releasepr.Release{Name: m.comp.Name, Version: m.versionStr, Tag: m.comp.TagPrefix + m.versionStr})
 	}
 	section := strings.Join(parts, "\n\n") + "\n"
 
-	title := tagrelease.SharedTitle(titled)
 	body := releasepr.SharedBody(releases, guideLabels(cfg), perComponentVersion, notes, versionOverride, section)
 	names := make([]string, 0, len(members))
 	for _, m := range members {
 		names = append(names, m.comp.Name)
 	}
 	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, sharedWho, names, existing, plan, date, title, body, dryRun, stdout)
+}
+
+// checkSharedTitleLength refuses a shared release pull request title past
+// forge.MaxTitleLength, before anything is pushed or written: release
+// reads every component and version back from the title after the merge,
+// so a title the forge rejects or truncates would leave the merged
+// components untagged.
+func checkSharedTitleLength(title string, members []sharedMember) error {
+	n := utf8.RuneCountInString(title)
+	if n <= forge.MaxTitleLength {
+		return nil
+	}
+	names := make([]string, 0, len(members))
+	for _, m := range members {
+		names = append(names, m.comp.Name)
+	}
+	return fmt.Errorf(
+		"release-me: %s: title is %d characters, past the forge's limit of %d, for components %s: "+
+			"release reads the versions back from the title, so it cannot be shortened; "+
+			"release more often so fewer components share one pull request, or use release-pull-request: per-component",
+		sharedWho, n, forge.MaxTitleLength, strings.Join(names, ", "),
+	)
 }
 
 // sharedMembers computes every component's release for a shared release
@@ -335,11 +362,13 @@ func openReleasePR(ctx context.Context, f forge.Forge, owner, repoName, branch, 
 // it, and nothing updates or tags it any more once it is closed by hand. A
 // component whose own branch is sharedBranch, one named "main", has
 // nothing to report. release still tags such a pull request when it is
-// merged rather than closed; see doReleaseShared.
+// merged rather than closed; see doReleaseShared. The report is only a
+// migration hint, so a forge failure listing one branch is logged and the
+// rest still run: it never stops pr from writing the shared one.
 func reportSupersededPRs(
 	ctx context.Context, f forge.Forge, owner, repoName string, all []config.ResolvedComponent, sharedBranch string,
 	logger *slog.Logger, stdout io.Writer,
-) error {
+) {
 	for _, comp := range all {
 		own := config.PerComponentBranch(comp.Name)
 		if own == sharedBranch {
@@ -347,7 +376,9 @@ func reportSupersededPRs(
 		}
 		list, err := f.PullRequests(ctx, owner, repoName, own, "open")
 		if err != nil {
-			return fmt.Errorf("release-me: component %s: list release pull requests on %s: %w", comp.Name, own, err)
+			logger.Warn("could not look for a superseded per-component release pull request, continuing",
+				"component", comp.Name, "head", own, "error", err)
+			continue
 		}
 		for _, pr := range list {
 			logger.Warn("a per-component release pull request is superseded by the shared one",
@@ -357,7 +388,6 @@ func reportSupersededPRs(
 			))
 		}
 	}
-	return nil
 }
 
 // guideLabels returns the label names a release pull request body's guide

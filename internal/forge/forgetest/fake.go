@@ -19,11 +19,13 @@ type Response struct {
 	Err         error
 }
 
-// ListResponse configures what PullRequests returns for one head and state.
+// ListResponse configures what PullRequests returns for one head and state:
+// PullRequests, or Err when it is set.
 type ListResponse struct {
 	Head         string
 	State        string
 	PullRequests []forge.PullRequest
+	Err          error
 }
 
 // CreatePullRequestCall records one call to CreatePullRequest.
@@ -179,6 +181,9 @@ func (f *Fake) PullRequest(_ context.Context, _, _ string, number int) (forge.Pu
 func (f *Fake) PullRequests(_ context.Context, _, _, head, state string) ([]forge.PullRequest, error) {
 	for _, r := range f.ListResponses {
 		if r.Head == head && r.State == state {
+			if r.Err != nil {
+				return nil, r.Err
+			}
 			return r.PullRequests, nil
 		}
 	}

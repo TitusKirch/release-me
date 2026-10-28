@@ -343,7 +343,9 @@ reviewed before it is written: `release-me migrate release-please > release-me.y
 nothing itself.
 
 Each release-please package becomes a component named after its `component`, else its
-`package-name` with a node scope removed, else the name in its `package.json`. Its tags and
+`package-name` with a node scope removed, else the name in its `package.json`. A character a
+component name cannot hold becomes `-`, with a warning, and two packages ending up with the same
+name are an error. Its tags and
 changelog stay where release-please put them, through `tag-prefix` and `changelog`, so
 release-me continues from the existing tags and changelogs. A single root package with plain
 `vX.Y.Z` tags becomes the implicit `main` component instead. It also carries over:
@@ -435,7 +437,10 @@ version forward but never backward. On a shared release pull request with
 component first, `release-as api 2.0.0`, checked against that component's last tag; with no
 component named it applies to the one component the pull request releases and is refused as
 ambiguous when it releases several. A component the pull request does not release is refused
-too. Everywhere else there is one version to force, and naming a component is refused.
+too. Which components it releases is read from the body's `#### <name>` headings, the comment
+command's source of truth: a heading added or deleted by hand changes what the command accepts,
+and the recompute that follows still applies an override only to a component the pull request
+actually releases. Everywhere else there is one version to force, and naming a component is refused.
 `release-notes` takes the rest of the comment, verbatim, as the new content of the
 [notes block](#notes-block), shared by every component of a shared release pull request; a
 fence terminator inside either argument is escaped so it can never plant a second, different
@@ -681,9 +686,17 @@ something to release this run, each at its own version for `independent` and at 
 for `linked`, with its own `CHANGELOG.md` section and its own `files` bumped to its own version.
 A component with nothing to release is left out and printed as `nothing to release`, the same
 as it gets no pull request of its own per component. Two components listing the same file
-each update their own `key` in it. The title names every component and its version, in
-`release-me.yaml`'s order, `chore: release api v1.3.0, web v0.3.1`, the same as release-please's
-grouped pull request names the packages in its body; the body starts with
+each update their own `key` in it. Two `independent` components bumping the same `key` of one
+file, or both a `marker` or `helm` file, inherited top-level `files` included, are a
+configuration error, since one would overwrite the other's version; `locked` and `linked`
+write the one family version there and allow it. The title names every component and its
+version, in `release-me.yaml`'s order, `chore: release api v1.3.0, web v0.3.1`, the same as
+release-please's grouped pull request names the packages in its body. GitHub caps a title at
+256 characters, so how many components fit depends on their names and versions, about eight
+with 20-character names: `pr` refuses a longer title before it pushes or writes anything,
+naming its length and the components, since `release` could not read it back after the merge.
+Release more often, so fewer components carry changes at once, or switch to `per-component`.
+The body starts with
 `Release api v1.3.0, web v0.3.1`, the guide names every tag merging creates, and the changelog
 has one `#### <name>` section per component, each with that component's own heading and compare
 link. On merge, `release` reads the components and versions back from the title and tags each
@@ -704,7 +717,11 @@ since the shared pull request carries every component; `next` and `changelog` ke
 
 Switching to `shared` while per-component pull requests are open leaves them open: every `pr`
 run prints each one on `release-me/<name>` as superseded by the shared one, to close by hand,
-and `release` still tags one that is merged instead, so it never stays pending. Switching back
+and `release` still tags one that is merged instead, so it never stays pending. `release` only
+looks for one while the component's own `release-me/<name>` branch exists on the remote, one
+`git ls-remote` per run. A repository that deletes head branches on merge loses that branch as
+the pull request merges, so merge the switch only after `release` has tagged every
+per-component pull request merged before it, or tag a missed one by hand. Switching back
 to `per-component` does not read `release-me/main` any more: merge or close the shared pull
 request first.
 
@@ -823,7 +840,11 @@ files:
   one component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the shape
   every example above already is. A configured component gets tag prefix `<name>/v`, branch
   `release-me/<name>`, or `release-me/main` when the release pull request is shared, changelog
-  `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`.
+  `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A name holds ASCII letters,
+  digits, `-`, `_` and `.` only and does not start with `.` or `-` or contain `..`; anything
+  else is a configuration error naming the component and the character, since the name has to
+  survive the tag prefix, the branch, the shared pull request title release reads back, the
+  [Release-Component footer](#release-component-footer) and the compare link.
   `tag-prefix` replaces the derived prefix, for a component whose existing tags follow
   another scheme, such as `api@v1.4.0`: release-me continues from its last such tag instead of
   starting over at `initial-version`. The version is appended to the prefix as it is. A prefix

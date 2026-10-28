@@ -83,7 +83,9 @@ release, which release-please has no equivalent for.
 **Release pull requests** follow release-please's `separate-pull-requests`, also silently:
 left out or `false`, its default, translates to `release-pull-request: shared`, one release pull
 request for every package as before; `true` keeps release-me's default of one per component.
-`locked` always shares one. Confirm the translated choice with the human alongside the
+`locked` always shares one. A shared title names every component and version and must fit
+GitHub's 256 characters, about eight 20-character names, or `pr` refuses it: with more packages,
+recommend `per-component`. Confirm the translated choice with the human alongside the
 versioning mode.
 
 Done when the table has exactly one row per warning line, every row has an action, and with

@@ -64,7 +64,9 @@ Four choices belong to the human; ask each once, recommendation first:
   every component releases together).
 - **Release pull requests**, only with more than one component and not `locked`, which always
   shares one: `per-component` (the default, one each) or `shared` (one for every component with
-  something to release), written as `release-pull-request: shared`.
+  something to release), written as `release-pull-request: shared`. A shared title names every
+  component and version and must fit GitHub's 256 characters, about eight 20-character names;
+  `pr` refuses a longer one, so recommend `per-component` for a larger family.
 - **Pre-releases:** wanted, or turned off with `alpha`, `beta` and `rc` set to `false` under
   `labels`, so the repository needs only the pending and tagged labels.
 - **Token:** a GitHub App (recommended: its release pull requests trigger checks and the

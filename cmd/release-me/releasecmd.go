@@ -4,10 +4,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
+	"os/exec"
+	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
@@ -74,7 +77,7 @@ func doRelease(ctx context.Context, dir string, cfg config.Config, component str
 		return doReleaseLocked(ctx, cfg, owner, repoName, f, labels, dryRun, logger, stdout)
 	}
 	if sharedOutsideLocked(cfg) {
-		return doReleaseShared(ctx, cfg, owner, repoName, f, labels, dryRun, logger, stdout)
+		return doReleaseShared(ctx, dir, cfg, owner, repoName, f, labels, dryRun, logger, stdout)
 	}
 
 	any := false
@@ -142,9 +145,13 @@ func doReleaseLocked(
 // version, then every merged, still pending pull request on a component's
 // own branch, "release-me/<name>": one merged right before the switch to
 // "release-pull-request: shared" still gets its tag and release instead of
-// staying pending forever.
+// staying pending forever. The sweep only looks at a component whose own
+// branch still exists on the remote: a repository that never ran per
+// component, or whose leftover branches are merged and deleted, pays one
+// "git ls-remote" instead of listing every component's ever growing
+// closed pull request history on every run.
 func doReleaseShared(
-	ctx context.Context, cfg config.Config, owner, repoName string, f forge.Forge, labels tagrelease.Labels,
+	ctx context.Context, dir string, cfg config.Config, owner, repoName string, f forge.Forge, labels tagrelease.Labels,
 	dryRun bool, logger *slog.Logger, stdout io.Writer,
 ) error {
 	resolved := cfg.Resolve()
@@ -158,9 +165,18 @@ func doReleaseShared(
 	if err != nil {
 		return fmt.Errorf("release-me: %w", err)
 	}
+	ownBranches, err := remoteBranches(ctx, dir, "release-me/*")
+	if err != nil {
+		return fmt.Errorf("release-me: %s: list the per-component release branches: %w", sharedWho, err)
+	}
 	for _, comp := range comps {
 		own := config.PerComponentBranch(comp.Name)
 		if own == branch {
+			continue
+		}
+		if !ownBranches[own] {
+			logger.Debug("no per-component release branch on the remote, skipping its leftover sweep",
+				"component", comp.Name, "head", own)
 			continue
 		}
 		comp.Branch = own
@@ -183,4 +199,35 @@ func doReleaseShared(
 		reportReleased(ctx, stdout, dryRun, r)
 	}
 	return nil
+}
+
+// remoteBranches returns the branches on origin matching pattern, a glob
+// under refs/heads/, as a set of names without the refs/heads/ prefix. It
+// asks the push URL, the same remote pr pushes the release branches to and
+// compares them against. The URL can carry a credential, so an error names
+// the remote "origin" instead of it.
+func remoteBranches(ctx context.Context, dir, pattern string) (map[string]bool, error) {
+	pushURL, err := gitOutput(ctx, dir, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		return nil, err
+	}
+	ref := "refs/heads/" + pattern
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--heads", pushURL, ref)
+	cmd.Dir = dir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("git ls-remote --heads origin %s: %w: %s",
+			ref, err, strings.ReplaceAll(strings.TrimSpace(stderr.String()), pushURL, "origin"))
+	}
+	branches := make(map[string]bool)
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		_, ref, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+		branches[strings.TrimPrefix(ref, "refs/heads/")] = true
+	}
+	return branches, nil
 }

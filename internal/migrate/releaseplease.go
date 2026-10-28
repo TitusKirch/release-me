@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ostendorf-cloud/release-me/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -146,6 +147,10 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		if err != nil {
 			return Result{}, err
 		}
+		if i := slices.IndexFunc(components, func(o component) bool { return o.name == c.name }); i >= 0 {
+			return Result{}, fmt.Errorf("migrate: package %s and package %s both become component %q, "+
+				"give one of them a \"component\" of its own", components[i].path, c.path, c.name)
+		}
 		components = append(components, c)
 	}
 	// The manifest keys are cleaned once, so "./web", "web/" and "web" all
@@ -212,7 +217,11 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 
 // component is one translated release-please package.
 type component struct {
-	name              string
+	name string
+	// rpName is the name release-please knows the package by, which a
+	// linked-versions plugin lists: name itself unless sanitizeName had to
+	// change it.
+	rpName            string
 	path              string
 	tagPrefix         string
 	changelog         string
@@ -296,8 +305,19 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		}
 	}
 
+	rpName := name
+	name = sanitizeName(name)
+	if err := config.ValidateComponentName(name); err != nil {
+		return component{}, fmt.Errorf("migrate: package %s: component name %q %w", p.path, rpName, err)
+	}
+	if name != rpName {
+		warn("package %s: renamed component %q to %q, release-me allows only letters, digits, \"-\", \"_\" and \".\" "+
+			"in a component name; its tags keep their prefix %q", p.path, rpName, name, prefix)
+	}
+
 	c := component{
 		name:              name,
+		rpName:            rpName,
 		path:              p.path,
 		tagPrefix:         prefix,
 		changelog:         repoPath(p.path, changelogPath),
@@ -404,7 +424,7 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 			continue
 		}
 		all := len(plugin.Components) == len(components) && slices.IndexFunc(components, func(c component) bool {
-			return !slices.Contains(plugin.Components, c.name)
+			return !slices.Contains(plugin.Components, c.rpName)
 		}) == -1
 		if !all || versioning != "" {
 			warn("plugins: linked-versions: release-me links every component or none, left out")
@@ -430,6 +450,26 @@ func label(raw json.RawMessage, fallback, key string, warn func(string, ...any))
 		warn("%s: release-me carries one label, kept %q", key, strings.TrimSpace(labels[0]))
 	}
 	return strings.TrimSpace(labels[0]), nil
+}
+
+// sanitizeName turns a release-please component name into one
+// config.ValidateComponentName accepts: every character it refuses becomes
+// "-", a leading "." or "-" is dropped and ".." collapses to ".". A name
+// already valid comes back unchanged.
+func sanitizeName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('-')
+	}
+	out := b.String()
+	for strings.Contains(out, "..") {
+		out = strings.ReplaceAll(out, "..", ".")
+	}
+	return strings.TrimLeft(out, ".-")
 }
 
 // packageJSONName reads the name field of a package.json, "" when the file
