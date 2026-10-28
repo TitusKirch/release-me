@@ -266,3 +266,61 @@ func TestRunChangelogLinksTheHeadingToTheGitHubCompareView(t *testing.T) {
 		t.Fatalf("stdout = %q, want it to start with %q", stdout.String(), want)
 	}
 }
+
+// parenForge is a forgetest.Fake whose compare view carries parentheses,
+// the shape a "(api)v" tag prefix produced before config rejected it: the
+// heading it renders does not read back through changelog.ParseHeading.
+type parenForge struct {
+	*forgetest.Fake
+}
+
+func (parenForge) CompareURL(owner, repo, base, head string) string {
+	return "https://github.com/" + owner + "/" + repo + "/compare/(api)" + base + "...(api)" + head
+}
+
+// TestDoPRSettlesWhenTheHeadingItWritesDoesNotReadBack guards against a
+// push loop: a heading that does not parse would otherwise count as
+// changed on every run, and every push would write that same unreadable
+// heading again. The dates are pinned a second apart and pushes counted
+// through the reflog, as in
+// TestDoPRPushesOnlyOnceForAnInitialVersionWithBuildMetadata, so a push of
+// a byte identical commit is still caught.
+func TestDoPRSettlesWhenTheHeadingItWritesDoesNotReadBack(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	runGit(t, origin, "config", "core.logAllRefUpdates", "true")
+	commitEntry(t, dir, "chore: initial commit")
+	tagRepo(t, dir)
+	commitEntry(t, dir, "feat: add the compare link")
+
+	cfg := config.Default()
+	f := newFake()
+	t.Setenv("GIT_AUTHOR_DATE", "2026-01-01T00:00:00+00:00")
+	t.Setenv("GIT_COMMITTER_DATE", "2026-01-01T00:00:00+00:00")
+	if err := doPR(t.Context(), dir, cfg, "", parenForge{f}, discardLogger(), false, io.Discard); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	if _, ok := changelog.ParseHeading(showBareBranchFile(t, origin, "CHANGELOG.md")); ok {
+		t.Fatal("CHANGELOG.md heading reads back, want the unreadable heading this test is about")
+	}
+	created := f.CreatedPullRequests[0]
+	pushesAfterCreate := bareBranchPushCount(t, origin)
+
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+			{Number: 1, Title: created.Title, Body: created.Body, Labels: []string{"release: pending"}, HeadSHA: bareBranchSHA(t, origin)},
+		}},
+	}
+	t.Setenv("GIT_AUTHOR_DATE", "2026-01-01T00:00:01+00:00")
+	t.Setenv("GIT_COMMITTER_DATE", "2026-01-01T00:00:01+00:00")
+	var rerun bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", parenForge{f}, discardLogger(), false, &rerun); err != nil {
+		t.Fatalf("doPR() rerun error = %v", err)
+	}
+
+	if got := bareBranchPushCount(t, origin); got != pushesAfterCreate {
+		t.Fatalf("release branch pushes = %d, want %d (no push for a heading no push can make readable)", got, pushesAfterCreate)
+	}
+	if !strings.Contains(rerun.String(), "release pull request up to date") {
+		t.Fatalf("stdout = %q, want it to report up to date", rerun.String())
+	}
+}
