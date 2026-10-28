@@ -49,19 +49,24 @@ type Result struct {
 //
 // A usable "Release-As" footer among changes, see ReleaseAs, wins outright
 // over the computed bump and the initial version, and releases even when
-// no change bumps the version.
-func Next(last Semver, lastOK bool, changes []Change, initialVersion string, bumpMinorPreMajor bool) (result Result, released bool) {
-	if forced, ok, _ := ReleaseAs(last, lastOK, changes); ok {
-		return Result{Version: forced.String(), Bump: BumpForced, Reason: "Release-As footer"}, true
+// no change bumps the version. refused lists every footer value ReleaseAs
+// could not use, whatever Next returns otherwise: Next never logs, so the
+// caller reports them, once per computation.
+func Next(
+	last Semver, lastOK bool, changes []Change, initialVersion string, bumpMinorPreMajor bool,
+) (result Result, released bool, refused []Refusal) {
+	forced, ok, refused := ReleaseAs(last, lastOK, changes)
+	if ok {
+		return Result{Version: forced.String(), Bump: BumpForced, Reason: "Release-As footer"}, true, refused
 	}
 
 	bump, reason := highestBump(changes)
 	if bump == BumpNone {
-		return Result{}, false
+		return Result{}, false, refused
 	}
 
 	if !lastOK {
-		return Result{Version: initialVersion, Bump: BumpInitial, Reason: "initial version"}, true
+		return Result{Version: initialVersion, Bump: BumpInitial, Reason: "initial version"}, true, refused
 	}
 
 	next := last
@@ -81,7 +86,7 @@ func Next(last Semver, lastOK bool, changes []Change, initialVersion string, bum
 	case BumpNone, BumpInitial, BumpForced:
 		// unreachable: highestBump never returns these
 	}
-	return Result{Version: next.String(), Bump: bump, Reason: reason}, true
+	return Result{Version: next.String(), Bump: bump, Reason: reason}, true, refused
 }
 
 // Changed reports whether changes contains at least one change that bumps
@@ -181,8 +186,11 @@ func ParseForced(value string, last Semver, lastOK, allowPreRelease bool) (Semve
 // stable tag, so it would force the same pre-release again after it
 // shipped; a pre-release label on the release pull request builds on the
 // forced version instead. ok is false when no value is usable; refused
-// lists every value that is not, in the order changes carries them.
+// lists every distinct value that is not, once, in the order changes
+// first carries it, so a commit attributed to several components of one
+// family is refused once.
 func ReleaseAs(last Semver, lastOK bool, changes []Change) (forced Semver, ok bool, refused []Refusal) {
+	seen := make(map[string]bool)
 	for _, c := range changes {
 		if c.ReleaseAs == "" {
 			continue
@@ -190,6 +198,10 @@ func ReleaseAs(last Semver, lastOK bool, changes []Change) (forced Semver, ok bo
 		v, err := ParseForced(c.ReleaseAs, last, lastOK, false)
 		switch {
 		case err != nil:
+			if seen[c.ReleaseAs] {
+				continue
+			}
+			seen[c.ReleaseAs] = true
 			reason := err.Error()
 			if errors.Is(err, ErrPreRelease) {
 				reason += ", set one with a pre-release label instead"
