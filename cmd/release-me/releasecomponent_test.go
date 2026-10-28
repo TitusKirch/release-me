@@ -196,13 +196,39 @@ func TestComputeReleaseAttributesAnEmptyOrNamedCommitToComponents(t *testing.T) 
 			want: map[string]string{"duxt": "0.3.1", "api": "0.3.1"},
 		},
 		{
-			name:   "an unknown name is ignored with a warning, the empty commit counting for every component",
+			name:   "an empty commit naming only an unknown component counts for none, with a warning",
 			source: config.ChangelogSourceFirstParent,
 			setup: func(t *testing.T, dir string) {
 				commitEntry(t, dir, "fix: retag the broken build\n\nRelease-Component: duxtt")
 			},
-			want:     map[string]string{"duxt": "0.3.1", "api": "0.3.1"},
-			wantWarn: `ignoring a Release-Component footer: no component has that name" commit=`,
+			want:     map[string]string{},
+			wantWarn: `level=WARN msg="Release-Component footer names no configured component`,
+		},
+		{
+			name:   "an empty commit naming a known and an unknown component counts for the known one",
+			source: config.ChangelogSourceFirstParent,
+			setup: func(t *testing.T, dir string) {
+				commitEntry(t, dir, "fix: retag the broken build\n\nRelease-Component: duxt, apii")
+			},
+			want:     map[string]string{"duxt": "0.3.1"},
+			wantWarn: `value=apii components=duxt,api`,
+		},
+		{
+			name:   "a fenced footer quoted in a pull request body attributes nothing",
+			source: config.ChangelogSourceFirstParent,
+			setup: func(t *testing.T, dir string) {
+				mergeCommitWithFiles(t, dir, 28, "readme", "docs: explain the footer", map[string]string{
+					"packages/api/README.md": "api\n\nSee the footer.\n",
+				})
+			},
+			responses: map[int]forgetest.Response{
+				28: {PullRequest: forge.PullRequest{
+					Title: "fix(api): explain the footer",
+					Body:  "Attribute a docs only commit:\n\n```text\nfeat(duxt): document the layout prop\n\nRelease-Component: duxt\n```",
+					URL:   "https://example.invalid/pull/28",
+				}},
+			},
+			want: map[string]string{"api": "0.3.1"},
 		},
 		{
 			name:   "an empty commit's Release-As footer forces only the named component",
@@ -295,7 +321,7 @@ func TestComputeReleaseInASingleComponentRepositoryWarnsAboutAFooterNamingACompo
 			if !released || rel.version.Version != "0.1.1" {
 				t.Fatalf("released = %v, version = %q, want 0.1.1", released, rel.version.Version)
 			}
-			warned := strings.Contains(logs.String(), "ignoring a Release-Component footer")
+			warned := strings.Contains(logs.String(), "Release-Component footer names no configured component")
 			if warned != tc.wantWarn {
 				t.Fatalf("logs = %q, want a warning %v", logs.String(), tc.wantWarn)
 			}

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
@@ -74,8 +75,11 @@ func (a *attribution) filter(ctx context.Context, entries []history.Entry, comp 
 	return filtered, nil
 }
 
-// named returns the configured components e's "Release-Component" footers
-// name, logging and dropping every name no component carries.
+// named returns every component name e's "Release-Component" footers name,
+// each once, warning about every name no component carries. An unknown
+// name stays in the result: history.Counts matches it against no
+// component, so an empty commit naming only unknown components counts for
+// none instead of for every one.
 func (a *attribution) named(ctx context.Context, e history.Entry, comp config.ResolvedComponent) ([]string, error) {
 	texts := []string{entryText(e)}
 	if e.PullRequestNumber > 0 {
@@ -106,7 +110,6 @@ func (a *attribution) named(ctx context.Context, e history.Entry, comp config.Re
 			}
 			if !slices.Contains(a.known, name) {
 				a.warnUnknown(e, name)
-				continue
 			}
 			named = append(named, name)
 		}
@@ -115,19 +118,22 @@ func (a *attribution) named(ctx context.Context, e history.Entry, comp config.Re
 }
 
 // warnUnknown logs a "Release-Component" footer naming no configured
-// component, once per commit and name, never failing the run: the name is
-// ignored, the same way a refused "Release-As" footer is.
+// component, once per commit and name, never failing the run, the same way
+// a refused "Release-As" footer is: the name reaches no component, so the
+// commit counts only for the components its files or its other names
+// reach, an empty commit for none.
 func (a *attribution) warnUnknown(e history.Entry, name string) {
 	key := e.SHA + "\x00" + name
 	if a.warned[key] {
 		return
 	}
 	a.warned[key] = true
-	attrs := []any{"commit", e.SHA, "value", name}
+	attrs := []any{"commit", e.SHA, "value", name, "components", strings.Join(a.known, ",")}
 	if e.PullRequestNumber > 0 {
 		attrs = append(attrs, "pull_request", e.PullRequestNumber)
 	}
-	a.logger.Warn("ignoring a Release-Component footer: no component has that name", attrs...)
+	a.logger.Warn("Release-Component footer names no configured component: the name reaches no component, "+
+		"an empty commit naming only unknown components counts for none", attrs...)
 }
 
 // pullRequestCache is a forge.Forge that reads every pull request once:
