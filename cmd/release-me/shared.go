@@ -201,7 +201,7 @@ func doPRShared(
 
 // sharedMembers computes every component's release for a shared release
 // pull request, in release-me.yaml's order, printing "nothing to release"
-// for each one left out: computeRelease on its own in
+// for each one left out: computeReleases, every component on its own, in
 // VersioningIndependent, the family's releases in VersioningLinked. last
 // and hasLast are the family's highest released version, the one a
 // linked family's override is checked against.
@@ -228,16 +228,16 @@ func sharedMembers(
 		return members, last, hasLast, nil
 	}
 
-	for _, comp := range all {
-		rel, released, err := computeRelease(ctx, dir, cfg, comp, owner, repoName, f, logger)
-		if err != nil {
-			return nil, version.Semver{}, false, err
-		}
-		if !released {
-			printLine(stdout, comp.Name, true, "nothing to release")
+	results, err := computeReleases(ctx, dir, cfg, all, owner, repoName, f, logger)
+	if err != nil {
+		return nil, version.Semver{}, false, err
+	}
+	for _, r := range results {
+		if !r.released {
+			printLine(stdout, r.comp.Name, true, "nothing to release")
 			continue
 		}
-		members = append(members, newSharedMember(comp, rel, []string{comp.TagPrefix}))
+		members = append(members, newSharedMember(r.comp, r.rel, []string{r.comp.TagPrefix}))
 	}
 	return members, version.Semver{}, false, nil
 }

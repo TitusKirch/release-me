@@ -29,9 +29,9 @@ type Message struct {
 	// internal/version decides whether it is a version the next release
 	// may take.
 	ReleaseAs string
-	// Components are the component names "Release-Component:" footers in
-	// the body name, in the order written, each once, nil when the body
-	// carries none. Parse never checks them against a configuration: the
+	// Components are the component names "Release-Component:" trailers
+	// in the body's trailer block name, see Trailers, in the order
+	// written, each once, nil when the block carries none. Parse never checks them against a configuration: the
 	// command layer decides which names are components.
 	Components []string
 }
@@ -52,9 +52,9 @@ var headerPattern = regexp.MustCompile(`^([a-z]+)(\(([^()]+)\))?(!)?:\s*(.+)$`)
 // case-insensitive as in release-please, sets ReleaseAs; with more than
 // one in the block, the last one counts, the way git reads a repeated
 // trailer.
-// A "Release-Component:" footer, key case-insensitive too, sets
-// Components; it may repeat and each value may list several names
-// separated by commas, every one of them counts.
+// A "Release-Component:" trailer in the same block, key case-insensitive
+// too, sets Components; it may repeat and each value may list several
+// names separated by commas, every one of them counts.
 func Parse(text, fallbackType string) Message {
 	header, body, _ := strings.Cut(text, "\n")
 	header = strings.TrimSpace(header)
@@ -64,31 +64,8 @@ func Parse(text, fallbackType string) Message {
 		msg.Breaking = true
 	}
 	msg.ReleaseAs = releaseAsFooter(text)
-	msg.Components = releaseComponentFooters(body)
+	msg.Components = releaseComponentFooters(text)
 	return msg
-}
-
-// releaseComponentPattern matches a "Release-Component:" footer line in
-// git trailer form, the key at the start of the line in any case.
-var releaseComponentPattern = regexp.MustCompile(`(?i)^release-component:[ \t]*(.*)$`)
-
-// releaseComponentFooters returns every component name the
-// "Release-Component:" footer lines in body name, split on commas, trimmed,
-// each once in the order first written, nil when there is none.
-func releaseComponentFooters(body string) []string {
-	var names []string
-	for _, line := range strings.Split(body, "\n") {
-		m := releaseComponentPattern.FindStringSubmatch(strings.TrimSpace(line))
-		if m == nil {
-			continue
-		}
-		for _, name := range strings.Split(m[1], ",") {
-			if name = strings.TrimSpace(name); name != "" && !slices.Contains(names, name) {
-				names = append(names, name)
-			}
-		}
-	}
-	return names
 }
 
 // Trailer is one "Key: value" line of a message's trailer block, the key
@@ -151,6 +128,25 @@ func releaseAsFooter(text string) string {
 		}
 	}
 	return value
+}
+
+// releaseComponentFooters returns every component name the
+// "Release-Component" trailers in text's trailer block name, key in any
+// case, split on commas, trimmed, each once in the order first written,
+// nil when there is none.
+func releaseComponentFooters(text string) []string {
+	var names []string
+	for _, t := range Trailers(text) {
+		if !strings.EqualFold(t.Key, "Release-Component") {
+			continue
+		}
+		for _, name := range strings.Split(t.Value, ",") {
+			if name = strings.TrimSpace(name); name != "" && !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 func parseHeader(header, fallbackType string) Message {
