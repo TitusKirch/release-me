@@ -160,6 +160,17 @@ func TestCountsAttributesACommitThroughItsFilesAndItsFooter(t *testing.T) {
 			named: []string{"duxt"},
 			want:  map[string]bool{"duxt": true, "api": false, "main": true},
 		},
+		{
+			name:  "an empty commit naming only an unknown component counts for none",
+			named: []string{"duxtt"},
+			want:  map[string]bool{"duxt": false, "api": false, "main": true},
+		},
+		{
+			name:  "a commit naming only an unknown component still counts through its files",
+			paths: []string{"packages/api/handler.go"},
+			named: []string{"duxtt"},
+			want:  map[string]bool{"duxt": false, "api": true, "main": true},
+		},
 	}
 	components := map[string]string{"duxt": "packages/duxt", "api": "packages/api", "main": "."}
 	for _, tc := range cases {

@@ -42,11 +42,41 @@ func compareURL(f forge.Forge, owner, repoName, fromTag, toTag string) string {
 	return f.CompareURL(owner, repoName, fromTag, toTag)
 }
 
-// computeRelease wires history, the forge and the conventional and version
-// packages into one release for comp. released is false when there is
+// componentRelease is one component's outcome of computeReleases.
+type componentRelease struct {
+	comp     config.ResolvedComponent
+	rel      release
+	released bool
+}
+
+// computeReleases computes every one of components' releases on its own,
+// for config.VersioningIndependent, in order. The components share one
+// attribution and with it one pullRequestCache, the way gatherFamily's
+// members do: the loop is one computation with no write in between, so a
+// pull request belonging to several components is read once and an
+// unknown footer name warns once.
+func computeReleases(
+	ctx context.Context, dir string, cfg config.Config, components []config.ResolvedComponent, owner, repoName string, f forge.Forge, logger *slog.Logger,
+) ([]componentRelease, error) {
+	attr := newAttribution(dir, cfg, owner, repoName, newPullRequestCache(f), logger)
+	out := make([]componentRelease, 0, len(components))
+	for _, comp := range components {
+		rel, released, err := computeReleaseWith(ctx, dir, cfg, comp, attr, logger)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, componentRelease{comp: comp, rel: rel, released: released})
+	}
+	return out, nil
+}
+
+// computeReleaseWith wires history, the forge and the conventional and
+// version packages into one release for comp, reading its entries and
+// their pull requests through attr, which may be shared with other
+// components of the same computation. released is false when there is
 // nothing to release.
-func computeRelease(
-	ctx context.Context, dir string, cfg config.Config, comp config.ResolvedComponent, owner, repoName string, f forge.Forge, logger *slog.Logger,
+func computeReleaseWith(
+	ctx context.Context, dir string, cfg config.Config, comp config.ResolvedComponent, attr *attribution, logger *slog.Logger,
 ) (release, bool, error) {
 	tag, last, hasTag, err := history.LastTag(ctx, dir, comp.TagPrefix)
 	if err != nil {
@@ -62,14 +92,13 @@ func computeRelease(
 	if err != nil {
 		return release{}, false, fmt.Errorf("release-me: component %s: history: %w", comp.Name, err)
 	}
-	f = newPullRequestCache(f)
-	raw, err = newAttribution(dir, cfg, owner, repoName, f, logger).filter(ctx, raw, comp)
+	raw, err = attr.filter(ctx, raw, comp)
 	if err != nil {
 		return release{}, false, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
 	logger.Debug("history entries", "component", comp.Name, "count", len(raw), "source", comp.ChangelogSource)
 
-	changes, entries, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType, comp.ChangelogSource, dir)
+	changes, entries, err := assembleEntries(ctx, attr.forge, attr.owner, attr.repoName, raw, cfg.FallbackType, comp.ChangelogSource, attr.subCommits)
 	if err != nil {
 		return release{}, false, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
@@ -109,10 +138,10 @@ func walkEntries(ctx context.Context, dir, since, source string) ([]history.Entr
 // config.ChangelogSourceAll takes a different shape, assembleAllEntries's:
 // raw already carries one entry per commit, with the pull request it
 // belongs to, if any, resolved once per group instead of once per entry.
-// dir is unused outside config.ChangelogSourceNested, where it reads a
-// merge commit's sub commits.
+// subs reads a merge commit's sub commits in config.ChangelogSourceNested;
+// every other mode leaves it unused, so it may be nil there.
 func assembleEntries(
-	ctx context.Context, f forge.Forge, owner, repoName string, raw []history.Entry, fallbackType, source, dir string,
+	ctx context.Context, f forge.Forge, owner, repoName string, raw []history.Entry, fallbackType, source string, subs subCommitReader,
 ) ([]version.Change, []changelog.Entry, error) {
 	if source == config.ChangelogSourceAll {
 		return assembleAllEntries(ctx, f, owner, repoName, raw, fallbackType)
@@ -122,7 +151,7 @@ func assembleEntries(
 	entries := make([]changelog.Entry, 0, len(raw))
 
 	for _, e := range raw {
-		c, en, err := processEntry(ctx, f, owner, repoName, e, fallbackType, source, dir)
+		c, en, err := processEntry(ctx, f, owner, repoName, e, fallbackType, source, subs)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -136,7 +165,7 @@ func assembleEntries(
 // changelog entries. In config.ChangelogSourceNested, a merge entry with no
 // override additionally collects its merge's sub commits.
 func processEntry(
-	ctx context.Context, f forge.Forge, owner, repoName string, e history.Entry, fallbackType, source, dir string,
+	ctx context.Context, f forge.Forge, owner, repoName string, e history.Entry, fallbackType, source string, subs subCommitReader,
 ) ([]version.Change, []changelog.Entry, error) {
 	text, url := entryText(e), ""
 
@@ -174,7 +203,7 @@ func processEntry(
 	}
 
 	if source == config.ChangelogSourceNested && e.PullRequestNumber > 0 {
-		subChanges, subEntries, err := nestedSubEntries(ctx, dir, e.SHA, fallbackType)
+		subChanges, subEntries, err := nestedSubEntries(ctx, subs, e.SHA, fallbackType)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -185,19 +214,23 @@ func processEntry(
 	return changes, []changelog.Entry{entry}, nil
 }
 
-// nestedSubEntries parses the sub commits of the merge commit sha, through
-// history.SubCommits, each on its own, oldest first. It returns no error
-// for a commit with no sub commits, the nil slice a single parent commit
-// yields.
-func nestedSubEntries(ctx context.Context, dir, sha, fallbackType string) ([]version.Change, []changelog.Entry, error) {
-	subs, err := history.SubCommits(ctx, dir, sha)
+// subCommitReader returns the sub commits of the merge commit sha, the
+// shape history.SubCommits returns. attribution.subCommits is one, reading
+// each merge once.
+type subCommitReader func(ctx context.Context, sha string) ([]history.Entry, error)
+
+// nestedSubEntries parses the sub commits of the merge commit sha, read
+// through subs, each on its own, oldest first. It returns no error for a
+// commit with no sub commits, the nil slice a single parent commit yields.
+func nestedSubEntries(ctx context.Context, subs subCommitReader, sha, fallbackType string) ([]version.Change, []changelog.Entry, error) {
+	commits, err := subs(ctx, sha)
 	if err != nil {
-		return nil, nil, fmt.Errorf("release-me: merge commit %s: sub commits: %w", sha, err)
+		return nil, nil, err
 	}
 
-	changes := make([]version.Change, 0, len(subs))
-	entries := make([]changelog.Entry, 0, len(subs))
-	for _, s := range subs {
+	changes := make([]version.Change, 0, len(commits))
+	entries := make([]changelog.Entry, 0, len(commits))
+	for _, s := range commits {
 		msg := conventional.Parse(entryText(s), fallbackType)
 		changes = append(changes, version.Change{Type: msg.Type, Breaking: msg.Breaking, ReleaseAs: msg.ReleaseAs})
 		entries = append(entries, changelog.Entry{
