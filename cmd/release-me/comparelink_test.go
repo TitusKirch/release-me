@@ -324,3 +324,70 @@ func TestDoPRSettlesWhenTheHeadingItWritesDoesNotReadBack(t *testing.T) {
 		t.Fatalf("stdout = %q, want it to report up to date", rerun.String())
 	}
 }
+
+// TestDoPRRewritesAReleasePleaseHeadingOnceAndThenSettles covers a
+// repository migrated from release-please whose open release branch still
+// carries release-please's top heading, "## [0.2.0](url) (date)", with no
+// "v" before the version. That heading does not read back, while the one
+// release-me writes does, so the first run pushes once, rewriting it into
+// release-me's own shape, and the run after that pushes nothing.
+func TestDoPRRewritesAReleasePleaseHeadingOnceAndThenSettles(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	runGit(t, origin, "config", "core.logAllRefUpdates", "true")
+	commitEntry(t, dir, "chore: initial commit")
+	tagRepo(t, dir)
+	commitEntry(t, dir, "feat: add the compare link")
+
+	cfg := config.Default()
+	f := newFake()
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, io.Discard); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	title, body := f.CreatedPullRequests[0].Title, f.CreatedPullRequests[0].Body
+
+	clone := t.TempDir()
+	runGit(t, clone, "clone", "-q", "--branch", mainBranch, origin, ".")
+	content := showBareBranchFile(t, origin, "CHANGELOG.md")
+	heading, _, _ := strings.Cut(content[strings.Index(content, "## "):], "\n")
+	releasePlease := "## [0.2.0](https://github.com/owner/repo/compare/v0.1.0...v0.2.0) (2026-10-01)"
+	writeAndCommit(t, clone, "CHANGELOG.md", strings.Replace(content, heading, releasePlease, 1), "chore: release 0.2.0")
+	runGit(t, clone, "push", "-q", "--force", "origin", "HEAD:"+mainBranch)
+	if _, ok := changelog.ParseHeading(showBareBranchFile(t, origin, "CHANGELOG.md")); ok {
+		t.Fatal("release-please heading reads back, want the shape release-me cannot read")
+	}
+
+	listOpen := func() {
+		f.ListResponses = []forgetest.ListResponse{
+			{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+				{Number: 1, Title: title, Body: body, Labels: []string{"release: pending"}, HeadSHA: bareBranchSHA(t, origin)},
+			}},
+		}
+	}
+	listOpen()
+	pushesBefore := bareBranchPushCount(t, origin)
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, io.Discard); err != nil {
+		t.Fatalf("doPR() rewrite error = %v", err)
+	}
+	if got := bareBranchPushCount(t, origin); got != pushesBefore+1 {
+		t.Fatalf("release branch pushes = %d, want %d (one push rewriting the heading)", got, pushesBefore+1)
+	}
+	want := "https://github.com/owner/repo/compare/v0.1.0...v0.2.0"
+	if got := headingCompareURL(t, "CHANGELOG.md", showBareBranchFile(t, origin, "CHANGELOG.md")); got != want {
+		t.Fatalf("CHANGELOG.md compare link = %q, want %q", got, want)
+	}
+	updated := f.UpdatedPullRequests[len(f.UpdatedPullRequests)-1]
+	title, body = updated.Title, updated.Body
+
+	listOpen()
+	pushesAfterRewrite := bareBranchPushCount(t, origin)
+	var rerun bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &rerun); err != nil {
+		t.Fatalf("doPR() rerun error = %v", err)
+	}
+	if got := bareBranchPushCount(t, origin); got != pushesAfterRewrite {
+		t.Fatalf("release branch pushes = %d, want %d (settled after the rewrite)", got, pushesAfterRewrite)
+	}
+	if !strings.Contains(rerun.String(), "release pull request up to date") {
+		t.Fatalf("stdout = %q, want it to report up to date", rerun.String())
+	}
+}
