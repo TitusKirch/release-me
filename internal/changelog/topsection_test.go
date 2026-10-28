@@ -198,6 +198,11 @@ func TestParseHeading(t *testing.T) {
 			content: "## [v1.2.3](https://github.com/o/r/compare/v1.2.2 v1.2.3) (2026-03-14)\n",
 			wantOK:  false,
 		},
+		{
+			name:    "a link with parentheses in its target",
+			content: "## [v0.2.0](https://github.com/o/r/compare/(api)v0.1.0...(api)v0.2.0) (2026-03-14)\n",
+			wantOK:  false,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
