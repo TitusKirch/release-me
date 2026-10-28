@@ -679,6 +679,9 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		name := node.Content[i].Value
 		valueNode := node.Content[i+1]
+		if err := ValidateComponentName(name); err != nil {
+			return nil, fmt.Errorf("config: parse %s: component %q: name %w", path, name, err)
+		}
 
 		data, err := yaml.Marshal(valueNode)
 		if err != nil {
@@ -725,6 +728,37 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 		components = append(components, c)
 	}
 	return components, nil
+}
+
+// ValidateComponentName rejects a component name release-me cannot carry
+// through every place it puts one: the derived tag prefix "<name>/v", the
+// branch "release-me/<name>", the shared release pull request title
+// "chore: release <name> vX.Y.Z, ...", which release reads back after the
+// merge, the comma separated Release-Component footer and the changelog
+// compare link. A name holds ASCII letters, digits, "-", "_" and "." only, and
+// neither starts with "." or "-" nor holds "..", which git refuses in a
+// tag or branch name. migrate calls it to vet a name it derived.
+func ValidateComponentName(name string) error {
+	for _, r := range name {
+		if !isComponentNameRune(r) {
+			return fmt.Errorf(`contains %q: a component name holds ASCII letters, digits, "-", "_" and "." only`, string(r))
+		}
+	}
+	switch {
+	case name == "":
+		return errors.New("is empty")
+	case strings.HasPrefix(name, ".") || strings.HasPrefix(name, "-"):
+		return errors.New(`starts with "." or "-", which git refuses at the start of a tag or branch name`)
+	case strings.Contains(name, ".."):
+		return errors.New(`contains "..", which git refuses in a tag or branch name`)
+	}
+	return nil
+}
+
+// isComponentNameRune reports whether r may appear in a component name:
+// an ASCII letter or digit, "-", "_" or ".".
+func isComponentNameRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.'
 }
 
 // validateComponentPaths rejects two components whose paths overlap: equal,
