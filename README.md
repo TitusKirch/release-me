@@ -149,7 +149,8 @@ single implicit `main` component a repository without `components` carries. `--c
 `--component` or because the repository has only one, prints unprefixed lines, the same shape a
 single-component repository always has.
 
-`next` prints the next version and the bump reason per component, for example `0.2.0 (feat)`.
+`next` prints the next version and the bump reason per component, for example `0.2.0 (feat)`,
+or `2.0.0 (Release-As footer)` for a version a [Release-As footer](#release-as-footer) forces.
 `changelog` prints the rendered entries for that version. Both print nothing for a component
 with nothing to release.
 
@@ -412,6 +413,13 @@ tag: a direct commit, a squash merge's commit body, a merged pull request's body
 `all` or `nested` mode every commit on the branch. A pull request with an [override
 block](#override-block) contributes only its block's lines, so a footer on it is not read.
 The commit must touch the component's `path`, the same attribution its changelog entry gets.
+
+The footer is read only from the message's trailer block, the way `git interpret-trailers`
+finds it: the last paragraph below the first line, and only when every line in it is a
+`Key: value` trailer, `Co-authored-by:` and `Signed-off-by:` included. A `Release-As:` line
+anywhere else is inert text: in an earlier paragraph, fenced, quoted with `>`, in a list item,
+inside an HTML comment, or in a last paragraph that also holds prose. A pull request body that
+documents the footer with a fenced example therefore never forces a version.
 
 A forced version wins outright over the computed bump and the initial version, and releases
 even when no commit bumps the version, so an empty commit carrying the footer is enough. With
