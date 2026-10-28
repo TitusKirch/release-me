@@ -107,9 +107,11 @@ func doComment(
 		if refusal != "" {
 			return reply(ctx, f, owner, repoName, flags.prNumber, stdout, "the %q command was refused: %s.", outcome.Command, refusal)
 		}
-		newBody := releasepr.SetVersionOverride(pr.Body, outcome.Version)
+		var newBody string
 		if target != "" {
 			newBody = releasepr.SetComponentVersionOverride(pr.Body, target, outcome.Version)
+		} else {
+			newBody = releasepr.SetVersionOverride(pr.Body, outcome.Version)
 		}
 		if _, err := f.UpdatePullRequest(ctx, owner, repoName, flags.prNumber, pr.Title, newBody); err != nil {
 			return fmt.Errorf("release-me: comment: update pull request #%d: %w", flags.prNumber, err)
@@ -181,7 +183,11 @@ func doComment(
 // component named, which must be one the pull request releases, or the one
 // component it releases when none is named; naming none while it releases
 // several is refused as ambiguous. refusal, when not "", is the reason the
-// command is refused, and nothing is written.
+// command is refused, and nothing is written. Which components the pull
+// request releases is read from its body's "#### <name>" headings, the
+// comment path's source of truth: a heading added or deleted by hand
+// changes what the command accepts, and the recompute that follows still
+// applies an override only to a component it actually releases.
 func releaseAsTarget(cfg config.Config, pr forge.PullRequest, component string) (target, refusal string) {
 	if !sharedOutsideLocked(cfg) || cfg.Versioning != config.VersioningIndependent {
 		if component == "" {
