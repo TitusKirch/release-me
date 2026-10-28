@@ -348,7 +348,11 @@ func TestDoPRRewritesAReleasePleaseHeadingOnceAndThenSettles(t *testing.T) {
 	clone := t.TempDir()
 	runGit(t, clone, "clone", "-q", "--branch", mainBranch, origin, ".")
 	content := showBareBranchFile(t, origin, "CHANGELOG.md")
-	heading, _, _ := strings.Cut(content[strings.Index(content, "## "):], "\n")
+	_, fromHeading, found := strings.Cut(content, "\n## ")
+	if !found {
+		t.Fatalf("CHANGELOG.md carries no version heading: %q", content)
+	}
+	heading, _, _ := strings.Cut("## "+fromHeading, "\n")
 	releasePlease := "## [0.2.0](https://github.com/owner/repo/compare/v0.1.0...v0.2.0) (2026-10-01)"
 	writeAndCommit(t, clone, "CHANGELOG.md", strings.Replace(content, heading, releasePlease, 1), "chore: release 0.2.0")
 	runGit(t, clone, "push", "-q", "--force", "origin", "HEAD:"+mainBranch)
