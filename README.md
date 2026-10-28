@@ -70,11 +70,47 @@ Pinned by anything other than a release tag, a commit digest or a floating branc
 resolves it; pinned by a release tag instead, the ref itself already is the tag, and the
 `VERSION` file is never consulted.
 
-Output: `tags`, the newline-separated tags this run tagged a release for, one per released
-component, empty when nothing was released. `draft-until-assets-attach` in `release-me.yaml`
-decides whether that release publishes immediately or starts as a draft, default `false`, no
-behavior change from before this key existed. See [Configuration](#configuration) for what
-each setting needs from the calling workflow:
+Outputs, every one from `release-me` itself: `tags` from the `released-tag: <tag>` line it
+prints per release, the rest written by `pr`, `release` and `run` to the file the
+`RELEASE_ME_GITHUB_OUTPUT` environment variable names, which the action points at the step's
+own `GITHUB_OUTPUT`. A `version` older than these outputs fills `tags` alone. They reflect what
+happened even when the step fails, for a later step with `if: always()`: a `run` whose release
+phase fails still lists in `prs` the pull request its `pr` phase opened.
+
+- `tags`: the newline-separated tags this run tagged a release for, one per released
+  component, empty when nothing was released or `dry-run` was set.
+- `released`: `true` when this run tagged a release for any component, `false` otherwise and
+  always in dry-run.
+- `components`: a JSON object keyed by every component this run handled, every configured
+  one unless `component` limits it, the implicit one as `main`. Each entry is
+  `{"released", "version", "tag", "pr"}`: `version` (`0.9.0`, no `v`) and `tag`
+  (`duxt@v0.9.0`) are empty unless `released`, and `pr` is the release pull request opened,
+  updated or found up to date for that component this run, shaped as in `prs`, else `null`.
+- `pr`: the one release pull request this run opened, updated or found up to date, as JSON,
+  `{"number", "url", "branch", "components"}`; `null` when there was none or several, which
+  only happens with one release pull request per component.
+- `prs`: a JSON array of every such pull request, `[]` when none. A locked family or a
+  [shared release pull request](#shared-release-pull-request) is one entry naming several
+  components. Dry-run opens nothing, so it reports none.
+
+```yaml
+  - uses: ostendorf-cloud/release-me/action@<commit sha>  # v0.1.1
+    id: release
+    with:
+      token: ${{ steps.app-token.outputs.token }}
+  - if: fromJSON(steps.release.outputs.components).duxt.released
+    run: echo "released duxt ${{ fromJSON(steps.release.outputs.components).duxt.version }}"
+  - if: fromJSON(steps.release.outputs.pr) != null
+    run: echo "release pull request ${{ fromJSON(steps.release.outputs.pr).url }}"
+```
+
+A component name with a `-` in it needs the index form,
+`fromJSON(steps.release.outputs.components)['duxt-ui'].released`.
+
+`draft-until-assets-attach` in `release-me.yaml` decides whether each tagged release
+publishes immediately or starts as a draft, default `false`, no behavior change from before
+this key existed. See [Configuration](#configuration) for what each setting needs from the
+calling workflow:
 
 - `false`, the default: the release publishes the moment it is tagged, same as every
   release-me release before this key existed. A caller that attaches binary assets waits on

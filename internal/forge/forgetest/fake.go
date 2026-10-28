@@ -8,6 +8,7 @@ package forgetest
 import (
 	"context"
 	"slices"
+	"strconv"
 
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 )
@@ -19,7 +20,8 @@ type Response struct {
 }
 
 // ListResponse configures what PullRequests returns for one head and state:
-// PullRequests, or Err when it is set.
+// PullRequests, or Err when it is set. An entry whose URL is empty is
+// returned with the GitHub-shaped URL CreatePullRequest would give it.
 type ListResponse struct {
 	Head         string
 	State        string
@@ -176,14 +178,26 @@ func (f *Fake) PullRequest(_ context.Context, _, _ string, number int) (forge.Pu
 	return r.PullRequest, r.Err
 }
 
-// PullRequests implements forge.Forge.
-func (f *Fake) PullRequests(_ context.Context, _, _, head, state string) ([]forge.PullRequest, error) {
+// PullRequests implements forge.Forge. Every entry left without a URL in
+// its fixture gets the one CreatePullRequest and UpdatePullRequest return,
+// the same as the GitHub implementation filling URL on every path.
+func (f *Fake) PullRequests(_ context.Context, owner, repo, head, state string) ([]forge.PullRequest, error) {
 	for _, r := range f.ListResponses {
 		if r.Head == head && r.State == state {
 			if r.Err != nil {
 				return nil, r.Err
 			}
-			return r.PullRequests, nil
+			if r.PullRequests == nil {
+				return nil, nil
+			}
+			prs := make([]forge.PullRequest, len(r.PullRequests))
+			for i, pr := range r.PullRequests {
+				if pr.URL == "" {
+					pr.URL = pullRequestURL(owner, repo, pr.Number)
+				}
+				prs[i] = pr
+			}
+			return prs, nil
 		}
 	}
 	return nil, nil
@@ -197,7 +211,7 @@ func (f *Fake) CreatePullRequest(_ context.Context, owner, repo, base, head, tit
 		Owner: owner, Repo: repo, Base: base, Head: head, Title: title, Body: body, Labels: labels,
 	})
 	f.setPRLabels(number, labels)
-	return forge.PullRequest{Number: number, Title: title, Body: body, Labels: labels}, nil
+	return forge.PullRequest{Number: number, Title: title, Body: body, Labels: labels, URL: pullRequestURL(owner, repo, number)}, nil
 }
 
 // UpdatePullRequest implements forge.Forge. It never touches labels.
@@ -205,7 +219,13 @@ func (f *Fake) UpdatePullRequest(_ context.Context, owner, repo string, number i
 	f.UpdatedPullRequests = append(f.UpdatedPullRequests, UpdatePullRequestCall{
 		Owner: owner, Repo: repo, Number: number, Title: title, Body: body,
 	})
-	return forge.PullRequest{Number: number, Title: title, Body: body, Labels: f.PRLabels[number]}, nil
+	return forge.PullRequest{Number: number, Title: title, Body: body, Labels: f.PRLabels[number], URL: pullRequestURL(owner, repo, number)}, nil
+}
+
+// pullRequestURL returns the web address of pull request number, in the
+// shape GitHub's has: "https://github.com/<owner>/<repo>/pull/<number>".
+func pullRequestURL(owner, repo string, number int) string {
+	return "https://github.com/" + owner + "/" + repo + "/pull/" + strconv.Itoa(number)
 }
 
 // Labels implements forge.Forge.

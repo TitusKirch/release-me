@@ -197,7 +197,11 @@ func doPRShared(
 	section := strings.Join(parts, "\n\n") + "\n"
 
 	body := releasepr.SharedBody(releases, guideLabels(cfg), perComponentVersion, notes, versionOverride, section)
-	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, sharedWho, existing, plan, date, title, body, dryRun, stdout)
+	names := make([]string, 0, len(members))
+	for _, m := range members {
+		names = append(names, m.comp.Name)
+	}
+	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, sharedWho, names, existing, plan, date, title, body, dryRun, stdout)
 }
 
 // checkSharedTitleLength refuses a shared release pull request title past

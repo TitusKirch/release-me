@@ -36,8 +36,8 @@ Read the repository; every row below comes from a command or a file.
   `googleapis/release-please-action`, or calling a reusable workflow that does.
 - **Consumers of release-please's results:** every job or step reading its outputs
   (`releases_created`, `release_created`, `tag_name`, `paths_released`, `<path>--release_created`
-  and the like), its labels, or its release pull request branch `release-please--*`. These are
-  the parts release-me does not replace one for one, since its action has no outputs.
+  and the like), its labels, or its release pull request branch `release-please--*`. Step 4
+  maps each output through the table there; the labels and the branch have no output.
 - **Open release pull request:** `gh pr list --label "autorelease: pending" --state open`. One
   that is open is merged or closed before the switch lands, so no release is half cut.
 - **Version to pin:** `gh api repos/ostendorf-cloud/release-me/releases/latest --jq .tag_name`.
@@ -104,9 +104,28 @@ confirmation:
   `labeled` and `unlabeled`, a job guard listing exactly the labels in `release-me.yaml`, a
   checkout of the base branch with `fetch-depth: 0`, the action pinned to the release's commit
   SHA with the version as a trailing comment.
-- **Consumers:** each one from step 1 rewired to a signal release-me does produce: a pushed tag
-  matching the component's `tag-prefix`, a published GitHub release, or a check against the
-  package registry.
+- **Consumers:** each one from step 1 rewired to a signal release-me does produce: one of the
+  action's outputs through the table below, a pushed tag matching the component's
+  `tag-prefix`, a published GitHub release, or a check against the package registry. The
+  action step needs an `id`, `release` below. Outputs are keyed by component name, never by
+  path; `<name>` is the component's key in `release-me.yaml`, `main` for the implicit one,
+  and a name with a `-` takes the index form `components)['duxt-ui'].released`.
+
+  | release-please-action output | release-me action output |
+  | --- | --- |
+  | `releases_created`, `release_created` | `steps.release.outputs.released` |
+  | `<path>--release_created` | `fromJSON(steps.release.outputs.components).<name>.released` |
+  | `tag_name`, `<path>--tag_name` | `fromJSON(steps.release.outputs.components).<name>.tag` |
+  | `version`, `<path>--version` | `fromJSON(steps.release.outputs.components).<name>.version` |
+  | `major`, `minor`, `patch` | none: split `version` in the consuming step |
+  | `paths_released` | `steps.release.outputs.tags`, one tag per released component |
+  | `pr` | `steps.release.outputs.pr`: `number`, `url`, `branch`, `components` |
+  | `prs`, `prs_created` | `steps.release.outputs.prs`, `prs != '[]'` |
+  | `upload_url`, `html_url`, `id`, `sha` | none: `gh release view <tag>` in the consuming step |
+
+  `pr` is `null` with several release pull requests, where release-please gave the first;
+  read `prs` there. Its JSON is release-me's own shape, not release-please's: a consumer
+  reading `headBranchName`, `title` or `labels` off it reads `branch` or asks the API.
 - **Labels:** release-please's labels carry over by name. Each one `release-me.yaml` names and
   `gh api repos/{owner}/{repo}/labels --paginate --jq '.[].name'` lacks is listed for the human
   to create; labels are repository settings, and the skill creates none.

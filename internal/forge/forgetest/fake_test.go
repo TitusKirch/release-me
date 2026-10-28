@@ -63,25 +63,54 @@ func TestFakePullRequest(t *testing.T) {
 
 func TestFakePullRequestsReturnsTheConfiguredList(t *testing.T) {
 	t.Parallel()
-	open := forge.PullRequest{Number: 5, Title: "chore(main): release v0.2.0"}
-	f := &forgetest.Fake{ListResponses: []forgetest.ListResponse{
-		{Head: "release-me/main", State: "open", PullRequests: []forge.PullRequest{open}},
-	}}
+	cases := []struct {
+		name    string
+		fixture forge.PullRequest
+		want    forge.PullRequest
+	}{
+		{
+			name:    "an entry without a URL gets the one create and update return",
+			fixture: forge.PullRequest{Number: 5, Title: "chore(main): release v0.2.0"},
+			want: forge.PullRequest{
+				Number: 5, Title: "chore(main): release v0.2.0", URL: "https://github.com/owner/repo/pull/5",
+			},
+		},
+		{
+			name: "an entry with a URL keeps it",
+			fixture: forge.PullRequest{
+				Number: 5, Title: "chore(main): release v0.2.0", URL: "https://github.example.com/owner/repo/pull/5",
+			},
+			want: forge.PullRequest{
+				Number: 5, Title: "chore(main): release v0.2.0", URL: "https://github.example.com/owner/repo/pull/5",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := &forgetest.Fake{ListResponses: []forgetest.ListResponse{
+				{Head: "release-me/main", State: "open", PullRequests: []forge.PullRequest{tc.fixture}},
+			}}
 
-	got, err := f.PullRequests(context.Background(), "owner", "repo", "release-me/main", "open")
-	if err != nil {
-		t.Fatalf("PullRequests() error = %v", err)
-	}
-	if !reflect.DeepEqual(got, []forge.PullRequest{open}) {
-		t.Fatalf("PullRequests() = %+v, want %+v", got, []forge.PullRequest{open})
-	}
+			got, err := f.PullRequests(context.Background(), "owner", "repo", "release-me/main", "open")
+			if err != nil {
+				t.Fatalf("PullRequests() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, []forge.PullRequest{tc.want}) {
+				t.Fatalf("PullRequests() = %+v, want %+v", got, []forge.PullRequest{tc.want})
+			}
+			if !reflect.DeepEqual(f.ListResponses[0].PullRequests[0], tc.fixture) {
+				t.Fatalf("fixture = %+v, want it left as configured", f.ListResponses[0].PullRequests[0])
+			}
 
-	got, err = f.PullRequests(context.Background(), "owner", "repo", "release-me/main", "closed")
-	if err != nil {
-		t.Fatalf("PullRequests() error = %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("PullRequests() = %+v, want an empty result for an unconfigured state", got)
+			got, err = f.PullRequests(context.Background(), "owner", "repo", "release-me/main", "closed")
+			if err != nil {
+				t.Fatalf("PullRequests() error = %v", err)
+			}
+			if len(got) != 0 {
+				t.Fatalf("PullRequests() = %+v, want an empty result for an unconfigured state", got)
+			}
+		})
 	}
 }
 
