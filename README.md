@@ -204,10 +204,10 @@ entries since the last stable tag; pre-release tags never move that base. Exactl
 three labels may be present at a time; two at once is an error naming both. A type whose label
 is set to `false`, or `""`, in `release-me.yaml` is turned off: release-me neither expects that
 label on the repository nor reads it from the pull request, and the guide in the pull request
-body leaves it out. A pull request that already carries the label of a type just turned off keeps it as an
-ordinary label: the next `pr` run returns the version to the stable `X.Y.Z`, and `release`
-leaves that label in place when it swaps `pending` for `tagged`. One name configured for two
-labels is a configuration error.
+body leaves it out. A pull request that already carries the label of a type just turned off
+keeps it as an ordinary label: the next `pr` run returns the version to the stable `X.Y.Z`,
+and `release` leaves that label in place when it swaps `pending` for `tagged`. One name
+configured for two labels is a configuration error.
 
 `N` starts at `1` for a type and counts up from the highest `N` an earlier pre-release tag of
 that same type and base version already carries. Switching the label to a different type does
@@ -583,8 +583,9 @@ files:
 - `labels.alpha`, `labels.beta` and `labels.rc`: the pre-release type labels `pr`, `release`
   and `check` use, default `release: alpha`, `release: beta` and `release: rc`. `false`, or
   `""`, turns that pre-release type off, so a repository that never cuts pre-releases needs
-  none of the three labels. See [Pre-releases](#pre-releases). `check` reports any of the enabled labels
-  missing by name, it never creates one. `labels.pending` and `labels.tagged` cannot be empty.
+  none of the three labels. See [Pre-releases](#pre-releases). `check` reports any of the
+  enabled labels missing by name, it never creates one. `labels.pending` and `labels.tagged`
+  cannot be empty.
 - `author.name` and `author.email`: the git identity `pr` commits the release branch as,
   default `release-me` and `release-me[bot]@users.noreply.github.com`. Passed to the commit
   through the git subprocess's environment, never written into git config. A
