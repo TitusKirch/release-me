@@ -655,13 +655,14 @@ as it gets no pull request of its own per component. Two components listing the 
 each update their own `key` in it. Two `independent` components bumping the same `key` of one
 file, or both a `marker` or `helm` file, inherited top-level `files` included, are a
 configuration error, since one would overwrite the other's version; `locked` and `linked`
-write the one family version there and allow it. The title names every component and its version, in
-`release-me.yaml`'s order, `chore: release api v1.3.0, web v0.3.1`, the same as release-please's
-grouped pull request names the packages in its body. GitHub caps a title at 256 characters, so
-how many components fit depends on their names and versions, about eight with 20-character
-names: `pr` refuses a longer title before it pushes or writes anything, naming its length and the components, since `release` could not
-read it back after the merge. Release more often, so fewer components carry changes at once,
-or switch to `per-component`. The body starts with
+write the one family version there and allow it. The title names every component and its
+version, in `release-me.yaml`'s order, `chore: release api v1.3.0, web v0.3.1`, the same as
+release-please's grouped pull request names the packages in its body. GitHub caps a title at
+256 characters, so how many components fit depends on their names and versions, about eight
+with 20-character names: `pr` refuses a longer title before it pushes or writes anything,
+naming its length and the components, since `release` could not read it back after the merge.
+Release more often, so fewer components carry changes at once, or switch to `per-component`.
+The body starts with
 `Release api v1.3.0, web v0.3.1`, the guide names every tag merging creates, and the changelog
 has one `#### <name>` section per component, each with that component's own heading and compare
 link. On merge, `release` reads the components and versions back from the title and tags each
