@@ -253,6 +253,27 @@ func TestParseReadsReleaseComponentFooters(t *testing.T) {
 			text: "chore: retag\n\nRelease-Component:\nRelease-Component: , duxt,",
 			want: []string{"duxt"},
 		},
+		{
+			name: "ignores the footer inside the README's fenced example quoted in a pull request body",
+			text: "docs(readme): explain the footer\n\nAttribute a docs only commit:\n\n" +
+				"```text\nfeat(duxt): document the layout prop\n\nRelease-Component: duxt\n```",
+			want: nil,
+		},
+		{
+			name: "ignores the footer inside an HTML comment",
+			text: "feat: add the next command\n\n<!-- Release-Component: duxt -->",
+			want: nil,
+		},
+		{
+			name: "ignores the footer outside the last paragraph",
+			text: "fix: share the date helper\n\nRelease-Component: duxt\n\nThe helper moved to the shared package.",
+			want: nil,
+		},
+		{
+			name: "ignores the footer in a last paragraph that also holds prose",
+			text: "fix: share the date helper\n\nAttribute it to duxt.\nRelease-Component: duxt",
+			want: nil,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
