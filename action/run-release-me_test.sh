@@ -15,7 +15,8 @@ trap 'rm -rf "${work}"' EXIT
 
 current="${work}/current"
 older="${work}/older"
-mkdir -p "${current}" "${older}"
+failing="${work}/failing"
+mkdir -p "${current}" "${older}" "${failing}"
 
 # current/release-me is a release-me that writes its own outputs. The
 # literal $@ and variables below are the fake script's own, not this test
@@ -46,12 +47,26 @@ chmod +x "${current}/release-me"
 } >"${older}/release-me"
 chmod +x "${older}/release-me"
 
+# failing/release-me tags one release, writes its outputs and then fails,
+# the way release-me does when a later component's release stops it.
+{
+  echo '#!/usr/bin/env bash'
+  # shellcheck disable=SC2016
+  echo 'echo "$@" >"${RUNNER_TEMP}/args"'
+  echo 'echo "released-tag: duxt@v0.9.0"'
+  # shellcheck disable=SC2016
+  echo 'echo "released=true" >>"${RELEASE_ME_GITHUB_OUTPUT}"'
+  echo 'echo "release-me: component duxt-ui: create release: 502 Bad Gateway" >&2'
+  echo 'exit 1'
+} >"${failing}/release-me"
+chmod +x "${failing}/release-me"
+
 failures=0
 
-# run_case name runner_temp component dry_run verbose want_args want_output
+# run_case name runner_temp component dry_run verbose want_args want_output [want_status]
 run_case() {
   local case_name="$1" runner_temp="$2" component="$3" dry_run="$4" verbose="$5"
-  local want_args="$6" want_output="$7"
+  local want_args="$6" want_output="$7" want_status="${8:-0}"
   local output_file status got_args got_output
 
   output_file="${work}/github_output"
@@ -67,8 +82,8 @@ run_case() {
   status=$?
   set -e
 
-  if [ "${status}" -ne 0 ]; then
-    echo "FAIL ${case_name}: exit status = ${status}, want 0"
+  if [ "${status}" -ne "${want_status}" ]; then
+    echo "FAIL ${case_name}: exit status = ${status}, want ${want_status}"
     echo "  stderr: $(cat "${work}/stderr")"
     failures=$((failures + 1))
     return
@@ -115,6 +130,15 @@ run_case "a release-me older than the outputs still fills tags" \
   "tags<<RELEASE_ME_TAGS_EOF
 v0.2.1
 RELEASE_ME_TAGS_EOF"
+
+run_case "a failed release-me still fills tags and fails the step" \
+  "${failing}" "" "false" "false" \
+  "run" \
+  "released=true
+tags<<RELEASE_ME_TAGS_EOF
+duxt@v0.9.0
+RELEASE_ME_TAGS_EOF" \
+  1
 
 if [ "${failures}" -ne 0 ]; then
   echo "${failures} test(s) failed"

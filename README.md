@@ -73,7 +73,9 @@ resolves it; pinned by a release tag instead, the ref itself already is the tag,
 Outputs, every one from `release-me` itself: `tags` from the `released-tag: <tag>` line it
 prints per release, the rest written by `pr`, `release` and `run` to the file the
 `RELEASE_ME_GITHUB_OUTPUT` environment variable names, which the action points at the step's
-own `GITHUB_OUTPUT`. A `version` older than these outputs fills `tags` alone.
+own `GITHUB_OUTPUT`. A `version` older than these outputs fills `tags` alone. They reflect what
+happened even when the step fails, for a later step with `if: always()`: a `run` whose release
+phase fails still lists in `prs` the pull request its `pr` phase opened.
 
 - `tags`: the newline-separated tags this run tagged a release for, one per released
   component, empty when nothing was released or `dry-run` was set.
