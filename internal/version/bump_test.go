@@ -4,6 +4,7 @@
 package version_test
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -292,6 +293,52 @@ func TestReleaseAsPicksTheHighestUsableFooter(t *testing.T) {
 			}
 			if !slices.Equal(gotRefused, tc.wantRefused) {
 				t.Fatalf("ReleaseAs() refused = %+v, want values %v", refused, tc.wantRefused)
+			}
+		})
+	}
+}
+
+func TestParseForcedAppliesTheOneForcedVersionRule(t *testing.T) {
+	t.Parallel()
+	last := version.Semver{Major: 1, Minor: 2, Patch: 3}
+	cases := []struct {
+		name            string
+		value           string
+		lastOK          bool
+		allowPreRelease bool
+		want            string
+		wantErr         error
+	}{
+		{name: "accepts a greater plain version", value: "1.3.0", lastOK: true, want: "1.3.0"},
+		{name: "accepts a v prefix", value: "v2.0.0", lastOK: true, want: "2.0.0"},
+		{name: "accepts a capital V prefix", value: "V2.0.0", lastOK: true, want: "2.0.0"},
+		{name: "refuses a value that does not parse", value: "next", lastOK: true, wantErr: version.ErrNotAVersion},
+		{name: "refuses a two-part version", value: "2.0", lastOK: true, wantErr: version.ErrNotAVersion},
+		{name: "refuses the last version itself", value: "1.2.3", lastOK: true, wantErr: version.ErrNotGreater},
+		{name: "refuses a lower version", value: "1.0.0", lastOK: true, wantErr: version.ErrNotGreater},
+		{name: "accepts any version without a tag", value: "0.0.1", want: "0.0.1"},
+		{
+			name:  "refuses a pre-release value when pre-releases are not allowed",
+			value: "2.0.0-rc.1", lastOK: true, wantErr: version.ErrPreRelease,
+		},
+		{
+			name:  "accepts a pre-release value when pre-releases are allowed",
+			value: "2.0.0-rc.1", lastOK: true, allowPreRelease: true, want: "2.0.0-rc.1",
+		},
+		{
+			name:  "refuses a pre-release of the last version even when allowed",
+			value: "1.2.3-rc.1", lastOK: true, allowPreRelease: true, wantErr: version.ErrNotGreater,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := version.ParseForced(tc.value, last, tc.lastOK, tc.allowPreRelease)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("ParseForced(%q) error = %v, want %v", tc.value, err, tc.wantErr)
+			}
+			if err == nil && got.String() != tc.want {
+				t.Fatalf("ParseForced(%q) = %s, want %s", tc.value, got, tc.want)
 			}
 		})
 	}
