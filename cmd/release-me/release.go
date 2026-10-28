@@ -56,7 +56,8 @@ func computeRelease(
 		return release{}, false, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
 
-	result, released := version.Next(last, hasTag, changes, comp.InitialVersion, comp.BumpMinorPreMajor)
+	result, released, refused := version.Next(last, hasTag, changes, comp.InitialVersion, comp.BumpMinorPreMajor)
+	warnRefusedReleaseAs(logger, comp.Name, refused)
 	if !released {
 		return release{}, false, nil
 	}
@@ -158,7 +159,13 @@ func processEntry(
 	}
 
 	msg := conventional.Parse(text, fallbackType)
-	changes := []version.Change{{Type: msg.Type, Breaking: msg.Breaking}}
+	if msg.ReleaseAs == "" && e.PullRequestNumber > 0 {
+		// The text resolved through the forge is the pull request's title
+		// and body: a footer in the commit's own message, a squash merge's
+		// commit body for one, still counts.
+		msg.ReleaseAs = conventional.Parse(entryText(e), fallbackType).ReleaseAs
+	}
+	changes := []version.Change{{Type: msg.Type, Breaking: msg.Breaking, ReleaseAs: msg.ReleaseAs}}
 	entry := changelog.Entry{
 		Type:              msg.Type,
 		Scope:             msg.Scope,
@@ -194,7 +201,7 @@ func nestedSubEntries(ctx context.Context, dir, sha, fallbackType string) ([]ver
 	entries := make([]changelog.Entry, 0, len(subs))
 	for _, s := range subs {
 		msg := conventional.Parse(entryText(s), fallbackType)
-		changes = append(changes, version.Change{Type: msg.Type, Breaking: msg.Breaking})
+		changes = append(changes, version.Change{Type: msg.Type, Breaking: msg.Breaking, ReleaseAs: msg.ReleaseAs})
 		entries = append(entries, changelog.Entry{
 			Type: msg.Type, Scope: msg.Scope, Description: msg.Description, Breaking: msg.Breaking,
 		})
@@ -247,6 +254,12 @@ func assembleAllEntries(ctx context.Context, f forge.Forge, owner, repoName stri
 				changes = append(changes, c)
 				entries = append(entries, en)
 			}
+			// A footer in the pull request's own body forces a version
+			// the same way one on any of its commits does, without an
+			// entry of its own.
+			if v := conventional.Parse(prText(pr.Title, pr.Body), fallbackType).ReleaseAs; v != "" {
+				changes = append(changes, version.Change{ReleaseAs: v})
+			}
 		case errors.Is(err, forge.ErrNotFound):
 			for _, g := range group {
 				c, en := parseCommit(g, fallbackType, e.PullRequestNumber, "")
@@ -265,13 +278,24 @@ func assembleAllEntries(ctx context.Context, f forge.Forge, owner, repoName stri
 // "" for a commit belonging to none.
 func parseCommit(e history.Entry, fallbackType string, number int, url string) (version.Change, changelog.Entry) {
 	msg := conventional.Parse(entryText(e), fallbackType)
-	return version.Change{Type: msg.Type, Breaking: msg.Breaking}, changelog.Entry{
+	return version.Change{Type: msg.Type, Breaking: msg.Breaking, ReleaseAs: msg.ReleaseAs}, changelog.Entry{
 		Type:              msg.Type,
 		Scope:             msg.Scope,
 		Description:       msg.Description,
 		Breaking:          msg.Breaking,
 		PullRequestNumber: number,
 		URL:               url,
+	}
+}
+
+// warnRefusedReleaseAs logs every "Release-As" footer version.Next
+// refused, never failing the run: the footer is ignored and the computed
+// bump applies, the same way pr treats a release-me-version override that
+// is not greater than the last released version. who names the component
+// or family.
+func warnRefusedReleaseAs(logger *slog.Logger, who string, refused []version.Refusal) {
+	for _, r := range refused {
+		logger.Warn("ignoring a Release-As footer: the value "+r.Reason, "component", who, "value", r.Value)
 	}
 }
 
