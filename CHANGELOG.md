@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.3.0](https://github.com/ostendorf-cloud/release-me/compare/v0.2.1...v0.3.0) (2026-10-28)
+
+### Features
+
+- **action:** per-component outputs for released, version, tag and the release pull request ([#67](https://github.com/ostendorf-cloud/release-me/pull/67))
+- **pr:** one shared release pull request for linked and independent ([#66](https://github.com/ostendorf-cloud/release-me/pull/66))
+- **changelog:** link the version heading to the compare view ([#65](https://github.com/ostendorf-cloud/release-me/pull/65))
+- **history:** an empty commit or a Release-Component footer reaches a component ([#64](https://github.com/ostendorf-cloud/release-me/pull/64))
+- **pr:** a Release-As commit footer forces the version ([#63](https://github.com/ostendorf-cloud/release-me/pull/63))
+- **config:** turn a pre-release type off with false ([#62](https://github.com/ostendorf-cloud/release-me/pull/62))
+
 ## v0.2.1 (2026-10-27)
 
 ### Bug Fixes
