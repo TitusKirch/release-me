@@ -32,6 +32,12 @@ var ErrReleaseNotFound = errors.New("release not found")
 // credentials, as opposed to any other failure.
 var ErrUnauthorized = errors.New("unauthorized")
 
+// MaxTitleLength is the longest pull request title, in characters, a
+// forge accepts: GitHub's limit. A command that renders a title it reads
+// back later, such as the shared release pull request's, refuses one past
+// it before writing anything.
+const MaxTitleLength = 256
+
 // PullRequest is the subset of pull request data release-me needs.
 type PullRequest struct {
 	Number  int

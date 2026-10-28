@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -478,5 +479,38 @@ func TestSharedReleasePullRequestHonoursTheReleaseAsAndReleaseComponentFooters(t
 	}
 	if got, want := f.CreatedPullRequests[0].Title, "chore: release api v1.3.0, web v1.0.0, docs v2.1.0"; got != want {
 		t.Fatalf("title = %q, want %q", got, want)
+	}
+}
+
+func TestSharedReleasePullRequestRefusesATitlePastTheForgeLimitBeforeWritingAnything(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	var yaml strings.Builder
+	yaml.WriteString("release-pull-request: shared\ncomponents:\n")
+	files := map[string]string{}
+	for i := 1; i <= 14; i++ {
+		name := fmt.Sprintf("service-component-%02d", i)
+		fmt.Fprintf(&yaml, "  %s:\n    path: services/%s\n", name, name)
+		files["services/"+name+"/main.go"] = "package main\n"
+	}
+	writeConfig(t, dir, yaml.String())
+	writeFiles(t, dir, "feat: scaffold every service", files)
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	f := newFake()
+
+	var stdout bytes.Buffer
+	err = doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout)
+	if err == nil {
+		t.Fatal("doPR() error = nil, want the title refused")
+	}
+	for _, want := range []string{"title is 419 characters", "limit of 256", "service-component-01, ", "service-component-14", "per-component"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("doPR() error = %q, want it to contain %q", err, want)
+		}
+	}
+	if len(f.CreatedPullRequests) != 0 || bareRefExists(t, origin, "refs/heads/release-me/main") {
+		t.Fatalf("CreatedPullRequests = %+v, want nothing written before the refusal", f.CreatedPullRequests)
 	}
 }

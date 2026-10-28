@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ostendorf-cloud/release-me/internal/changelog"
 	"github.com/ostendorf-cloud/release-me/internal/config"
@@ -144,6 +145,15 @@ func doPRShared(
 		}
 	}
 
+	titled := make([]tagrelease.TitleRelease, 0, len(members))
+	for _, m := range members {
+		titled = append(titled, tagrelease.TitleRelease{Name: m.comp.Name, Version: m.versionStr})
+	}
+	title := tagrelease.SharedTitle(titled)
+	if err := checkSharedTitleLength(title, members); err != nil {
+		return err
+	}
+
 	changelogs := make([]changelogUpdate, 0, len(members))
 	var files []fileUpdate
 	for _, m := range members {
@@ -180,19 +190,38 @@ func doPRShared(
 	// version for a combined heading, and each component's GitHub release
 	// renders its slice exactly the way a release of its own would.
 	parts := make([]string, 0, len(members))
-	titled := make([]tagrelease.TitleRelease, 0, len(members))
 	releases := make([]releasepr.Release, 0, len(members))
 	for i, m := range members {
 		c := changelogs[i]
 		parts = append(parts, fmt.Sprintf("#### %s\n\n%s\n\n%s", m.comp.Name, changelog.RenderHeading(c.version, date, c.compareURL), c.entriesBody))
-		titled = append(titled, tagrelease.TitleRelease{Name: m.comp.Name, Version: m.versionStr})
 		releases = append(releases, releasepr.Release{Name: m.comp.Name, Version: m.versionStr, Tag: m.comp.TagPrefix + m.versionStr})
 	}
 	section := strings.Join(parts, "\n\n") + "\n"
 
-	title := tagrelease.SharedTitle(titled)
 	body := releasepr.SharedBody(releases, guideLabels(cfg), perComponentVersion, notes, versionOverride, section)
 	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, sharedWho, existing, plan, date, title, body, dryRun, stdout)
+}
+
+// checkSharedTitleLength refuses a shared release pull request title past
+// forge.MaxTitleLength, before anything is pushed or written: release
+// reads every component and version back from the title after the merge,
+// so a title the forge rejects or truncates would leave the merged
+// components untagged.
+func checkSharedTitleLength(title string, members []sharedMember) error {
+	n := utf8.RuneCountInString(title)
+	if n <= forge.MaxTitleLength {
+		return nil
+	}
+	names := make([]string, 0, len(members))
+	for _, m := range members {
+		names = append(names, m.comp.Name)
+	}
+	return fmt.Errorf(
+		"release-me: %s: title is %d characters, past the forge's limit of %d, for components %s: "+
+			"release reads the versions back from the title, so it cannot be shortened; "+
+			"release more often so fewer components share one pull request, or use release-pull-request: per-component",
+		sharedWho, n, forge.MaxTitleLength, strings.Join(names, ", "),
+	)
 }
 
 // sharedMembers computes every component's release for a shared release
