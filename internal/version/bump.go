@@ -4,6 +4,7 @@
 package version
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -48,19 +49,24 @@ type Result struct {
 //
 // A usable "Release-As" footer among changes, see ReleaseAs, wins outright
 // over the computed bump and the initial version, and releases even when
-// no change bumps the version.
-func Next(last Semver, lastOK bool, changes []Change, initialVersion string, bumpMinorPreMajor bool) (result Result, released bool) {
-	if forced, ok, _ := ReleaseAs(last, lastOK, changes); ok {
-		return Result{Version: forced.String(), Bump: BumpForced, Reason: "Release-As footer"}, true
+// no change bumps the version. refused lists every footer value ReleaseAs
+// could not use, whatever Next returns otherwise: Next never logs, so the
+// caller reports them, once per computation.
+func Next(
+	last Semver, lastOK bool, changes []Change, initialVersion string, bumpMinorPreMajor bool,
+) (result Result, released bool, refused []Refusal) {
+	forced, ok, refused := ReleaseAs(last, lastOK, changes)
+	if ok {
+		return Result{Version: forced.String(), Bump: BumpForced, Reason: "Release-As footer"}, true, refused
 	}
 
 	bump, reason := highestBump(changes)
 	if bump == BumpNone {
-		return Result{}, false
+		return Result{}, false, refused
 	}
 
 	if !lastOK {
-		return Result{Version: initialVersion, Bump: BumpInitial, Reason: "initial version"}, true
+		return Result{Version: initialVersion, Bump: BumpInitial, Reason: "initial version"}, true, refused
 	}
 
 	next := last
@@ -80,7 +86,7 @@ func Next(last Semver, lastOK bool, changes []Change, initialVersion string, bum
 	case BumpNone, BumpInitial, BumpForced:
 		// unreachable: highestBump never returns these
 	}
-	return Result{Version: next.String(), Bump: bump, Reason: reason}, true
+	return Result{Version: next.String(), Bump: bump, Reason: reason}, true, refused
 }
 
 // Changed reports whether changes contains at least one change that bumps
@@ -141,34 +147,66 @@ type Refusal struct {
 	Reason string
 }
 
+// The reasons ParseForced refuses a value for, in the one-line form a log
+// line or a reply names them in.
+var (
+	ErrNotAVersion = errors.New("does not parse as an X.Y.Z version")
+	ErrPreRelease  = errors.New("is a pre-release version")
+	ErrNotGreater  = errors.New("is not greater than the last released version")
+)
+
+// ParseForced is the one rule every forced version follows, a
+// "Release-As" footer, a release-me-version block and a release-as
+// comment command alike: value parses as a plain X.Y.Z version, with an
+// optional "v" or "V" prefix and an optional pre-release and build
+// suffix, and is strictly greater than last, the pre-release suffix not
+// compared. With no last tag yet (lastOK false) any such version passes.
+// A pre-release value passes only when allowPreRelease is true. The error
+// wraps ErrNotAVersion, ErrPreRelease or ErrNotGreater; its text is the
+// reason alone, ErrNotGreater's naming last.
+func ParseForced(value string, last Semver, lastOK, allowPreRelease bool) (Semver, error) {
+	v, ok := ParseTag("v" + strings.TrimPrefix(strings.TrimPrefix(value, "v"), "V"))
+	switch {
+	case !ok:
+		return Semver{}, ErrNotAVersion
+	case v.IsPreRelease() && !allowPreRelease:
+		return Semver{}, ErrPreRelease
+	case lastOK && !last.Less(v):
+		return Semver{}, fmt.Errorf("%w %s", ErrNotGreater, last)
+	default:
+		return v, nil
+	}
+}
+
 // ReleaseAs picks the version the "Release-As" footers among changes
-// force. A value is usable when it parses as a plain X.Y.Z version,
-// optionally prefixed with "v", and is strictly greater than last, the
-// same rule the release-as comment command follows; with no last tag yet
-// (lastOK false) any such version is usable. Of several usable values the
-// highest wins, whatever order the commits carrying them came in. A
-// pre-release value is refused: the footer stays in the history until the
-// next stable tag, so it would force the same pre-release again after it
+// force. A value is usable when ParseForced accepts it against last, a
+// pre-release value refused. Of several usable values the highest wins,
+// whatever order the commits carrying them came in. A pre-release value
+// is refused because the footer stays in the history until the next
+// stable tag, so it would force the same pre-release again after it
 // shipped; a pre-release label on the release pull request builds on the
 // forced version instead. ok is false when no value is usable; refused
-// lists every value that is not, in the order changes carries them.
+// lists every distinct value that is not, once, in the order changes
+// first carries it, so a commit attributed to several components of one
+// family is refused once.
 func ReleaseAs(last Semver, lastOK bool, changes []Change) (forced Semver, ok bool, refused []Refusal) {
+	seen := make(map[string]bool)
 	for _, c := range changes {
 		if c.ReleaseAs == "" {
 			continue
 		}
-		v, parsed := ParseTag("v" + strings.TrimPrefix(strings.TrimPrefix(c.ReleaseAs, "v"), "V"))
+		v, err := ParseForced(c.ReleaseAs, last, lastOK, false)
 		switch {
-		case !parsed:
-			refused = append(refused, Refusal{Value: c.ReleaseAs, Reason: "does not parse as an X.Y.Z version"})
-		case v.IsPreRelease():
-			refused = append(refused, Refusal{
-				Value: c.ReleaseAs, Reason: "is a pre-release version, set one with a pre-release label instead",
-			})
-		case lastOK && !last.Less(v):
-			refused = append(refused, Refusal{
-				Value: c.ReleaseAs, Reason: fmt.Sprintf("is not greater than the last released version %s", last),
-			})
+		case err != nil:
+			if seen[c.ReleaseAs] {
+				continue
+			}
+			seen[c.ReleaseAs] = true
+			reason := err.Error()
+			if errors.Is(err, ErrPreRelease) {
+				reason += ", set one with a pre-release label instead"
+			}
+			refused = append(refused, Refusal{Value: c.ReleaseAs, Reason: reason})
 		case !ok || forced.Less(v):
 			forced, ok = v, true
 		}

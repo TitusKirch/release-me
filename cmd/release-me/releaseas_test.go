@@ -277,6 +277,38 @@ func TestFamilyReleasesApplyAReleaseAsFooterToTheSharedVersion(t *testing.T) {
 	}
 }
 
+// TestFamilyReleasesWarnsOnceForAFooterTwoComponentsShare guards the
+// refusal log: a commit touching two members of a family is in both
+// members' changes, and its refused footer is still logged once.
+func TestFamilyReleasesWarnsOnceForAFooterTwoComponentsShare(t *testing.T) {
+	dir := newRepo(t)
+	writeConfig(t, dir, "versioning: linked\ncomponents:\n  a:\n    path: a\n  b:\n    path: b\n")
+	writeFiles(t, dir, "chore: scaffold the family", map[string]string{"a/README.md": "a\n", "b/README.md": "b\n"})
+	runGit(t, dir, "tag", "a/v0.8.0")
+	runGit(t, dir, "tag", "b/v0.8.0")
+	writeFiles(t, dir, "fix: patch a and b\n\nRelease-As: 0.7.0", map[string]string{
+		"a/fix.txt": "a\n", "b/fix.txt": "b\n",
+	})
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	members, err := gatherFamily(t.Context(), dir, cfg, "owner", "repo", newFake(), logger)
+	if err != nil {
+		t.Fatalf("gatherFamily() error = %v", err)
+	}
+	releases, released := familyReleases(cfg, members, logger)
+	if !released || releases["a"].version.Version != "0.8.1" {
+		t.Fatalf("familyReleases() = %+v, %v, want a at the computed 0.8.1", releases, released)
+	}
+	if got := strings.Count(logs.String(), "ignoring a Release-As footer"); got != 1 {
+		t.Fatalf("logs = %q, want the refusal logged once, got %d", logs.String(), got)
+	}
+}
+
 // TestDoPRLetsTheReleaseAsCommentOverrideWinOverAFooter pins the
 // precedence: the release-me-version block a release-as comment writes on
 // the release pull request beats a Release-As footer in the history.

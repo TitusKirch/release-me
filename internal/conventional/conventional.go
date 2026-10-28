@@ -23,10 +23,11 @@ type Message struct {
 	Scope       string
 	Description string
 	Breaking    bool
-	// ReleaseAs is the value of a "Release-As:" footer in the body, trimmed
-	// and otherwise as written, "" when the body carries none. Parse never
-	// validates it: internal/version decides whether it is a version the
-	// next release may take.
+	// ReleaseAs is the value of a "Release-As:" trailer in the body's
+	// trailer block, see Trailers, trimmed and otherwise as written, ""
+	// when the block carries none. Parse never validates it:
+	// internal/version decides whether it is a version the next release
+	// may take.
 	ReleaseAs string
 	// Components are the component names "Release-Component:" footers in
 	// the body name, in the order written, each once, nil when the body
@@ -47,11 +48,13 @@ var headerPattern = regexp.MustCompile(`^([a-z]+)(\(([^()]+)\))?(!)?:\s*(.+)$`)
 // first line that does not match becomes a Message of fallbackType with the
 // first line as its description. A "BREAKING CHANGE:" or "BREAKING-CHANGE:"
 // footer anywhere in the body marks the change breaking even without "!".
-// A "Release-As:" footer, key case-insensitive as in release-please, sets
-// ReleaseAs; with more than one in the same body, the last one counts, the
-// way git reads a repeated trailer. A "Release-Component:" footer, key
-// case-insensitive too, sets Components; it may repeat and each value may
-// list several names separated by commas, every one of them counts.
+// A "Release-As:" trailer in the body's trailer block, see Trailers, key
+// case-insensitive as in release-please, sets ReleaseAs; with more than
+// one in the block, the last one counts, the way git reads a repeated
+// trailer.
+// A "Release-Component:" footer, key case-insensitive too, sets
+// Components; it may repeat and each value may list several names
+// separated by commas, every one of them counts.
 func Parse(text, fallbackType string) Message {
 	header, body, _ := strings.Cut(text, "\n")
 	header = strings.TrimSpace(header)
@@ -60,7 +63,7 @@ func Parse(text, fallbackType string) Message {
 	if hasBreakingFooter(body) {
 		msg.Breaking = true
 	}
-	msg.ReleaseAs = releaseAsFooter(body)
+	msg.ReleaseAs = releaseAsFooter(text)
 	msg.Components = releaseComponentFooters(body)
 	return msg
 }
@@ -88,21 +91,63 @@ func releaseComponentFooters(body string) []string {
 	return names
 }
 
-// releaseAsPattern matches a "Release-As:" footer line in git trailer
-// form, the key at the start of the line in any case.
-var releaseAsPattern = regexp.MustCompile(`(?i)^release-as:[ \t]*(.*)$`)
+// Trailer is one "Key: value" line of a message's trailer block, the key
+// and the value as written, the value trimmed.
+type Trailer struct {
+	Key   string
+	Value string
+}
 
-// releaseAsFooter returns the trimmed value of the last "Release-As:"
-// footer line in body, "" when there is none or its value is empty.
-func releaseAsFooter(body string) string {
-	value := ""
-	for _, line := range strings.Split(body, "\n") {
-		m := releaseAsPattern.FindStringSubmatch(strings.TrimSpace(line))
+// trailerLine matches one git trailer line: a key of letters, digits and
+// "-" at the very start of the line, or Conventional Commits' own
+// "BREAKING CHANGE" spelled with a space, then ":" and the value.
+var trailerLine = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9-]*|BREAKING CHANGE):[ \t]*(.*)$`)
+
+// Trailers returns every trailer of text's trailer block, in order, nil
+// when text carries none. Text has the shape Parse takes: the first line
+// is the subject or title and never part of the block.
+//
+// The trailer block is the last paragraph of the text below the first
+// line, paragraphs separated by blank lines, and only when every
+// non-empty line in it is a trailer line, the way git interpret-trailers
+// finds it. A fence line, an HTML comment, a quote, a list item or a line
+// of prose anywhere in that paragraph disqualifies the whole paragraph,
+// so a "Key: value" line quoted or fenced in a pull request body is never
+// read as a trailer. A key is matched as written; comparing it without
+// regard to case, and whether the first or last of a repeated key
+// counts, is the caller's decision.
+func Trailers(text string) []Trailer {
+	_, body, _ := strings.Cut(text, "\n")
+	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+
+	end := len(lines)
+	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	start := end
+	for start > 0 && strings.TrimSpace(lines[start-1]) != "" {
+		start--
+	}
+
+	var trailers []Trailer
+	for _, line := range lines[start:end] {
+		m := trailerLine.FindStringSubmatch(strings.TrimRight(line, " \t\r"))
 		if m == nil {
-			continue
+			return nil
 		}
-		if v := strings.TrimSpace(m[1]); v != "" {
-			value = v
+		trailers = append(trailers, Trailer{Key: m[1], Value: strings.TrimSpace(m[2])})
+	}
+	return trailers
+}
+
+// releaseAsFooter returns the value of the last non-empty "Release-As"
+// trailer in text's trailer block, key in any case, "" when there is
+// none.
+func releaseAsFooter(text string) string {
+	value := ""
+	for _, t := range Trailers(text) {
+		if strings.EqualFold(t.Key, "Release-As") && t.Value != "" {
+			value = t.Value
 		}
 	}
 	return value

@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -640,9 +641,11 @@ func ensurePendingLabel(ctx context.Context, f forge.Forge, owner, repoName stri
 // normal pre-release label handling: the override wins outright over the
 // computed bump instead of combining with it. hasLast is false before any
 // tag exists at all, in which case any parseable version is accepted.
-// who and number name the component or locked family and the pull
-// request in the warning logged when raw is present but unused this run,
-// never failing it.
+// The rule is version.ParseForced's, a pre-release value accepted: the
+// block is transient, gone once the pull request merges, so it never
+// forces the same pre-release twice. who and number name the component
+// or locked family and the pull request in the warning logged when raw is
+// present but unused this run, never failing it.
 func applyVersionOverride(
 	body, computed string, last version.Semver, hasLast bool, logger *slog.Logger, who string, number int,
 ) (raw, overridden string, ok bool) {
@@ -661,13 +664,13 @@ func applyVersionOverride(
 func checkVersionOverride(
 	value, computed string, last version.Semver, hasLast bool, logger *slog.Logger, who string, number int,
 ) (overridden string, ok bool) {
-	sv, parseOK := version.ParseTag("v" + value)
+	sv, err := version.ParseForced(value, last, hasLast, true)
 	switch {
-	case !parseOK:
+	case errors.Is(err, version.ErrNotAVersion):
 		logger.Warn("ignoring a release-me-version override that does not parse as a version",
 			"component", who, "number", number, "value", value)
 		return computed, false
-	case hasLast && !last.Less(sv):
+	case err != nil:
 		logger.Warn("ignoring a release-me-version override that is not greater than the last released version",
 			"component", who, "number", number, "value", value, "last", last.String())
 		return computed, false
