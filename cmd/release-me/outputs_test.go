@@ -35,7 +35,7 @@ func TestRenderOutputs(t *testing.T) {
 			components: []string{"duxt", "duxt-ui"},
 			want: "released=false\n" +
 				`components={"duxt":{"released":false,"version":"","tag":"","pr":null},"duxt-ui":{"released":false,"version":"","tag":"","pr":null}}` + "\n" +
-				"pr=\n" +
+				"pr=null\n" +
 				"prs=[]\n",
 		},
 		{
@@ -50,7 +50,7 @@ func TestRenderOutputs(t *testing.T) {
 				`prs=[{"number":12,"url":"https://github.com/kirchDev/duxt/pull/12","branch":"release-me/main","components":["duxt","duxt-ui"]}]` + "\n",
 		},
 		{
-			name: "several pull requests leave pr empty and list them all in prs",
+			name: "several pull requests leave pr null and list them all in prs",
 			out: runOutputs{prs: []prOutput{
 				{Number: 3, URL: "https://github.com/kirchDev/duxt/pull/3", Branch: "release-me/duxt", Components: []string{"duxt"}},
 				{Number: 4, URL: "https://github.com/kirchDev/duxt/pull/4", Branch: "release-me/duxt-ui", Components: []string{"duxt-ui"}},
@@ -59,7 +59,7 @@ func TestRenderOutputs(t *testing.T) {
 			want: "released=false\n" +
 				`components={"duxt":{"released":false,"version":"","tag":"","pr":{"number":3,"url":"https://github.com/kirchDev/duxt/pull/3","branch":"release-me/duxt","components":["duxt"]}},` +
 				`"duxt-ui":{"released":false,"version":"","tag":"","pr":{"number":4,"url":"https://github.com/kirchDev/duxt/pull/4","branch":"release-me/duxt-ui","components":["duxt-ui"]}}}` + "\n" +
-				"pr=\n" +
+				"pr=null\n" +
 				`prs=[{"number":3,"url":"https://github.com/kirchDev/duxt/pull/3","branch":"release-me/duxt","components":["duxt"]},` +
 				`{"number":4,"url":"https://github.com/kirchDev/duxt/pull/4","branch":"release-me/duxt-ui","components":["duxt-ui"]}]` + "\n",
 		},
@@ -71,7 +71,7 @@ func TestRenderOutputs(t *testing.T) {
 			components: []string{"duxt", "duxt-ui"},
 			want: "released=true\n" +
 				`components={"duxt":{"released":true,"version":"0.9.0","tag":"duxt@v0.9.0","pr":null},"duxt-ui":{"released":false,"version":"","tag":"","pr":null}}` + "\n" +
-				"pr=\n" +
+				"pr=null\n" +
 				"prs=[]\n",
 		},
 		{
@@ -274,7 +274,7 @@ func TestOutputsFollowTheReleasePullRequestAndTheReleaseInEveryMode(t *testing.T
 			if got.released != "true" {
 				t.Fatalf("released = %q, want true", got.released)
 			}
-			if got.pr != "" || len(got.prs) != 0 {
+			if got.pr != "null" || len(got.prs) != 0 {
 				t.Fatalf("pr = %q, prs = %+v, want no pull request: the merge leaves none open", got.pr, got.prs)
 			}
 			for _, name := range tc.handled {
@@ -352,7 +352,7 @@ func TestEmitOutputsAppendsToTheFileTheEnvironmentNames(t *testing.T) {
 	want := "version=0.2.1\n" +
 		"released=true\n" +
 		`components={"main":{"released":true,"version":"0.2.2","tag":"v0.2.2","pr":null}}` + "\n" +
-		"pr=\n" +
+		"pr=null\n" +
 		"prs=[]\n"
 	if string(got) != want {
 		t.Fatalf("output file =\n%s\nwant\n%s", got, want)

@@ -79,8 +79,8 @@ outputs:
   pr:
     description: >-
       JSON object of the one release pull request this run opened, updated or found up to
-      date, {"number", "url", "branch", "components"}, empty when there was none or more than
-      one; read prs for those.
+      date, {"number", "url", "branch", "components"}, null when there was none or more than
+      one; read prs for those. Test it with fromJSON(steps.<id>.outputs.pr) != null.
     value: ${{ steps.release-me.outputs.pr }}
   prs:
     description: >-

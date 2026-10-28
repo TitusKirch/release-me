@@ -123,7 +123,7 @@ confirmation:
   | `prs`, `prs_created` | `steps.release.outputs.prs`, `prs != '[]'` |
   | `upload_url`, `html_url`, `id`, `sha` | none: `gh release view <tag>` in the consuming step |
 
-  `pr` is empty with several release pull requests, where release-please gave the first;
+  `pr` is `null` with several release pull requests, where release-please gave the first;
   read `prs` there. Its JSON is release-me's own shape, not release-please's: a consumer
   reading `headBranchName`, `title` or `labels` off it reads `branch` or asks the API.
 - **Labels:** release-please's labels carry over by name. Each one `release-me.yaml` names and

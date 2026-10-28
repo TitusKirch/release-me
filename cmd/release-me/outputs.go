@@ -104,7 +104,7 @@ func reportReleased(ctx context.Context, w io.Writer, dryRun bool, r tagrelease.
 // output, every value single-line JSON except released: "released", true
 // when any release was tagged; "components", an object keyed by every
 // name in components, the components this run handled; "pr", the one
-// release pull request recorded, empty when there were none or several;
+// release pull request recorded, null when there were none or several;
 // "prs", every one recorded, in the order they were.
 //
 // A pull request or a release recorded for a name outside components is
@@ -147,7 +147,7 @@ func (out *runOutputs) render(components []string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("prs: %w", err)
 	}
-	prJSON := []byte{}
+	prJSON := []byte("null")
 	if len(prs) == 1 {
 		if prJSON, err = json.Marshal(prs[0]); err != nil {
 			return "", fmt.Errorf("pr: %w", err)

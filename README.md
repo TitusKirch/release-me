@@ -85,7 +85,7 @@ own `GITHUB_OUTPUT`. A `version` older than these outputs fills `tags` alone.
   (`duxt@v0.9.0`) are empty unless `released`, and `pr` is the release pull request opened,
   updated or found up to date for that component this run, shaped as in `prs`, else `null`.
 - `pr`: the one release pull request this run opened, updated or found up to date, as JSON,
-  `{"number", "url", "branch", "components"}`; empty when there was none or several, which
+  `{"number", "url", "branch", "components"}`; `null` when there was none or several, which
   only happens with one release pull request per component.
 - `prs`: a JSON array of every such pull request, `[]` when none. A locked family or a
   [shared release pull request](#shared-release-pull-request) is one entry naming several
@@ -98,7 +98,7 @@ own `GITHUB_OUTPUT`. A `version` older than these outputs fills `tags` alone.
       token: ${{ steps.app-token.outputs.token }}
   - if: fromJSON(steps.release.outputs.components).duxt.released
     run: echo "released duxt ${{ fromJSON(steps.release.outputs.components).duxt.version }}"
-  - if: steps.release.outputs.pr != ''
+  - if: fromJSON(steps.release.outputs.pr) != null
     run: echo "release pull request ${{ fromJSON(steps.release.outputs.pr).url }}"
 ```
 
