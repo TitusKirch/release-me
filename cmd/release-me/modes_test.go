@@ -78,7 +78,7 @@ func TestComputeReleaseInFirstParentMode(t *testing.T) {
 		10: {PullRequest: forge.PullRequest{Title: "feat(widget): add the widgets", URL: "https://example.invalid/pull/10"}},
 	}
 
-	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, "owner", "repo", f, discardLogger())
+	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, f, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease() error = %v", err)
 	}
@@ -110,7 +110,7 @@ func TestComputeReleaseInSquashMode(t *testing.T) {
 		11: {PullRequest: forge.PullRequest{Title: "feat(gadget): a retitled pull request", URL: "https://example.invalid/pull/11"}},
 	}
 
-	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, "owner", "repo", f, discardLogger())
+	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, f, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease() error = %v", err)
 	}
@@ -142,7 +142,7 @@ func TestComputeReleaseInAllMode(t *testing.T) {
 	}
 	f := newCountingForge(fake)
 
-	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, "owner", "repo", f, discardLogger())
+	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, f, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease() error = %v", err)
 	}
@@ -185,7 +185,7 @@ func TestComputeReleaseInNestedMode(t *testing.T) {
 		10: {PullRequest: forge.PullRequest{Title: "chore: merge widget work", URL: "https://example.invalid/pull/10"}},
 	}
 
-	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, "owner", "repo", f, discardLogger())
+	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, f, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease() error = %v", err)
 	}
@@ -237,7 +237,7 @@ func TestComputeReleaseInAllModeAppliesTheOverrideBlockToTheWholeGroup(t *testin
 		}},
 	}
 
-	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, "owner", "repo", f, discardLogger())
+	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, f, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease() error = %v", err)
 	}
@@ -270,7 +270,7 @@ func TestComputeReleaseInSquashModeAppliesTheOverrideBlock(t *testing.T) {
 		}},
 	}
 
-	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, "owner", "repo", f, discardLogger())
+	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, f, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease() error = %v", err)
 	}
@@ -297,7 +297,7 @@ func TestComputeReleaseInNestedModeAppliesTheOverrideBlockToTheMerge(t *testing.
 		}},
 	}
 
-	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, "owner", "repo", f, discardLogger())
+	rel, released, err := computeRelease(t.Context(), dir, config.Default(), comp, f, discardLogger())
 	if err != nil {
 		t.Fatalf("computeRelease() error = %v", err)
 	}

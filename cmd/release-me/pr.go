@@ -110,16 +110,18 @@ func doPR(ctx context.Context, dir string, cfg config.Config, component string, 
 	case cfg.Versioning == config.VersioningLinked:
 		return doPRLinked(ctx, dir, cfg, components, owner, repoName, base, f, logger, dryRun, multi, stdout)
 	default:
-		for _, comp := range components {
-			rel, released, err := computeRelease(ctx, dir, cfg, comp, owner, repoName, f, logger)
-			if err != nil {
-				return err
-			}
-			if !released {
-				printLine(stdout, comp.Name, multi, "nothing to release")
+		// Every release is computed before the first pull request is
+		// written, so the reads computeReleases caches never span a write.
+		results, err := computeReleases(ctx, dir, cfg, components, owner, repoName, f, logger)
+		if err != nil {
+			return err
+		}
+		for _, r := range results {
+			if !r.released {
+				printLine(stdout, r.comp.Name, multi, "nothing to release")
 				continue
 			}
-			if err := doPRComponent(ctx, dir, cfg, comp, []string{comp.TagPrefix}, rel, owner, repoName, base, f, logger, dryRun, multi, stdout); err != nil {
+			if err := doPRComponent(ctx, dir, cfg, r.comp, []string{r.comp.TagPrefix}, r.rel, owner, repoName, base, f, logger, dryRun, multi, stdout); err != nil {
 				return err
 			}
 		}

@@ -49,15 +49,16 @@ func runChangelog(args []string, stdout, stderr io.Writer) int {
 	logger.Debug("resolved repository", "owner", owner, "repo", repoName)
 
 	if cfg.Versioning == config.VersioningIndependent {
-		for _, comp := range components {
-			rel, released, err := computeRelease(ctx, dir, cfg, comp, owner, repoName, f, logger)
-			if err != nil {
-				fmt.Fprintf(stderr, "%v\n", err)
-				return 1
-			}
-			if !released {
+		results, err := computeReleases(ctx, dir, cfg, components, owner, repoName, f, logger)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		for _, r := range results {
+			if !r.released {
 				continue
 			}
+			comp, rel := r.comp, r.rel
 			link := compareURL(f, owner, repoName, rel.fromTag, comp.TagPrefix+rel.version.Version)
 			printBlock(stdout, comp.Name, multi, changelog.Render(rel.version.Version, time.Now(), link, rel.entries, rel.hiddenTypes))
 		}

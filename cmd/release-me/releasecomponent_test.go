@@ -17,6 +17,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/forge/forgetest"
+	"github.com/ostendorf-cloud/release-me/internal/history"
 )
 
 // mergeCommitWithFiles commits files with message onto a side branch
@@ -196,13 +197,39 @@ func TestComputeReleaseAttributesAnEmptyOrNamedCommitToComponents(t *testing.T) 
 			want: map[string]string{"duxt": "0.3.1", "api": "0.3.1"},
 		},
 		{
-			name:   "an unknown name is ignored with a warning, the empty commit counting for every component",
+			name:   "an empty commit naming only an unknown component counts for none, with a warning",
 			source: config.ChangelogSourceFirstParent,
 			setup: func(t *testing.T, dir string) {
 				commitEntry(t, dir, "fix: retag the broken build\n\nRelease-Component: duxtt")
 			},
-			want:     map[string]string{"duxt": "0.3.1", "api": "0.3.1"},
-			wantWarn: `ignoring a Release-Component footer: no component has that name" commit=`,
+			want:     map[string]string{},
+			wantWarn: `level=WARN msg="Release-Component footer names no configured component`,
+		},
+		{
+			name:   "an empty commit naming a known and an unknown component counts for the known one",
+			source: config.ChangelogSourceFirstParent,
+			setup: func(t *testing.T, dir string) {
+				commitEntry(t, dir, "fix: retag the broken build\n\nRelease-Component: duxt, apii")
+			},
+			want:     map[string]string{"duxt": "0.3.1"},
+			wantWarn: `value=apii components=duxt,api`,
+		},
+		{
+			name:   "a fenced footer quoted in a pull request body attributes nothing",
+			source: config.ChangelogSourceFirstParent,
+			setup: func(t *testing.T, dir string) {
+				mergeCommitWithFiles(t, dir, 28, "readme", "docs: explain the footer", map[string]string{
+					"packages/api/README.md": "api\n\nSee the footer.\n",
+				})
+			},
+			responses: map[int]forgetest.Response{
+				28: {PullRequest: forge.PullRequest{
+					Title: "fix(api): explain the footer",
+					Body:  "Attribute a docs only commit:\n\n```text\nfeat(duxt): document the layout prop\n\nRelease-Component: duxt\n```",
+					URL:   "https://example.invalid/pull/28",
+				}},
+			},
+			want: map[string]string{"api": "0.3.1"},
 		},
 		{
 			name:   "an empty commit's Release-As footer forces only the named component",
@@ -245,7 +272,7 @@ func TestComputeReleaseAttributesAnEmptyOrNamedCommitToComponents(t *testing.T) 
 
 			got := map[string]string{}
 			for _, comp := range cfg.Resolve() {
-				rel, released, err := computeRelease(t.Context(), dir, cfg, comp, "owner", "repo", f, logger)
+				rel, released, err := computeRelease(t.Context(), dir, cfg, comp, f, logger)
 				if err != nil {
 					t.Fatalf("computeRelease(%s) error = %v", comp.Name, err)
 				}
@@ -266,17 +293,19 @@ func TestComputeReleaseAttributesAnEmptyOrNamedCommitToComponents(t *testing.T) 
 	}
 }
 
-// TestComputeReleaseInASingleComponentRepositoryWarnsAboutAFooterNamingAComponent
-// pins that the footer changes nothing without components, apart from the
-// warning for a name the implicit "main" component does not carry.
-func TestComputeReleaseInASingleComponentRepositoryWarnsAboutAFooterNamingAComponent(t *testing.T) {
+// TestComputeReleaseInASingleComponentRepositoryIgnoresTheFooter pins that
+// the footer changes nothing without components: the implicit "main"
+// component at "." counts every commit without reading a footer, so even a
+// name it does not carry goes without a warning, since it cannot change
+// the outcome.
+func TestComputeReleaseInASingleComponentRepositoryIgnoresTheFooter(t *testing.T) {
 	cases := []struct {
 		name     string
 		message  string
 		wantWarn bool
 	}{
 		{name: "a footer naming main is silent", message: "fix: retag the broken build\n\nRelease-Component: main"},
-		{name: "a footer naming another name warns", message: "fix: retag the broken build\n\nRelease-Component: duxt", wantWarn: true},
+		{name: "a footer naming another name is silent", message: "fix: retag the broken build\n\nRelease-Component: duxt"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -288,14 +317,14 @@ func TestComputeReleaseInASingleComponentRepositoryWarnsAboutAFooterNamingACompo
 			var logs bytes.Buffer
 			logger := slog.New(slog.NewTextHandler(&logs, nil))
 			cfg := config.Default()
-			rel, released, err := computeRelease(t.Context(), dir, cfg, cfg.Resolve()[0], "owner", "repo", newFake(), logger)
+			rel, released, err := computeRelease(t.Context(), dir, cfg, cfg.Resolve()[0], newFake(), logger)
 			if err != nil {
 				t.Fatalf("computeRelease() error = %v", err)
 			}
 			if !released || rel.version.Version != "0.1.1" {
 				t.Fatalf("released = %v, version = %q, want 0.1.1", released, rel.version.Version)
 			}
-			warned := strings.Contains(logs.String(), "ignoring a Release-Component footer")
+			warned := strings.Contains(logs.String(), "Release-Component footer names no configured component")
 			if warned != tc.wantWarn {
 				t.Fatalf("logs = %q, want a warning %v", logs.String(), tc.wantWarn)
 			}
@@ -371,5 +400,88 @@ func TestPullRequestCacheReadsEachPullRequestOnce(t *testing.T) {
 				t.Fatalf("forge reads = %d, want 1", counting.calls[tc.number])
 			}
 		})
+	}
+}
+
+func TestAttributionReadsEachMergesSubCommitsOnce(t *testing.T) {
+	dir := newRepo(t)
+	commitEntry(t, dir, "chore: initial commit")
+	mergeCommitWithFiles(t, dir, 32, "layout", "feat(duxt): add the layout prop", map[string]string{
+		"packages/duxt/layout.ts": "export const layout = 1\n",
+	})
+	walked, err := history.Walk(t.Context(), dir, "")
+	if err != nil {
+		t.Fatalf("history.Walk() error = %v", err)
+	}
+	merge := walked[0].SHA
+
+	attr := newAttribution(dir, config.Default(), "owner", "repo", newFake(), discardLogger())
+	first, err := attr.subCommits(t.Context(), merge)
+	if err != nil {
+		t.Fatalf("subCommits() error = %v", err)
+	}
+	if len(first) != 1 || first[0].Subject != "feat(duxt): add the layout prop" {
+		t.Fatalf("subCommits() = %+v, want the one branch commit", first)
+	}
+	// A second read never reaches git: with the repository gone, only the
+	// memoised sub commits can answer.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("remove the repository: %v", err)
+	}
+	second, err := attr.subCommits(t.Context(), merge)
+	if err != nil {
+		t.Fatalf("second subCommits() error = %v", err)
+	}
+	if !reflect.DeepEqual(second, first) {
+		t.Fatalf("second subCommits() = %+v, want %+v", second, first)
+	}
+}
+
+func TestComputeReleasesSharesOneAttributionAcrossIndependentComponents(t *testing.T) {
+	dir := newRepo(t)
+	writeConfig(t, dir, "components:\n  duxt:\n    path: packages/duxt\n  api:\n    path: packages/api\n")
+	writeFiles(t, dir, "chore: scaffold the two packages", map[string]string{
+		"packages/duxt/README.md": "duxt\n",
+		"packages/api/README.md":  "api\n",
+	})
+	runGit(t, dir, "tag", "duxt/v0.3.0")
+	runGit(t, dir, "tag", "api/v0.3.0")
+	mergeCommitWithFiles(t, dir, 33, "dates", "fix: share the date helper", map[string]string{
+		"packages/duxt/date.ts": "export const date = 1\n",
+		"packages/api/date.go":  "package api\n",
+	})
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	counting := newCountingForge(&forgetest.Fake{Responses: map[int]forgetest.Response{
+		33: {PullRequest: forge.PullRequest{
+			Title: "fix: share the date helper",
+			Body:  "Moves the helper.\n\nRelease-Component: datez",
+			URL:   "https://example.invalid/pull/33",
+		}},
+	}})
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+	results, err := computeReleases(t.Context(), dir, cfg, cfg.Resolve(), "owner", "repo", counting, logger)
+	if err != nil {
+		t.Fatalf("computeReleases() error = %v", err)
+	}
+	got := map[string]string{}
+	for _, r := range results {
+		if r.released {
+			got[r.comp.Name] = r.rel.version.Version
+		}
+	}
+	if want := map[string]string{"duxt": "0.3.1", "api": "0.3.1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("released %v, want %v", got, want)
+	}
+	if counting.calls[33] != 1 {
+		t.Fatalf("forge reads of #33 = %d, want 1 across both components", counting.calls[33])
+	}
+	if n := strings.Count(logs.String(), "value=datez"); n != 1 {
+		t.Fatalf("logs = %q, want the unknown name warned once, got %d", logs.String(), n)
 	}
 }

@@ -501,10 +501,21 @@ Release-Component: duxt
 The footer is read where a [Release-As footer](#release-as-footer) is: the commit's own
 message, a squash merge's commit body, a merged pull request's body, and in `all` mode every
 commit on the branch. In `nested` mode the messages of the commits a merge introduced
-attribute the whole merge; `first-parent` and `squash` never read those. A name no component
-carries is ignored with a warning in the log, never failing the run, so an empty commit naming
-only unknown components still counts for every one. Without `components`, every commit already
-counts for the implicit `main` component, and a footer naming anything else only warns.
+attribute the whole merge; `first-parent` and `squash` never read those.
+
+Inside a message, the footer is read only from the trailer block, exactly as a `Release-As`
+footer is: the last paragraph below the first line, and only when every line in it is a
+`Key: value` trailer. A `Release-Component:` line anywhere else is inert text: in an earlier
+paragraph, fenced, quoted with `>`, in a list item, inside an HTML comment, or in a last
+paragraph that also holds prose. The fenced example above, quoted into a pull request body,
+therefore attributes nothing.
+
+A name no component carries reaches no component. It is logged as a warning, never failing
+the run, and the commit counts only for what its files and its other names reach: an empty
+commit naming only unknown components counts for none, never for every one, so a typo shows
+as a missing entry rather than an entry in every changelog. Without `components`, every
+commit already counts for the implicit `main` component, so the footer is not read at all, and
+a footer naming anything else changes nothing, without a warning.
 
 ### Changelog modes
 

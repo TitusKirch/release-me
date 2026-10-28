@@ -155,7 +155,7 @@ func TestComputeReleaseForcesTheVersionOfAReleaseAsFooter(t *testing.T) {
 			var logs bytes.Buffer
 			logger := slog.New(slog.NewTextHandler(&logs, nil))
 
-			rel, released, err := computeRelease(t.Context(), dir, config.Default(), resolvedComponent(tc.source), "owner", "repo", f, logger)
+			rel, released, err := computeRelease(t.Context(), dir, config.Default(), resolvedComponent(tc.source), f, logger)
 			if err != nil {
 				t.Fatalf("computeRelease() error = %v", err)
 			}
