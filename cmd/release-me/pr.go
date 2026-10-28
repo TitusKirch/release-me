@@ -758,7 +758,10 @@ type releasePlan struct {
 // branch's current tip, fetched into compareRef. A branch that does not
 // exist on the remote yet is always "changed": there is nothing to compare
 // it against. Several entries naming the same file apply one after another
-// to the same content, so each one's own key or marker keeps its update.
+// to the same content, so each one's own key or marker keeps its update:
+// config refuses two independently versioned components bumping the same
+// key, or both a marker, in one file, and in locked and linked versioning
+// every entry carries the same version, so no entry overwrites another's.
 func planReleaseBranch(ctx context.Context, dir string, changelogs []changelogUpdate, files []fileUpdate, branch string) (*releasePlan, error) {
 	tmp, err := os.MkdirTemp("", "release-me-pr-")
 	if err != nil {

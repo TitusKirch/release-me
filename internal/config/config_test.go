@@ -791,6 +791,69 @@ func TestLoadRejectsAComponentNameReleaseMeCannotReadBack(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsTwoIndependentComponentsBumpingTheSameVersion(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, content, want string
+	}{
+		{
+			name: "the same key in one json file",
+			content: "components:\n  api:\n    path: api\n    files:\n      - path: deploy/versions.json\n        updater: json\n        key: version\n" +
+				"  web:\n    path: web\n    files:\n      - path: ./deploy/versions.json\n        updater: json\n        key: version\n",
+			want: `component "api" and "web" bump the same version in "deploy/versions.json" at key "version"`,
+		},
+		{
+			name: "one marker file",
+			content: "components:\n  api:\n    path: api\n    files:\n      - path: VERSION\n" +
+				"  web:\n    path: web\n    files:\n      - path: VERSION\n",
+			want: `component "api" and "web" bump the same version in "VERSION"`,
+		},
+		{
+			name:    "the top-level files both inherit",
+			content: "files:\n  - path: VERSION\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n",
+			want:    `component "api" and "web" bump the same version in "VERSION"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := config.Load(writeFile(t, tc.content))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load() error = %v, want one containing %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsComponentsSharingAFileWhereNoVersionCollides(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, content string
+	}{
+		{
+			name: "independent components bumping their own key of one file",
+			content: "components:\n  api:\n    path: api\n    files:\n      - path: deploy/versions.yaml\n        updater: yaml\n        key: api\n" +
+				"  web:\n    path: web\n    files:\n      - path: deploy/versions.yaml\n        updater: yaml\n        key: web\n",
+		},
+		{
+			name:    "locked components inheriting one marker file",
+			content: "versioning: locked\nfiles:\n  - path: VERSION\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n",
+		},
+		{
+			name:    "linked components inheriting one marker file",
+			content: "versioning: linked\nfiles:\n  - path: VERSION\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := config.Load(writeFile(t, tc.content)); err != nil {
+				t.Fatalf("Load() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
 func TestLoadAcceptsAComponentNameOfLettersDigitsDashUnderscoreAndDot(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, "components:\n  api-v2_core.go:\n    path: services/api\n")

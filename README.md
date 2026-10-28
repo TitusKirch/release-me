@@ -649,7 +649,10 @@ something to release this run, each at its own version for `independent` and at 
 for `linked`, with its own `CHANGELOG.md` section and its own `files` bumped to its own version.
 A component with nothing to release is left out and printed as `nothing to release`, the same
 as it gets no pull request of its own per component. Two components listing the same file
-each update their own `key` in it. The title names every component and its version, in
+each update their own `key` in it. Two `independent` components bumping the same `key` of one
+file, or both a `marker` or `helm` file, inherited top-level `files` included, are a
+configuration error, since one would overwrite the other's version; `locked` and `linked`
+write the one family version there and allow it. The title names every component and its version, in
 `release-me.yaml`'s order, `chore: release api v1.3.0, web v0.3.1`, the same as release-please's
 grouped pull request names the packages in its body. GitHub caps a title at 256 characters, so
 how many components fit depends on their names and versions, about eight with 20-character

@@ -632,6 +632,9 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, err
 		}
 		cfg.Components = components
+		if err := validateFileUpdates(path, cfg); err != nil {
+			return Config{}, err
+		}
 	}
 	return cfg, nil
 }
@@ -868,6 +871,43 @@ func validateChangelogPaths(path string, components []Component) error {
 				return fmt.Errorf("config: parse %s: component %q and %q write the same changelog %q",
 					path, a.Name, b.Name, pa)
 			}
+		}
+	}
+	return nil
+}
+
+// validateFileUpdates rejects two components bumping the same version in
+// one file: the same path with the same key, an empty key, as the marker
+// and helm updaters carry, counting as equal. Their files are compared as
+// resolved, so two components inheriting the top-level "files" collide
+// too. Both updates would apply to the same value, so the component later
+// in release-me.yaml would silently overwrite the other's version. Only
+// VersioningIndependent is checked: in VersioningLocked and
+// VersioningLinked every component a run releases carries the family's
+// one next version, so both write the same value.
+func validateFileUpdates(path string, cfg Config) error {
+	if cfg.Versioning != VersioningIndependent {
+		return nil
+	}
+	type target struct{ path, key string }
+	owner := make(map[target]string)
+	for _, comp := range cfg.Resolve() {
+		seen := make(map[target]bool)
+		for _, f := range comp.Files {
+			t := target{path: stdpath.Clean(f.Path), key: f.Key}
+			if seen[t] {
+				continue
+			}
+			seen[t] = true
+			if other, ok := owner[t]; ok {
+				where := fmt.Sprintf("%q", t.path)
+				if t.key != "" {
+					where += fmt.Sprintf(" at key %q", t.key)
+				}
+				return fmt.Errorf("config: parse %s: component %q and %q bump the same version in %s, "+
+					"one would overwrite the other's", path, other, comp.Name, where)
+			}
+			owner[t] = comp.Name
 		}
 	}
 	return nil
