@@ -62,15 +62,12 @@ func runPR(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	if err := doPR(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
+	components, err := resolveComponents(cfg, component)
+	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	if err := emitOutputs(cfg, component, out); err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
-	}
-	return 0
+	return finishWrite(stderr, components, out, doPR(ctx, dir, cfg, component, f, logger, dryRun, stdout))
 }
 
 // doPR creates or updates the release pull request for every component

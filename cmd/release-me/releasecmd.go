@@ -43,15 +43,12 @@ func runRelease(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	if err := doRelease(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
+	components, err := resolveComponents(cfg, component)
+	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	if err := emitOutputs(cfg, component, out); err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
-	}
-	return 0
+	return finishWrite(stderr, components, out, doRelease(ctx, dir, cfg, component, f, logger, dryRun, stdout))
 }
 
 // doRelease tags, releases and swaps the label of every merged release pull

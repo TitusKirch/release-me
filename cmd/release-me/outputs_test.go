@@ -5,7 +5,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -342,7 +345,7 @@ func TestEmitOutputsAppendsToTheFileTheEnvironmentNames(t *testing.T) {
 	t.Setenv(outputsEnv, path)
 
 	out := &runOutputs{releases: []tagrelease.Result{{Name: "main", Version: "0.2.2", Tag: "v0.2.2"}}}
-	if err := emitOutputs(config.Default(), "", out); err != nil {
+	if err := emitOutputs(config.Default().Resolve(), out); err != nil {
 		t.Fatalf("emitOutputs() error = %v", err)
 	}
 	got, err := os.ReadFile(path)
@@ -361,8 +364,56 @@ func TestEmitOutputsAppendsToTheFileTheEnvironmentNames(t *testing.T) {
 
 func TestEmitOutputsWritesNothingWithoutTheEnvironment(t *testing.T) {
 	t.Setenv(outputsEnv, "")
-	if err := emitOutputs(config.Default(), "", &runOutputs{}); err != nil {
+	if err := emitOutputs(config.Default().Resolve(), &runOutputs{}); err != nil {
 		t.Fatalf("emitOutputs() error = %v", err)
+	}
+}
+
+// releaseListingFailsForge fails every closed pull request listing once a
+// release pull request was created, so a run's pr phase succeeds and its
+// release phase then stops on the listing.
+type releaseListingFailsForge struct {
+	*forgetest.Fake
+}
+
+func (f releaseListingFailsForge) PullRequests(ctx context.Context, owner, repo, head, state string) ([]forge.PullRequest, error) {
+	if state == "closed" && len(f.CreatedPullRequests) > 0 {
+		return nil, errors.New("GET https://api.github.com/repos/owner/repo/pulls: 502 Bad Gateway")
+	}
+	return f.Fake.PullRequests(ctx, owner, repo, head, state)
+}
+
+func TestFinishWriteEmitsWhatARunDidBeforeItsReleasePhaseFailed(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	commitEntry(t, dir, "feat: add the next command")
+	path := filepath.Join(t.TempDir(), "github_output")
+	t.Setenv(outputsEnv, path)
+
+	f := releaseListingFailsForge{newFake()}
+	out := &runOutputs{}
+	runErr := doRun(withOutputs(t.Context(), out), dir, config.Default(), "", f, discardLogger(), false, io.Discard)
+	if runErr == nil {
+		t.Fatal("doRun() error = nil, want the release phase's listing to fail")
+	}
+
+	var stderr bytes.Buffer
+	if code := finishWrite(&stderr, config.Default().Resolve(), out, runErr); code != 1 {
+		t.Fatalf("finishWrite() = %d, want 1 for the failed release phase", code)
+	}
+	if !strings.Contains(stderr.String(), "502 Bad Gateway") {
+		t.Fatalf("stderr = %q, want the release phase's error", stderr.String())
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read output file: %v", err)
+	}
+	parsed := parseOutputs(t, string(got))
+	want := []prOutput{{Number: 1, URL: "https://github.com/owner/repo/pull/1", Branch: mainBranch, Components: []string{"main"}}}
+	if !reflect.DeepEqual(parsed.prs, want) {
+		t.Fatalf("prs = %+v, want the pull request the pr phase opened: %+v", parsed.prs, want)
+	}
+	if parsed.released != "false" {
+		t.Fatalf("released = %q, want false: the release phase tagged nothing", parsed.released)
 	}
 }
 

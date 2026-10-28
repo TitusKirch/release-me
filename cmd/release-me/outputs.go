@@ -162,16 +162,31 @@ func (out *runOutputs) render(components []string) (string, error) {
 	return b.String(), nil
 }
 
-// emitOutputs appends out, for the components component resolves to, to
-// the file outputsEnv names, and does nothing when it is unset.
-func emitOutputs(cfg config.Config, component string, out *runOutputs) error {
+// finishWrite ends pr, release and run once their work stopped on err, nil
+// for success: it prints err, then emits out for components, the ones
+// the command resolved, whether or not err is set, since every pull
+// request and release out records is one the forge already confirmed. A
+// failed step's outputs still say how far it got. It returns the exit
+// code, 1 when err is set or the outputs could not be written.
+func finishWrite(stderr io.Writer, components []config.ResolvedComponent, out *runOutputs, err error) int {
+	code := 0
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		code = 1
+	}
+	if err := emitOutputs(components, out); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		code = 1
+	}
+	return code
+}
+
+// emitOutputs appends out, for components, to the file outputsEnv names,
+// and does nothing when it is unset.
+func emitOutputs(components []config.ResolvedComponent, out *runOutputs) error {
 	path := os.Getenv(outputsEnv)
 	if path == "" {
 		return nil
-	}
-	components, err := resolveComponents(cfg, component)
-	if err != nil {
-		return err
 	}
 	names := make([]string, 0, len(components))
 	for _, c := range components {

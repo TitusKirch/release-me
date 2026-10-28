@@ -7,6 +7,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
+
+	"github.com/ostendorf-cloud/release-me/internal/config"
+	"github.com/ostendorf-cloud/release-me/internal/forge"
 )
 
 // runRun implements the run command, the CI entry point: pr, then release,
@@ -33,17 +37,18 @@ func runRun(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	components, err := resolveComponents(cfg, component)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	return finishWrite(stderr, components, out, doRun(ctx, dir, cfg, component, f, logger, dryRun, stdout))
+}
+
+// doRun runs doPR, then doRelease unless doPR failed.
+func doRun(ctx context.Context, dir string, cfg config.Config, component string, f forge.Forge, logger *slog.Logger, dryRun bool, stdout io.Writer) error {
 	if err := doPR(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
+		return err
 	}
-	if err := doRelease(ctx, dir, cfg, component, f, logger, dryRun, stdout); err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
-	}
-	if err := emitOutputs(cfg, component, out); err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return 1
-	}
-	return 0
+	return doRelease(ctx, dir, cfg, component, f, logger, dryRun, stdout)
 }
