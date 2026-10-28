@@ -74,8 +74,8 @@ func computeRelease(
 		return release{}, false, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
 
-	warnRefusedReleaseAs(logger, comp.Name, last, hasTag, changes)
-	result, released := version.Next(last, hasTag, changes, comp.InitialVersion, comp.BumpMinorPreMajor)
+	result, released, refused := version.Next(last, hasTag, changes, comp.InitialVersion, comp.BumpMinorPreMajor)
+	warnRefusedReleaseAs(logger, comp.Name, refused)
 	if !released {
 		return release{}, false, nil
 	}
@@ -286,13 +286,12 @@ func parseCommit(e history.Entry, fallbackType string, number int, url string) (
 	}
 }
 
-// warnRefusedReleaseAs logs every "Release-As" footer among changes that
-// version.ReleaseAs refuses against last, never failing the run: the
-// footer is ignored and the computed bump applies, the same way pr treats
-// a release-me-version override that is not greater than the last
-// released version. who names the component or family.
-func warnRefusedReleaseAs(logger *slog.Logger, who string, last version.Semver, lastOK bool, changes []version.Change) {
-	_, _, refused := version.ReleaseAs(last, lastOK, changes)
+// warnRefusedReleaseAs logs every "Release-As" footer version.Next
+// refused, never failing the run: the footer is ignored and the computed
+// bump applies, the same way pr treats a release-me-version override that
+// is not greater than the last released version. who names the component
+// or family.
+func warnRefusedReleaseAs(logger *slog.Logger, who string, refused []version.Refusal) {
 	for _, r := range refused {
 		logger.Warn("ignoring a Release-As footer: the value "+r.Reason, "component", who, "value", r.Value)
 	}

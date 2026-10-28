@@ -287,14 +287,15 @@ func applyReleaseAs(out *Outcome, rest string) {
 	out.Valid = true
 }
 
-// parseVersion parses s, an optional "v" prefix stripped, as a semantic
-// version through version.ParseTag, the same parser a tag name is checked
-// against. normalized is s rendered back without the "v" prefix and
-// without build metadata, ok is false when s does not parse.
+// parseVersion parses s through version.ParseForced, the rule every
+// forced version follows, a pre-release value accepted. No last tag is
+// checked here: the comment command learns it only once pr re-renders
+// the release pull request with the override. normalized is s rendered
+// back without the "v" prefix and without build metadata, ok is false
+// when s does not parse.
 func parseVersion(s string) (normalized string, ok bool) {
-	s = strings.TrimPrefix(strings.TrimPrefix(s, "v"), "V")
-	sv, ok := version.ParseTag("v" + s)
-	if !ok {
+	sv, err := version.ParseForced(s, version.Semver{}, false, true)
+	if err != nil {
 		return "", false
 	}
 	return sv.String(), true
