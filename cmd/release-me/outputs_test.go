@@ -304,7 +304,6 @@ func TestOutputsReportAnUpToDateReleasePullRequest(t *testing.T) {
 	f.ListResponses = []forgetest.ListResponse{
 		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{{
 			Number: 1, Title: created.Title, Body: created.Body, Labels: created.Labels,
-			URL: "https://github.com/owner/repo/pull/1",
 		}}},
 	}
 

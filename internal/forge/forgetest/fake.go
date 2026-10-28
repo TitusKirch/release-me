@@ -20,7 +20,8 @@ type Response struct {
 }
 
 // ListResponse configures what PullRequests returns for one head and state:
-// PullRequests, or Err when it is set.
+// PullRequests, or Err when it is set. An entry whose URL is empty is
+// returned with the GitHub-shaped URL CreatePullRequest would give it.
 type ListResponse struct {
 	Head         string
 	State        string
@@ -177,14 +178,26 @@ func (f *Fake) PullRequest(_ context.Context, _, _ string, number int) (forge.Pu
 	return r.PullRequest, r.Err
 }
 
-// PullRequests implements forge.Forge.
-func (f *Fake) PullRequests(_ context.Context, _, _, head, state string) ([]forge.PullRequest, error) {
+// PullRequests implements forge.Forge. Every entry left without a URL in
+// its fixture gets the one CreatePullRequest and UpdatePullRequest return,
+// the same as the GitHub implementation filling URL on every path.
+func (f *Fake) PullRequests(_ context.Context, owner, repo, head, state string) ([]forge.PullRequest, error) {
 	for _, r := range f.ListResponses {
 		if r.Head == head && r.State == state {
 			if r.Err != nil {
 				return nil, r.Err
 			}
-			return r.PullRequests, nil
+			if r.PullRequests == nil {
+				return nil, nil
+			}
+			prs := make([]forge.PullRequest, len(r.PullRequests))
+			for i, pr := range r.PullRequests {
+				if pr.URL == "" {
+					pr.URL = pullRequestURL(owner, repo, pr.Number)
+				}
+				prs[i] = pr
+			}
+			return prs, nil
 		}
 	}
 	return nil, nil
