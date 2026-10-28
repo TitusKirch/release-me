@@ -273,6 +273,7 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 		{name: "rejects an empty tagged label", content: "labels:\n  tagged: \"\"\n"},
 		{name: "rejects one label for two pre-release types", content: "labels:\n  alpha: \"release: pre\"\n  rc: \"release: pre\"\n"},
 		{name: "rejects a pre-release label equal to a default one", content: "labels:\n  alpha: \"release: rc\"\n"},
+		{name: "rejects a pre-release label set to true", content: "labels:\n  beta: true\n"},
 		{name: "rejects a component without a path", content: "components:\n  frontend:\n    initial-version: 0.1.0\n"},
 		{name: "rejects an unknown key inside a component", content: "components:\n  frontend:\n    path: frontend\n    release-tag: v1\n"},
 		{
@@ -647,23 +648,47 @@ func TestResolveUsesAConfiguredChangelogAndDerivesTheRest(t *testing.T) {
 	}
 }
 
-func TestLoadTurnsAPreReleaseTypeOffWithAnEmptyLabel(t *testing.T) {
+func TestLoadTurnsAPreReleaseTypeOff(t *testing.T) {
 	t.Parallel()
-	path := writeFile(t, "labels:\n  alpha: \"\"\n  beta: \"\"\n")
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "with an empty label", content: "labels:\n  alpha: \"\"\n  beta: \"\"\n"},
+		{name: "with false", content: "labels:\n  alpha: false\n  beta: false\n"},
+		{name: "with false and an empty label mixed", content: "labels:\n  alpha: false\n  beta: \"\"\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := config.Load(writeFile(t, tt.content))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got.Labels.Alpha != "" || got.Labels.Beta != "" || got.Labels.Rc != config.DefaultRcLabel {
+				t.Fatalf("Labels = %+v, want alpha and beta off and rc at its default", got.Labels)
+			}
+		})
+	}
+}
+
+func TestLoadKeepsAQuotedFalseAsALabelName(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, "labels:\n  rc: \"false\"\n")
 
 	got, err := config.Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got.Labels.Alpha != "" || got.Labels.Beta != "" || got.Labels.Rc != config.DefaultRcLabel {
-		t.Fatalf("Labels = %+v, want alpha and beta off and rc at its default", got.Labels)
+	if got.Labels.Rc != "false" {
+		t.Fatalf("Labels.Rc = %q, want %q", got.Labels.Rc, "false")
 	}
 }
 
 func TestLoadAcceptsSeveralPreReleaseTypesTurnedOff(t *testing.T) {
 	t.Parallel()
 	// Two empty labels are two types turned off, not one name used twice.
-	path := writeFile(t, "labels:\n  alpha: \"\"\n  beta: \"\"\n  rc: \"\"\n")
+	path := writeFile(t, "labels:\n  alpha: false\n  beta: \"\"\n  rc: false\n")
 
 	if _, err := config.Load(path); err != nil {
 		t.Fatalf("Load() error = %v, want nil", err)
