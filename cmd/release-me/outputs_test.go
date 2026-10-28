@@ -74,6 +74,20 @@ func TestRenderOutputs(t *testing.T) {
 				"pr=\n" +
 				"prs=[]\n",
 		},
+		{
+			name: "a pull request and a release for an unhandled component add no key to components",
+			out: runOutputs{
+				prs: []prOutput{{Number: 7, URL: "https://github.com/kirchDev/duxt/pull/7", Branch: "release-me/docs", Components: []string{"docs"}}},
+				releases: []tagrelease.Result{
+					{PullRequestNumber: 7, Name: "docs", Version: "1.2.0", Tag: "docs@v1.2.0"},
+				},
+			},
+			components: []string{"duxt"},
+			want: "released=true\n" +
+				`components={"duxt":{"released":false,"version":"","tag":"","pr":null}}` + "\n" +
+				`pr={"number":7,"url":"https://github.com/kirchDev/duxt/pull/7","branch":"release-me/docs","components":["docs"]}` + "\n" +
+				`prs=[{"number":7,"url":"https://github.com/kirchDev/duxt/pull/7","branch":"release-me/docs","components":["docs"]}]` + "\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

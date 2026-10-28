@@ -106,6 +106,14 @@ func reportReleased(ctx context.Context, w io.Writer, dryRun bool, r tagrelease.
 // name in components, the components this run handled; "pr", the one
 // release pull request recorded, empty when there were none or several;
 // "prs", every one recorded, in the order they were.
+//
+// A pull request or a release recorded for a name outside components is
+// skipped rather than added as a key components does not list; released,
+// pr and prs still count it, the same as tags does. Neither
+// can happen today: doPR and doRelease only record the components
+// resolveComponents returns, a shared title naming an unconfigured
+// component is refused before anything is tagged, and --component is
+// rejected in shared and locked mode.
 func (out *runOutputs) render(components []string) (string, error) {
 	byName := make(map[string]componentOutput, len(components))
 	for _, name := range components {
@@ -121,9 +129,10 @@ func (out *runOutputs) render(components []string) (string, error) {
 		}
 	}
 	for _, r := range out.releases {
-		c := byName[r.Name]
-		c.Released, c.Version, c.Tag = true, r.Version, r.Tag
-		byName[r.Name] = c
+		if c, ok := byName[r.Name]; ok {
+			c.Released, c.Version, c.Tag = true, r.Version, r.Tag
+			byName[r.Name] = c
+		}
 	}
 
 	componentsJSON, err := json.Marshal(byName)
