@@ -55,6 +55,15 @@ task run -- next     # run the CLI from source
 // SPDX-License-Identifier: Apache-2.0
 ```
 
+## Git
+
+- Update a branch with a rebase, never a merge: a rebase replays its commits onto the new
+  base, it never adds a merge commit of its own. Merging main, or another branch, into a
+  feature branch litters its history with "Merge branch" commits that carry into the project's
+  permanent history the moment the pull request merges.
+- A merge commit exists only where a feature branch lands in the default branch, created by
+  merging the pull request itself.
+
 ## Deviations
 
 - None.
