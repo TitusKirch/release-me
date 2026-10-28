@@ -33,6 +33,9 @@ type attribution struct {
 	// warned holds the commit and name of every unknown footer value
 	// already logged, so one commit read twice warns once.
 	warned map[string]bool
+	// subs holds every merge commit's sub commits already read, by SHA,
+	// see subCommits.
+	subs map[string][]history.Entry
 }
 
 // newAttribution returns the attribution for one run over cfg's
@@ -46,7 +49,7 @@ func newAttribution(dir string, cfg config.Config, owner, repoName string, f for
 	}
 	return &attribution{
 		dir: dir, owner: owner, repoName: repoName, forge: f, known: known, logger: logger,
-		warned: map[string]bool{},
+		warned: map[string]bool{}, subs: map[string][]history.Entry{},
 	}
 }
 
@@ -93,9 +96,9 @@ func (a *attribution) named(ctx context.Context, e history.Entry, comp config.Re
 			return nil, fmt.Errorf("release-me: pull request #%d: %w", e.PullRequestNumber, err)
 		}
 		if comp.ChangelogSource == config.ChangelogSourceNested {
-			subs, err := history.SubCommits(ctx, a.dir, e.SHA)
+			subs, err := a.subCommits(ctx, e.SHA)
 			if err != nil {
-				return nil, fmt.Errorf("release-me: merge commit %s: sub commits: %w", e.SHA, err)
+				return nil, err
 			}
 			for _, s := range subs {
 				texts = append(texts, entryText(s))
@@ -116,6 +119,21 @@ func (a *attribution) named(ctx context.Context, e history.Entry, comp config.Re
 		}
 	}
 	return named, nil
+}
+
+// subCommits returns the sub commits of the merge commit sha through
+// history.SubCommits, reading each merge once per attribution: named and
+// nestedSubEntries both read them, once per component.
+func (a *attribution) subCommits(ctx context.Context, sha string) ([]history.Entry, error) {
+	if subs, ok := a.subs[sha]; ok {
+		return subs, nil
+	}
+	subs, err := history.SubCommits(ctx, a.dir, sha)
+	if err != nil {
+		return nil, fmt.Errorf("release-me: merge commit %s: sub commits: %w", sha, err)
+	}
+	a.subs[sha] = subs
+	return subs, nil
 }
 
 // warnUnknown logs a "Release-Component" footer naming no configured

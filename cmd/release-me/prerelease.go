@@ -127,11 +127,12 @@ func preReleaseEntries(
 		return "", nil, fmt.Errorf("history since %s: %w", since, err)
 	}
 	f = newPullRequestCache(f)
-	raw, err = newAttribution(dir, cfg, owner, repoName, f, logger).filter(ctx, raw, comp)
+	attr := newAttribution(dir, cfg, owner, repoName, f, logger)
+	raw, err = attr.filter(ctx, raw, comp)
 	if err != nil {
 		return "", nil, err
 	}
-	_, restricted, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType, comp.ChangelogSource, dir)
+	_, restricted, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType, comp.ChangelogSource, attr.subCommits)
 	if err != nil {
 		return "", nil, err
 	}

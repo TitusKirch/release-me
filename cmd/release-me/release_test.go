@@ -104,7 +104,7 @@ func TestAssembleEntries(t *testing.T) {
 			t.Parallel()
 			f := &forgetest.Fake{Responses: tc.responses}
 
-			changes, entries, err := assembleEntries(context.Background(), f, "owner", "repo", tc.raw, "other", config.ChangelogSourceFirstParent, "")
+			changes, entries, err := assembleEntries(context.Background(), f, "owner", "repo", tc.raw, "other", config.ChangelogSourceFirstParent, nil)
 			if err != nil {
 				t.Fatalf("assembleEntries() error = %v", err)
 			}
@@ -123,7 +123,7 @@ func TestAssembleEntriesUsesTheGivenFallbackType(t *testing.T) {
 	raw := []history.Entry{{Subject: "quick hack before the demo"}}
 	f := &forgetest.Fake{}
 
-	_, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "misc", config.ChangelogSourceFirstParent, "")
+	_, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "misc", config.ChangelogSourceFirstParent, nil)
 	if err != nil {
 		t.Fatalf("assembleEntries() error = %v", err)
 	}
@@ -142,7 +142,7 @@ func TestAssembleEntriesInSquashModeKeepsTheSubjectAsTitleWhenTheForgeCannotReso
 	raw := []history.Entry{{PullRequestNumber: 12, Subject: "feat: add thing", Squashed: true}}
 	f := &forgetest.Fake{}
 
-	changes, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceSquash, "")
+	changes, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceSquash, nil)
 	if err != nil {
 		t.Fatalf("assembleEntries() error = %v", err)
 	}
@@ -170,7 +170,7 @@ func TestAssembleEntriesInSquashModeAddsOnlyTheLinkAndBodyWhenTheForgeResolves(t
 		}},
 	}}
 
-	_, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceSquash, "")
+	_, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceSquash, nil)
 	if err != nil {
 		t.Fatalf("assembleEntries() error = %v", err)
 	}
@@ -194,7 +194,7 @@ func TestAssembleEntriesAppliesTheOverrideBlockInSquashMode(t *testing.T) {
 		}},
 	}}
 
-	_, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceSquash, "")
+	_, entries, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceSquash, nil)
 	if err != nil {
 		t.Fatalf("assembleEntries() error = %v", err)
 	}
@@ -250,7 +250,7 @@ func TestAssembleEntriesPropagatesAForgeError(t *testing.T) {
 		1: {Err: context.DeadlineExceeded},
 	}}
 
-	_, _, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceFirstParent, "")
+	_, _, err := assembleEntries(context.Background(), f, "owner", "repo", raw, "other", config.ChangelogSourceFirstParent, nil)
 	if err == nil {
 		t.Fatal("assembleEntries() error = nil, want an error")
 	}

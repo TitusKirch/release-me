@@ -60,7 +60,7 @@ func gatherFamily(
 		}
 		logger.Debug("history entries", "component", comp.Name, "count", len(raw), "source", comp.ChangelogSource)
 
-		changes, entries, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType, comp.ChangelogSource, dir)
+		changes, entries, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType, comp.ChangelogSource, attr.subCommits)
 		if err != nil {
 			return nil, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}

@@ -17,6 +17,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/forge/forgetest"
+	"github.com/ostendorf-cloud/release-me/internal/history"
 )
 
 // mergeCommitWithFiles commits files with message onto a side branch
@@ -399,5 +400,39 @@ func TestPullRequestCacheReadsEachPullRequestOnce(t *testing.T) {
 				t.Fatalf("forge reads = %d, want 1", counting.calls[tc.number])
 			}
 		})
+	}
+}
+
+func TestAttributionReadsEachMergesSubCommitsOnce(t *testing.T) {
+	dir := newRepo(t)
+	commitEntry(t, dir, "chore: initial commit")
+	mergeCommitWithFiles(t, dir, 32, "layout", "feat(duxt): add the layout prop", map[string]string{
+		"packages/duxt/layout.ts": "export const layout = 1\n",
+	})
+	walked, err := history.Walk(t.Context(), dir, "")
+	if err != nil {
+		t.Fatalf("history.Walk() error = %v", err)
+	}
+	merge := walked[0].SHA
+
+	attr := newAttribution(dir, config.Default(), "owner", "repo", newFake(), discardLogger())
+	first, err := attr.subCommits(t.Context(), merge)
+	if err != nil {
+		t.Fatalf("subCommits() error = %v", err)
+	}
+	if len(first) != 1 || first[0].Subject != "feat(duxt): add the layout prop" {
+		t.Fatalf("subCommits() = %+v, want the one branch commit", first)
+	}
+	// A second read never reaches git: with the repository gone, only the
+	// memoised sub commits can answer.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("remove the repository: %v", err)
+	}
+	second, err := attr.subCommits(t.Context(), merge)
+	if err != nil {
+		t.Fatalf("second subCommits() error = %v", err)
+	}
+	if !reflect.DeepEqual(second, first) {
+		t.Fatalf("second subCommits() = %+v, want %+v", second, first)
 	}
 }
