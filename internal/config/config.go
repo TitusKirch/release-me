@@ -739,8 +739,8 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 // "chore: release <name> vX.Y.Z, ...", which release reads back after the
 // merge, the comma separated Release-Component footer and the changelog
 // compare link. A name holds ASCII letters, digits, "-", "_" and "." only, and
-// neither starts with "." or "-" nor holds "..", which git refuses in a
-// tag or branch name. migrate calls it to vet a name it derived.
+// neither starts with "." or "-", ends with "." or ".lock", nor holds "..",
+// which git refuses in a tag or branch name. migrate calls it to vet a name it derived.
 func ValidateComponentName(name string) error {
 	for _, r := range name {
 		if !isComponentNameRune(r) {
@@ -752,6 +752,8 @@ func ValidateComponentName(name string) error {
 		return errors.New("is empty")
 	case strings.HasPrefix(name, ".") || strings.HasPrefix(name, "-"):
 		return errors.New(`starts with "." or "-", which git refuses at the start of a tag or branch name`)
+	case strings.HasSuffix(name, ".") || strings.HasSuffix(name, ".lock"):
+		return errors.New(`ends with "." or ".lock", which git refuses in a tag or branch name`)
 	case strings.Contains(name, ".."):
 		return errors.New(`contains "..", which git refuses in a tag or branch name`)
 	}
