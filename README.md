@@ -168,13 +168,39 @@ your working copy.
 anything, the same check `check` runs. The labels are shared across every component; the
 default branch is resolved once and shared too.
 
-Rerunning `pr` is judged on content, not on the rendered pull request body: the version in the
-changelog heading, the changelog entries for that version without the heading's date, and every
-configured file's bumped content are compared against the release branch's current tip. A version
-that differs from the one already on the branch, a pre-release label added, changed or removed,
-counts as changed even when the entries underneath read the same. A heading the comparison cannot
-read, a hand edit or one from before this tool wrote it, counts as changed too, and pushes; the
-push rewrites it to this tool's own shape, so it settles after that one push. Equal content
+The changelog heading, the same one `changelog` prints, links the version to the forge's compare
+view, between the tag the release's entries are collected since and the tag it will get:
+
+```markdown
+## [v0.9.0](https://github.com/owner/repo/compare/duxt@v0.8.1...duxt@v0.9.0) (2026-10-01)
+```
+
+The link starts at the component's last stable tag, with its own tag prefix; a pre-release tag
+never moves that base. A pre-release starts at the previous pre-release tag of the same
+version, `v0.9.0-rc.1...v0.9.0-rc.2`, when one exists, since its entries start there too, and at
+the last stable tag otherwise. A component's first release has nothing to compare against, so
+its heading carries no link: `## v0.1.0 (2026-10-01)`. On GitHub Enterprise the link points at
+the instance's own web host. A locked family's combined pull request body keeps one unlinked
+heading, as every component has a tag of its own; each component's `CHANGELOG.md` links its own.
+The heading in the GitHub release body is the one from the pull request body. Older headings
+without a link are read the same way as linked ones. The link's head tag does not exist until the
+release pull request merges, so while it is open the link in its body and on its branch leads to
+a 404; the merge creates the tag and the link resolves from then on. A `tag-prefix` holding `(`,
+`)`, `#` or `%` is a configuration error, since each one breaks the link or the heading around
+it.
+
+Rerunning `pr` is judged on content, not on the rendered pull request body: the version and the
+compare link in the changelog heading, the changelog entries for that version without the
+heading's date, and every configured file's bumped content are compared against the release
+branch's current tip. A version that differs from the one already on the branch, a pre-release
+label added, changed or removed, counts as changed even when the entries underneath read the
+same, and so does a compare link that differs, a heading written before the link existed
+included. A heading the comparison cannot
+read, a hand edit, release-please's `## [0.9.0](url) (date)` or one from before this tool wrote
+it, counts as changed too, and pushes; the push rewrites it to this tool's own shape, so it
+settles after that one push. Should the heading this tool would write not read back either, the
+heading is left out of the comparison instead, so `pr` never pushes the same content on every
+run. Equal content
 changes nothing, not even the pull request body, and nothing is pushed. A change pushes the
 branch and sets the heading to today's date; the push carries a `--force-with-lease` whose
 expected value is the existing pull request's head SHA from the forge, not a locally fetched
@@ -697,9 +723,11 @@ files:
   starting over at `initial-version`. The version is appended to the prefix as it is. A prefix
   that is empty, holds whitespace or one of `~ ^ : ? * [ \`, contains `..`, `@{` or `//`, or
   starts with `/`, `-` or `.` is a configuration error, as are two components with the same
-  prefix. The prefix is how a component finds its history: adding, changing or removing
-  `tag-prefix` once a component has tags under its previous prefix restarts it at
-  `initial-version`, the same way renaming the component would. `changelog` replaces the
+  prefix. On top of these git ref rules, a prefix holding `(`, `)`, `#` or `%` is one too, as
+  those break the changelog heading's compare link. The prefix is how a component finds its
+  history: adding, changing or removing `tag-prefix` once a component has tags under its
+  previous prefix restarts it at `initial-version`, the same way renaming the component would.
+  `changelog` replaces the
   derived changelog path, relative to the repository root, for a component whose changelog
   lives outside its own path, such as one kept at the root while the code sits in
   `packages/<name>`; a directory it names that does not exist yet is created. A changelog path

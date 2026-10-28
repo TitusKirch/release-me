@@ -101,19 +101,34 @@ func sectionFor(e Entry, hiddenTypes []string) (idx int, ok bool) {
 	return 0, false
 }
 
-// Render renders the Markdown changelog for one version: the heading, then
-// Sections. Render returns "" when Sections does, no entry visible.
-func Render(version string, date time.Time, entries []Entry, hiddenTypes []string) string {
+// Render renders the Markdown changelog for one version: the heading, see
+// RenderHeading, then Sections. Render returns "" when Sections does, no
+// entry visible.
+func Render(version string, date time.Time, compareURL string, entries []Entry, hiddenTypes []string) string {
 	body := Sections(entries, hiddenTypes)
 	if body == "" {
 		return ""
 	}
 
 	var out strings.Builder
-	fmt.Fprintf(&out, "## v%s (%s)\n\n", version, date.Format("2006-01-02"))
+	out.WriteString(RenderHeading(version, date, compareURL))
+	out.WriteString("\n\n")
 	out.WriteString(body)
 	out.WriteString("\n")
 	return out.String()
+}
+
+// RenderHeading renders one version section's heading line, with no
+// trailing newline: "## vX.Y.Z (YYYY-MM-DD)", the version wrapped in a
+// link to compareURL, "## [vX.Y.Z](<compareURL>) (YYYY-MM-DD)", when
+// compareURL is not "". The caller passes "" when there is nothing to
+// compare against, a component's first release.
+func RenderHeading(version string, date time.Time, compareURL string) string {
+	text := "v" + version
+	if compareURL != "" {
+		text = "[" + text + "](" + compareURL + ")"
+	}
+	return fmt.Sprintf("## %s (%s)", text, date.Format("2006-01-02"))
 }
 
 // renderEntry renders one visible entry's own line, followed by one

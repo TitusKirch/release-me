@@ -102,39 +102,40 @@ func preReleaseVersion(
 
 // preReleaseEntries computes the pre-release version string for preType on
 // top of rel's stable version, together with the changelog entries to
-// render for it: the entries since the previous pre-release tag for that
-// base version when one exists, rel's own entries, already collected since
-// the last stable tag, otherwise.
+// render for it and the tag they are collected since: the entries since
+// the previous pre-release tag for that base version, and that tag, when
+// one exists, rel's own entries, already collected since the last stable
+// tag, and rel's own fromTag otherwise.
 func preReleaseEntries(
 	ctx context.Context, f forge.Forge, dir string, cfg config.Config, comp config.ResolvedComponent, familyTagPrefixes []string,
 	owner, repoName string, rel release, preType string, logger *slog.Logger,
-) (versionStr string, entries []changelog.Entry, err error) {
+) (versionStr string, entries []changelog.Entry, fromTag string, err error) {
 	base, ok := version.ParseTag("v" + rel.version.Version)
 	if !ok {
-		return "", nil, fmt.Errorf("next version %q does not parse", rel.version.Version)
+		return "", nil, "", fmt.Errorf("next version %q does not parse", rel.version.Version)
 	}
 
 	preVersion, since, err := preReleaseVersion(ctx, dir, comp.TagPrefix, familyTagPrefixes, base, preType)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if since == "" {
-		return preVersion.String(), rel.entries, nil
+		return preVersion.String(), rel.entries, rel.fromTag, nil
 	}
 
 	raw, err := walkEntries(ctx, dir, since, comp.ChangelogSource)
 	if err != nil {
-		return "", nil, fmt.Errorf("history since %s: %w", since, err)
+		return "", nil, "", fmt.Errorf("history since %s: %w", since, err)
 	}
 	f = newPullRequestCache(f)
 	attr := newAttribution(dir, cfg, owner, repoName, f, logger)
 	raw, err = attr.filter(ctx, raw, comp)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	_, restricted, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType, comp.ChangelogSource, attr.subCommits)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
-	return preVersion.String(), restricted, nil
+	return preVersion.String(), restricted, since, nil
 }

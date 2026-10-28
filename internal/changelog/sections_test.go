@@ -113,7 +113,7 @@ func TestSectionsIsDateFreeSoTwoRendersOnDifferentDaysMatch(t *testing.T) {
 	}
 
 	// Render embeds the date; Sections, used for comparison, never does.
-	renderedToday := changelog.Render("0.1.0", fixtureDate, entries, nil)
+	renderedToday := changelog.Render("0.1.0", fixtureDate, "", entries, nil)
 	if a == renderedToday {
 		t.Fatalf("Sections() unexpectedly equals the dated Render() output")
 	}

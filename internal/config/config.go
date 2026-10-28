@@ -693,8 +693,15 @@ func (c Component) tagPrefix() string {
 // name, or that git would read as a pattern: LastTag lists a component's
 // tags through "git tag --list <prefix>*", so a glob character in the
 // prefix would match other tags than the component's own. The version is
-// appended to the prefix as it is, so a trailing "/" is allowed.
+// appended to the prefix as it is, so a trailing "/" is allowed. It also
+// rejects "(", ")", "#" and "%", which git allows in a tag but which break
+// the changelog heading's compare link: "#" starts the URL's fragment, "%"
+// starts a percent escape, and a parenthesis ends the markdown link target
+// early, so the heading would no longer read back.
 func validateTagPrefix(prefix string) error {
+	if i := strings.IndexAny(prefix, "()#%"); i >= 0 {
+		return fmt.Errorf("contains %q, which breaks the changelog compare link", prefix[i:i+1])
+	}
 	switch {
 	case prefix == "":
 		return errors.New("is empty")

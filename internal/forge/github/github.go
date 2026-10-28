@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	gogithub "github.com/google/go-github/v93/github"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
@@ -296,6 +298,37 @@ func (f *Forge) CreateComment(ctx context.Context, owner, repo string, number in
 		return fmt.Errorf("github: comment on pull request #%d: %w", number, err)
 	}
 	return nil
+}
+
+// CompareURL implements forge.Forge: GitHub's compare view,
+// "<web URL>/<owner>/<repo>/compare/<base>...<head>", on the web host
+// webURL derives from the API base URL the client was built with.
+func (f *Forge) CompareURL(owner, repo, base, head string) string {
+	return fmt.Sprintf("%s/%s/%s/compare/%s...%s", webURL(f.client.BaseURL()), owner, repo, base, head)
+}
+
+// webURL derives the web address a GitHub instance serves its pages on
+// from the address its REST API answers on: a GitHub Enterprise Server's
+// "https://<host>/api/v3/" serves its pages on "https://<host>", and an
+// API host named "api.<host>", "api.github.com" or a GitHub Enterprise
+// Cloud "api.<subdomain>.ghe.com", serves them on "<host>". Any other
+// address is used as it is, its trailing slash removed, and so is an
+// address that does not parse.
+func webURL(api string) string {
+	u, err := url.Parse(api)
+	if err != nil {
+		return strings.TrimSuffix(api, "/")
+	}
+	u.RawQuery, u.Fragment = "", ""
+	path := strings.TrimSuffix(u.Path, "/")
+	switch {
+	case strings.HasSuffix(path, "/api/v3"):
+		path = strings.TrimSuffix(path, "/api/v3")
+	case path == "" && strings.HasPrefix(u.Host, "api."):
+		u.Host = strings.TrimPrefix(u.Host, "api.")
+	}
+	u.Path = path
+	return strings.TrimSuffix(u.String(), "/")
 }
 
 // toPullRequest converts a go-github pull request into a forge.PullRequest.

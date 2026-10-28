@@ -217,21 +217,16 @@ func ExtractChangelog(body string) string {
 	return strings.TrimSpace(m[1])
 }
 
-// headingDate matches the date in a changelog section's heading line,
-// "## vX.Y.Z (YYYY-MM-DD)", skipping over the version with the same
-// shape changelog.HeadingVersion reads it in, pre-release and build
-// metadata suffixes included.
-var headingDate = regexp.MustCompile(`^## v` + changelog.HeadingVersionPattern + ` \((\d{4}-\d{2}-\d{2})\)`)
-
 // ExtractDate returns the date rendered in the changelog heading inside the
-// <details> block of a release pull request body. ok is false when body
-// carries no such block, or its heading carries no parseable date.
+// <details> block of a release pull request body, read by
+// changelog.ParseHeading, with a compare link or without. ok is false when
+// body carries no such block, or its heading carries no parseable date.
 func ExtractDate(body string) (date time.Time, ok bool) {
-	m := headingDate.FindStringSubmatch(ExtractChangelog(body))
-	if m == nil {
+	h, ok := changelog.ParseHeading(ExtractChangelog(body))
+	if !ok {
 		return time.Time{}, false
 	}
-	d, err := time.Parse("2006-01-02", m[1])
+	d, err := time.Parse("2006-01-02", h.Date)
 	if err != nil {
 		return time.Time{}, false
 	}

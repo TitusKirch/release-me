@@ -17,6 +17,7 @@ func TestRender(t *testing.T) {
 	cases := []struct {
 		name        string
 		version     string
+		compareURL  string
 		entries     []changelog.Entry
 		hiddenTypes []string
 		want        string
@@ -106,6 +107,26 @@ func TestRender(t *testing.T) {
 			want:        "",
 		},
 		{
+			name:       "links the version to the compare view",
+			version:    "0.9.0",
+			compareURL: "https://github.com/ostendorf-cloud/duxt/compare/duxt@v0.8.1...duxt@v0.9.0",
+			entries: []changelog.Entry{
+				{Type: "feat", Description: "add the next command"},
+			},
+			want: "## [v0.9.0](https://github.com/ostendorf-cloud/duxt/compare/duxt@v0.8.1...duxt@v0.9.0) (2026-03-14)\n\n" +
+				"### Features\n\n- add the next command\n",
+		},
+		{
+			name:       "returns empty when no entry is visible, compare link or not",
+			version:    "0.9.0",
+			compareURL: "https://github.com/ostendorf-cloud/duxt/compare/duxt@v0.8.1...duxt@v0.9.0",
+			entries: []changelog.Entry{
+				{Type: "chore", Description: "bump a dependency"},
+			},
+			hiddenTypes: []string{"chore"},
+			want:        "",
+		},
+		{
 			name:    "returns empty for no entries",
 			version: "0.2.0",
 			want:    "",
@@ -114,9 +135,45 @@ func TestRender(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := changelog.Render(tc.version, fixtureDate, tc.entries, tc.hiddenTypes)
+			got := changelog.Render(tc.version, fixtureDate, tc.compareURL, tc.entries, tc.hiddenTypes)
 			if got != tc.want {
 				t.Fatalf("Render() =\n%s\nwant\n%s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRenderHeading(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		version    string
+		compareURL string
+		want       string
+	}{
+		{
+			name:    "a first release carries no link",
+			version: "0.1.0",
+			want:    "## v0.1.0 (2026-03-14)",
+		},
+		{
+			name:       "wraps the version in the compare link",
+			version:    "1.4.0",
+			compareURL: "https://github.com/ostendorf-cloud/release-me/compare/v1.3.2...v1.4.0",
+			want:       "## [v1.4.0](https://github.com/ostendorf-cloud/release-me/compare/v1.3.2...v1.4.0) (2026-03-14)",
+		},
+		{
+			name:       "keeps a pre-release suffix inside the link text",
+			version:    "1.4.0-rc.2",
+			compareURL: "https://github.com/ostendorf-cloud/release-me/compare/v1.4.0-rc.1...v1.4.0-rc.2",
+			want:       "## [v1.4.0-rc.2](https://github.com/ostendorf-cloud/release-me/compare/v1.4.0-rc.1...v1.4.0-rc.2) (2026-03-14)",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := changelog.RenderHeading(tc.version, fixtureDate, tc.compareURL); got != tc.want {
+				t.Fatalf("RenderHeading() = %q, want %q", got, tc.want)
 			}
 		})
 	}

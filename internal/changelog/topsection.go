@@ -30,29 +30,57 @@ func TopSection(content string) (body string, ok bool) {
 	return strings.TrimRight(afterHeading, "\n"), true
 }
 
-// HeadingVersionPattern is the regexp fragment matching the version in a
+// headingVersionPattern is the regexp fragment matching the version in a
 // changelog section's heading line, the full semantic version shape
-// Render can write: major.minor.patch, with an optional pre-release
-// suffix and an optional build metadata suffix. releasepr.ExtractDate
-// shares it, so the version it skips over to reach the date is read the
-// same way HeadingVersion reads it.
-const HeadingVersionPattern = `\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`
+// RenderHeading can write: major.minor.patch, with an optional
+// pre-release suffix and an optional build metadata suffix.
+const headingVersionPattern = `\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`
 
-// headingVersion matches the version in a changelog section's heading
-// line, "## vX.Y.Z (YYYY-MM-DD)", with its optional pre-release and build
-// metadata suffixes, the same shape Render writes.
-var headingVersion = regexp.MustCompile(`^## v(` + HeadingVersionPattern + `) \(\d{4}-\d{2}-\d{2}\)`)
+// headingLine matches a changelog section's heading line in either shape
+// RenderHeading writes: "## vX.Y.Z (YYYY-MM-DD)", the only shape before
+// the compare link, which older entries still carry, and
+// "## [vX.Y.Z](<compare URL>) (YYYY-MM-DD)". The groups are the linked
+// version, the compare URL, the unlinked version and the date.
+var headingLine = regexp.MustCompile(
+	`^## (?:\[v(` + headingVersionPattern + `)\]\(([^()\s]+)\)|v(` + headingVersionPattern + `)) \((\d{4}-\d{2}-\d{2})\)`,
+)
+
+// Heading is what a changelog section's heading line carries.
+type Heading struct {
+	// Version is the version without its "v", pre-release and build
+	// metadata suffixes included.
+	Version string
+	// CompareURL is the link the version is wrapped in, "" for a heading
+	// without one.
+	CompareURL string
+	// Date is the heading's date as written, "YYYY-MM-DD".
+	Date string
+}
+
+// ParseHeading reads the first version heading of content, either
+// rendered CHANGELOG.md content, its "# Changelog" header skipped, or a
+// changelog section on its own, such as the one inside a release pull
+// request body. It reads a heading with a compare link and one without
+// alike. ok is false when content does not start with a version heading,
+// or that heading's version is not shaped like a semantic version, with an
+// optional pre-release and build metadata suffix.
+func ParseHeading(content string) (h Heading, ok bool) {
+	rest := strings.TrimLeft(strings.TrimPrefix(content, header), "\n")
+	m := headingLine.FindStringSubmatch(rest)
+	if m == nil {
+		return Heading{}, false
+	}
+	h = Heading{Version: m[1], CompareURL: m[2], Date: m[4]}
+	if h.Version == "" {
+		h.Version = m[3]
+	}
+	return h, true
+}
 
 // HeadingVersion returns the version rendered in the first version
 // heading of rendered CHANGELOG.md content, the same heading TopSection
-// strips. ok is false when content carries no version heading, or that
-// heading's version is not shaped like a semantic version, with an
-// optional pre-release and build metadata suffix.
+// strips, linked or not. ok is false when ParseHeading's is.
 func HeadingVersion(content string) (version string, ok bool) {
-	rest := strings.TrimLeft(strings.TrimPrefix(content, header), "\n")
-	m := headingVersion.FindStringSubmatch(rest)
-	if m == nil {
-		return "", false
-	}
-	return m[1], true
+	h, ok := ParseHeading(content)
+	return h.Version, ok
 }

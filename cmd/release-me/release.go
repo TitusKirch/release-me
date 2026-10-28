@@ -23,6 +23,23 @@ type release struct {
 	version     version.Result
 	entries     []changelog.Entry
 	hiddenTypes []string
+	// fromTag is the tag entries are collected since, the one the
+	// changelog heading's compare link starts at: the component's last
+	// stable tag, or, for a pre-release with an earlier one of the same
+	// base, that earlier pre-release tag. "" for a component's first
+	// release, which links nowhere.
+	fromTag string
+}
+
+// compareURL returns the forge's compare view from fromTag, a release's
+// own fromTag, to toTag, the tag that release will get, for the changelog
+// heading to link to. "" when fromTag is: a first release has nothing to
+// compare against.
+func compareURL(f forge.Forge, owner, repoName, fromTag, toTag string) string {
+	if fromTag == "" {
+		return ""
+	}
+	return f.CompareURL(owner, repoName, fromTag, toTag)
 }
 
 // componentRelease is one component's outcome of computeReleases.
@@ -91,7 +108,7 @@ func computeReleaseWith(
 	if !released {
 		return release{}, false, nil
 	}
-	return release{version: result, entries: entries, hiddenTypes: comp.HiddenTypes}, true, nil
+	return release{version: result, entries: entries, hiddenTypes: comp.HiddenTypes, fromTag: since}, true, nil
 }
 
 // walkEntries reads the raw history entries for since, exclusive, to HEAD,
