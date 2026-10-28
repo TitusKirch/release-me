@@ -47,6 +47,19 @@ func newPRRepo(t *testing.T) (dir, origin string) {
 	return dir, origin
 }
 
+// cloneBranch clones branch of origin into a new temporary directory with
+// the same test identity newPRRepo sets. A plain clone inherits none of it,
+// and a runner has no identity git can derive, so a commit there fails.
+func cloneBranch(t *testing.T, origin, branch string) string {
+	t.Helper()
+	clone := t.TempDir()
+	runGit(t, clone, "clone", "-q", "--branch", branch, origin, ".")
+	runGit(t, clone, "config", "user.name", "release-me tests")
+	runGit(t, clone, "config", "user.email", "release-me-tests@example.com")
+	runGit(t, clone, "config", "commit.gpgsign", "false")
+	return clone
+}
+
 // newPRRepoWithoutIdentity is newPRRepo without a configured git identity
 // anywhere, local or global: the commit call under test must supply its
 // own, never rely on one already configured.

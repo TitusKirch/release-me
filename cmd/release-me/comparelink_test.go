@@ -345,8 +345,7 @@ func TestDoPRRewritesAReleasePleaseHeadingOnceAndThenSettles(t *testing.T) {
 	}
 	title, body := f.CreatedPullRequests[0].Title, f.CreatedPullRequests[0].Body
 
-	clone := t.TempDir()
-	runGit(t, clone, "clone", "-q", "--branch", mainBranch, origin, ".")
+	clone := cloneBranch(t, origin, mainBranch)
 	content := showBareBranchFile(t, origin, "CHANGELOG.md")
 	_, fromHeading, found := strings.Cut(content, "\n## ")
 	if !found {
