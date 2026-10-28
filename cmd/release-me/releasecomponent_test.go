@@ -272,7 +272,7 @@ func TestComputeReleaseAttributesAnEmptyOrNamedCommitToComponents(t *testing.T) 
 
 			got := map[string]string{}
 			for _, comp := range cfg.Resolve() {
-				rel, released, err := computeRelease(t.Context(), dir, cfg, comp, "owner", "repo", f, logger)
+				rel, released, err := computeRelease(t.Context(), dir, cfg, comp, f, logger)
 				if err != nil {
 					t.Fatalf("computeRelease(%s) error = %v", comp.Name, err)
 				}
@@ -317,7 +317,7 @@ func TestComputeReleaseInASingleComponentRepositoryIgnoresTheFooter(t *testing.T
 			var logs bytes.Buffer
 			logger := slog.New(slog.NewTextHandler(&logs, nil))
 			cfg := config.Default()
-			rel, released, err := computeRelease(t.Context(), dir, cfg, cfg.Resolve()[0], "owner", "repo", newFake(), logger)
+			rel, released, err := computeRelease(t.Context(), dir, cfg, cfg.Resolve()[0], newFake(), logger)
 			if err != nil {
 				t.Fatalf("computeRelease() error = %v", err)
 			}
@@ -434,5 +434,54 @@ func TestAttributionReadsEachMergesSubCommitsOnce(t *testing.T) {
 	}
 	if !reflect.DeepEqual(second, first) {
 		t.Fatalf("second subCommits() = %+v, want %+v", second, first)
+	}
+}
+
+func TestComputeReleasesSharesOneAttributionAcrossIndependentComponents(t *testing.T) {
+	dir := newRepo(t)
+	writeConfig(t, dir, "components:\n  duxt:\n    path: packages/duxt\n  api:\n    path: packages/api\n")
+	writeFiles(t, dir, "chore: scaffold the two packages", map[string]string{
+		"packages/duxt/README.md": "duxt\n",
+		"packages/api/README.md":  "api\n",
+	})
+	runGit(t, dir, "tag", "duxt/v0.3.0")
+	runGit(t, dir, "tag", "api/v0.3.0")
+	mergeCommitWithFiles(t, dir, 33, "dates", "fix: share the date helper", map[string]string{
+		"packages/duxt/date.ts": "export const date = 1\n",
+		"packages/api/date.go":  "package api\n",
+	})
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	counting := newCountingForge(&forgetest.Fake{Responses: map[int]forgetest.Response{
+		33: {PullRequest: forge.PullRequest{
+			Title: "fix: share the date helper",
+			Body:  "Moves the helper.\n\nRelease-Component: datez",
+			URL:   "https://example.invalid/pull/33",
+		}},
+	}})
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+	results, err := computeReleases(t.Context(), dir, cfg, cfg.Resolve(), "owner", "repo", counting, logger)
+	if err != nil {
+		t.Fatalf("computeReleases() error = %v", err)
+	}
+	got := map[string]string{}
+	for _, r := range results {
+		if r.released {
+			got[r.comp.Name] = r.rel.version.Version
+		}
+	}
+	if want := map[string]string{"duxt": "0.3.1", "api": "0.3.1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("released %v, want %v", got, want)
+	}
+	if counting.calls[33] != 1 {
+		t.Fatalf("forge reads of #33 = %d, want 1 across both components", counting.calls[33])
+	}
+	if n := strings.Count(logs.String(), "value=datez"); n != 1 {
+		t.Fatalf("logs = %q, want the unknown name warned once, got %d", logs.String(), n)
 	}
 }

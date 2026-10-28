@@ -25,11 +25,41 @@ type release struct {
 	hiddenTypes []string
 }
 
-// computeRelease wires history, the forge and the conventional and version
-// packages into one release for comp. released is false when there is
+// componentRelease is one component's outcome of computeReleases.
+type componentRelease struct {
+	comp     config.ResolvedComponent
+	rel      release
+	released bool
+}
+
+// computeReleases computes every one of components' releases on its own,
+// for config.VersioningIndependent, in order. The components share one
+// attribution and with it one pullRequestCache, the way gatherFamily's
+// members do: the loop is one computation with no write in between, so a
+// pull request belonging to several components is read once and an
+// unknown footer name warns once.
+func computeReleases(
+	ctx context.Context, dir string, cfg config.Config, components []config.ResolvedComponent, owner, repoName string, f forge.Forge, logger *slog.Logger,
+) ([]componentRelease, error) {
+	attr := newAttribution(dir, cfg, owner, repoName, newPullRequestCache(f), logger)
+	out := make([]componentRelease, 0, len(components))
+	for _, comp := range components {
+		rel, released, err := computeReleaseWith(ctx, dir, cfg, comp, attr, logger)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, componentRelease{comp: comp, rel: rel, released: released})
+	}
+	return out, nil
+}
+
+// computeReleaseWith wires history, the forge and the conventional and
+// version packages into one release for comp, reading its entries and
+// their pull requests through attr, which may be shared with other
+// components of the same computation. released is false when there is
 // nothing to release.
-func computeRelease(
-	ctx context.Context, dir string, cfg config.Config, comp config.ResolvedComponent, owner, repoName string, f forge.Forge, logger *slog.Logger,
+func computeReleaseWith(
+	ctx context.Context, dir string, cfg config.Config, comp config.ResolvedComponent, attr *attribution, logger *slog.Logger,
 ) (release, bool, error) {
 	tag, last, hasTag, err := history.LastTag(ctx, dir, comp.TagPrefix)
 	if err != nil {
@@ -45,15 +75,13 @@ func computeRelease(
 	if err != nil {
 		return release{}, false, fmt.Errorf("release-me: component %s: history: %w", comp.Name, err)
 	}
-	f = newPullRequestCache(f)
-	attr := newAttribution(dir, cfg, owner, repoName, f, logger)
 	raw, err = attr.filter(ctx, raw, comp)
 	if err != nil {
 		return release{}, false, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
 	logger.Debug("history entries", "component", comp.Name, "count", len(raw), "source", comp.ChangelogSource)
 
-	changes, entries, err := assembleEntries(ctx, f, owner, repoName, raw, cfg.FallbackType, comp.ChangelogSource, attr.subCommits)
+	changes, entries, err := assembleEntries(ctx, attr.forge, attr.owner, attr.repoName, raw, cfg.FallbackType, comp.ChangelogSource, attr.subCommits)
 	if err != nil {
 		return release{}, false, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}

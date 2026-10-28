@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"reflect"
 	"testing"
 
@@ -15,6 +16,15 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/history"
 	"github.com/ostendorf-cloud/release-me/internal/version"
 )
+
+// computeRelease computes comp's release on its own, for the repository
+// owner/repo, through a fresh attribution and pullRequestCache over f, the
+// one component shape most tests drive.
+func computeRelease(
+	ctx context.Context, dir string, cfg config.Config, comp config.ResolvedComponent, f forge.Forge, logger *slog.Logger,
+) (release, bool, error) {
+	return computeReleaseWith(ctx, dir, cfg, comp, newAttribution(dir, cfg, "owner", "repo", newPullRequestCache(f), logger), logger)
+}
 
 func TestAssembleEntries(t *testing.T) {
 	t.Parallel()
