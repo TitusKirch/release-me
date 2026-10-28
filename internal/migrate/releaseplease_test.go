@@ -238,6 +238,21 @@ func TestFromReleasePleaseNamesANodePackageAfterItsPackageJSON(t *testing.T) {
 	}
 }
 
+func TestFromReleasePleaseDropsATrailingLockFromAComponentName(t *testing.T) {
+	t.Parallel()
+	configJSON := `{"separate-pull-requests": true, "release-type": "simple",
+	  "packages": {"services/billing": {"component": "billing.lock"}, "web": {"component": "web"}}}`
+
+	got, err := migrate.FromReleasePlease([]byte(configJSON), nil, files(nil))
+	if err != nil {
+		t.Fatalf("FromReleasePlease() error = %v", err)
+	}
+
+	if name := load(t, got.YAML).Resolve()[0].Name; name != "billing" {
+		t.Fatalf("component = %q, want billing: git refuses a ref ending in .lock", name)
+	}
+}
+
 func TestFromReleasePleaseRenamesAComponentNameReleaseMeRefusesAndKeepsItsTags(t *testing.T) {
 	t.Parallel()
 	configJSON := `{"separate-pull-requests": true, "release-type": "simple",

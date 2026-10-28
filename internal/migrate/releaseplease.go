@@ -454,7 +454,8 @@ func label(raw json.RawMessage, fallback, key string, warn func(string, ...any))
 
 // sanitizeName turns a release-please component name into one
 // config.ValidateComponentName accepts: every character it refuses becomes
-// "-", a leading "." or "-" is dropped and ".." collapses to ".". A name
+// "-", a leading "." or "-" and a trailing "." or ".lock" are dropped and
+// ".." collapses to ".". A name
 // already valid comes back unchanged.
 func sanitizeName(name string) string {
 	var b strings.Builder
@@ -469,7 +470,11 @@ func sanitizeName(name string) string {
 	for strings.Contains(out, "..") {
 		out = strings.ReplaceAll(out, "..", ".")
 	}
-	return strings.TrimLeft(out, ".-")
+	out = strings.TrimLeft(out, ".-")
+	for strings.HasSuffix(out, ".lock") || strings.HasSuffix(out, ".") {
+		out = strings.TrimSuffix(strings.TrimSuffix(out, ".lock"), ".")
+	}
+	return out
 }
 
 // packageJSONName reads the name field of a package.json, "" when the file
