@@ -478,8 +478,8 @@ A name no component carries reaches no component. It is logged as a warning, nev
 the run, and the commit counts only for what its files and its other names reach: an empty
 commit naming only unknown components counts for none, never for every one, so a typo shows
 as a missing entry rather than an entry in every changelog. Without `components`, every
-commit already counts for the implicit `main` component, and a footer naming anything else
-only warns.
+commit already counts for the implicit `main` component, so the footer is not read at all, and
+a footer naming anything else changes nothing, without a warning.
 
 ### Changelog modes
 

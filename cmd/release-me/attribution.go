@@ -51,18 +51,19 @@ func newAttribution(dir string, cfg config.Config, owner, repoName string, f for
 }
 
 // filter keeps only the entries that count for comp. comp.Path "." keeps
-// every entry without reading any commit's touched files, but still reads
-// the footers, so a footer naming an unknown component warns there too.
+// every entry without reading any commit's touched files or footers: it
+// is only ever the one component of its repository, so no footer can
+// change what counts for it, and a footer naming an unknown component
+// goes without a warning there.
 func (a *attribution) filter(ctx context.Context, entries []history.Entry, comp config.ResolvedComponent) ([]history.Entry, error) {
+	if comp.Path == "." {
+		return entries, nil
+	}
 	filtered := make([]history.Entry, 0, len(entries))
 	for _, e := range entries {
 		named, err := a.named(ctx, e, comp)
 		if err != nil {
 			return nil, err
-		}
-		if comp.Path == "." {
-			filtered = append(filtered, e)
-			continue
 		}
 		paths, err := history.Touches(ctx, a.dir, e.SHA)
 		if err != nil {

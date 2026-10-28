@@ -292,17 +292,19 @@ func TestComputeReleaseAttributesAnEmptyOrNamedCommitToComponents(t *testing.T) 
 	}
 }
 
-// TestComputeReleaseInASingleComponentRepositoryWarnsAboutAFooterNamingAComponent
-// pins that the footer changes nothing without components, apart from the
-// warning for a name the implicit "main" component does not carry.
-func TestComputeReleaseInASingleComponentRepositoryWarnsAboutAFooterNamingAComponent(t *testing.T) {
+// TestComputeReleaseInASingleComponentRepositoryIgnoresTheFooter pins that
+// the footer changes nothing without components: the implicit "main"
+// component at "." counts every commit without reading a footer, so even a
+// name it does not carry goes without a warning, since it cannot change
+// the outcome.
+func TestComputeReleaseInASingleComponentRepositoryIgnoresTheFooter(t *testing.T) {
 	cases := []struct {
 		name     string
 		message  string
 		wantWarn bool
 	}{
 		{name: "a footer naming main is silent", message: "fix: retag the broken build\n\nRelease-Component: main"},
-		{name: "a footer naming another name warns", message: "fix: retag the broken build\n\nRelease-Component: duxt", wantWarn: true},
+		{name: "a footer naming another name is silent", message: "fix: retag the broken build\n\nRelease-Component: duxt"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
