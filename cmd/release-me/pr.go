@@ -823,7 +823,11 @@ func planReleaseBranch(ctx context.Context, dir string, changelogs []changelogUp
 // version-only difference, a pre-release label added, changed or removed
 // with no new entry, must still push. So does a heading whose compare link
 // differs from the one c carries, a heading written before the link
-// existed included, so the branch picks the link up.
+// existed included, so the branch picks the link up. A heading that does
+// not read back counts as not matching only when the heading the push
+// would write does read back: when neither does, a push could never make
+// the comparison settle, so the heading is left out of it and only the
+// entries underneath and desiredFiles decide.
 func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelogUpdate, desiredFiles map[string]string, branch string) bool {
 	pushURL, err := gitOutput(ctx, tmp, "remote", "get-url", "--push", "origin")
 	if err != nil {
@@ -839,7 +843,10 @@ func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelog
 			return false
 		}
 		existing, ok := changelog.ParseHeading(changelogContent)
-		if !ok || existing.Version != c.version || existing.CompareURL != c.compareURL {
+		switch {
+		case !ok && headingReadsBack(c.version, c.compareURL):
+			return false
+		case ok && (existing.Version != c.version || existing.CompareURL != c.compareURL):
 			return false
 		}
 		existingBody, ok := changelog.TopSection(changelogContent)
@@ -855,6 +862,14 @@ func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelog
 		}
 	}
 	return true
+}
+
+// headingReadsBack reports whether the heading write renders for version
+// and compareURL parses again, which the comparison in sameAsReleaseBranch
+// relies on. The date is irrelevant to that, so any date does.
+func headingReadsBack(version, compareURL string) bool {
+	_, ok := changelog.ParseHeading(changelog.RenderHeading(version, time.Time{}, compareURL))
+	return ok
 }
 
 // write commits the changelog update and the bumped files onto branch and
