@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"reflect"
@@ -306,6 +307,21 @@ func TestSharedReleasePullRequestReportsAPerComponentOneItSupersedes(t *testing.
 	want := "api: release pull request #4 on release-me/api is superseded by the shared one on release-me/main, close it"
 	if !strings.Contains(stdout.String(), want) {
 		t.Fatalf("stdout = %q, want it to contain %q", stdout.String(), want)
+	}
+	if len(f.CreatedPullRequests) != 1 || f.CreatedPullRequests[0].Head != "release-me/main" {
+		t.Fatalf("CreatedPullRequests = %+v, want the shared one created anyway", f.CreatedPullRequests)
+	}
+}
+
+func TestSharedReleasePullRequestIsWrittenWhenLookingForASupersededOneFails(t *testing.T) {
+	dir, _, cfg := newSharedRepo(t)
+	f := newFake()
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: "release-me/api", State: "open", Err: errors.New("GET /repos/owner/repo/pulls: 502 Bad Gateway")},
+	}
+	var stdout bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v, want the informational lookup to never stop pr", err)
 	}
 	if len(f.CreatedPullRequests) != 1 || f.CreatedPullRequests[0].Head != "release-me/main" {
 		t.Fatalf("CreatedPullRequests = %+v, want the shared one created anyway", f.CreatedPullRequests)
