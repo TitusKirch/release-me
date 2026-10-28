@@ -678,9 +678,9 @@ Switching to `shared` while per-component pull requests are open leaves them ope
 run prints each one on `release-me/<name>` as superseded by the shared one, to close by hand,
 and `release` still tags one that is merged instead, so it never stays pending. `release` only
 looks for one while the component's own `release-me/<name>` branch exists on the remote, one
-`git ls-remote` per run: a repository that deletes head branches on merge loses that branch
-before `release` runs, so let `release` tag a per-component pull request merged before the
-switch, or tag it by hand, before deleting its branch. Switching back
+`git ls-remote` per run. A repository that deletes head branches on merge loses that branch as
+the pull request merges, so merge the switch only after `release` has tagged every
+per-component pull request merged before it, or tag a missed one by hand. Switching back
 to `per-component` does not read `release-me/main` any more: merge or close the shared pull
 request first.
 
