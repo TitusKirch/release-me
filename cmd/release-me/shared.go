@@ -394,7 +394,11 @@ func reportSupersededPRs(
 }
 
 // guideLabels returns the label names a release pull request body's guide
-// renders.
+// renders, or nil with "release-pull-request-guide: false", which leaves
+// the guide out of every release pull request body.
 func guideLabels(cfg config.Config) *releasepr.GuideLabels {
+	if !cfg.ReleasePullRequestGuide {
+		return nil
+	}
 	return &releasepr.GuideLabels{Tagged: cfg.Labels.Tagged, Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc}
 }
