@@ -106,6 +106,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
+				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 			},
 		},
@@ -130,6 +131,7 @@ author:
 major-tag: true
 release-pull-request: shared
 release-pull-request-layout: details
+release-pull-request-guide: false
 draft-until-assets-attach: true
 files:
   - path: cmd/cli/version.go
@@ -183,6 +185,7 @@ files:
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
+				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 			},
 		},
@@ -204,6 +207,7 @@ files:
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
+				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 			},
 		},
@@ -225,6 +229,7 @@ files:
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
+				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 			},
 		},
@@ -562,6 +567,54 @@ func TestLoadReadsDraftUntilAssetsAttach(t *testing.T) {
 				t.Fatalf("DraftUntilAssetsAttach = %v, want %v", got.DraftUntilAssetsAttach, tc.want)
 			}
 		})
+	}
+}
+
+func TestDefaultRendersTheReleasePullRequestGuide(t *testing.T) {
+	t.Parallel()
+	if got := config.Default().ReleasePullRequestGuide; !got {
+		t.Fatalf("ReleasePullRequestGuide = %v, want true", got)
+	}
+}
+
+func TestLoadReadsReleasePullRequestGuide(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "left out defaults to true", content: "initial-version: 0.1.0\n", want: true},
+		{name: "explicit true keeps the guide", content: "release-pull-request-guide: true\n", want: true},
+		{name: "explicit false leaves the guide out", content: "release-pull-request-guide: false\n", want: false},
+		{
+			name:    "false applies to a locked family as well",
+			content: "versioning: locked\nrelease-pull-request-guide: false\ncomponents:\n  api:\n    path: services/api\n",
+			want:    false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := writeFile(t, tc.content)
+
+			got, err := config.Load(path)
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got.ReleasePullRequestGuide != tc.want {
+				t.Fatalf("ReleasePullRequestGuide = %v, want %v", got.ReleasePullRequestGuide, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsAReleasePullRequestGuideThatIsNotABoolean(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, "release-pull-request-guide: sometimes\n")
+
+	if _, err := config.Load(path); err == nil {
+		t.Fatal("Load() error = nil, want an error")
 	}
 }
 
