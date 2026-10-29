@@ -256,9 +256,11 @@ the `pending` label is added back if it is ever missing, never set by replacing 
 The pull request title is `chore(<name>): release vX.Y.Z`, `chore(main): release vX.Y.Z` for
 the implicit `main` component. Its body starts with `Release vX.Y.Z`, then a collapsed
 `<details><summary>How this release works</summary>` guide naming the tag merging creates and
-the configured labels for pre-releases and tagging, then the notes block (below) when one is
-present, then the full changelog for the version inside a collapsed `<details>` section. When
-every entry is a hidden type, the changelog carries one explicit line,
+the configured labels for pre-releases and tagging, left out with
+[`release-pull-request-guide: false`](#release-pull-request-guide), then the version
+override block and the notes block (below) when present, then the full changelog for the
+version inside a collapsed `<details>` section. When every entry is a hidden type, the
+changelog carries one explicit line,
 `- Version bump without user facing changes.`, instead of an empty heading. The guide never
 reaches the changelog file or the GitHub release. A shared release pull request's title and
 body name every component it releases: see
@@ -388,8 +390,11 @@ Run the migration before upgrading.
 ```
 ````
 
-Add it by hand once the pull request is open. `pr` keeps it verbatim on every later update, and
-`release` carries it into the GitHub release, above the changelog.
+Add it by hand once the pull request is open, anywhere in the body, or through a
+[`release-notes` comment](#comment-commands). `pr` keeps it verbatim on every later update, and
+`release` carries it into the GitHub release, above the changelog. A shared release pull
+request's notes reach every component's release. Every other edit to the body, outside the
+notes block and the `release-me-version` block, is overwritten by the next `pr` run.
 
 ### Override block
 
@@ -796,6 +801,41 @@ block whose summary reads `<name> vX.Y.Z` marks `details`, a level two heading t
 version heading marks `headings`, anything else is `compact`; the release notes and version
 override blocks are never read for components.
 
+### Release pull request guide
+
+Every release pull request body, per component, shared or locked, opens with a collapsed
+`<details><summary>How this release works</summary>` guide below its version line. The
+top-level `release-pull-request-guide` key turns it off for every one of them, default `true`:
+
+```yaml
+release-pull-request-guide: false
+```
+
+The guide is a reminder for whoever reviews the pull request, never something release-me reads:
+the notes block, the `release-me-version` block, the components of a shared or locked body in
+every layout, the changelog date and the release bodies all read back the same with the guide
+or without it, and both comment commands work on either. Changing the key while a release pull
+request is open is safe: the next `pr` run adds or drops the guide through a body update alone,
+without pushing the release branch, the notes block and a version override kept.
+
+A team that turns the guide off finds everything it says documented here:
+
+- What merging does, the tag, the release, the label swap and the moving major tag:
+  [release](#release).
+- Release notes, the `release-me-notes` block: [Notes block](#notes-block).
+- Forcing the next version, the `release-me-version` block and the `release-as` comment, per
+  component on a shared pull request with `independent` versions:
+  [Comment commands](#comment-commands), the
+  [Release-As footer](#release-as-footer) for doing it from a commit, and
+  [Shared release pull request](#shared-release-pull-request).
+- Pre-releases through the `alpha`, `beta` and `rc` labels: [Pre-releases](#pre-releases).
+- Hiding or rewriting a merged pull request's entry, the `release-me` block in its body:
+  [Override block](#override-block).
+- What a push to the default branch updates and which edits survive it: [pr](#pr) and the
+  [Notes block](#notes-block).
+
+`migrate` leaves the key out, so a migrated repository keeps the guide.
+
 ## Configuration
 
 `release-me.yaml` at the repository root. A repository without `components` is one component.
@@ -895,6 +935,8 @@ files:
 - `release-pull-request-layout`: `headings` (default), `details` or `compact`, how a release
   pull request carrying several components lays out each one. See
   [Release pull request layout](#release-pull-request-layout).
+- `release-pull-request-guide`: `true` (default) or `false`. See
+  [Release pull request guide](#release-pull-request-guide).
 - `draft-until-assets-attach`: drafts every release instead of publishing it immediately,
   default `false`. There is no per-component override: it applies to the whole repository.
   Only a repository with GitHub's immutable releases setting turned on needs `true`; it
