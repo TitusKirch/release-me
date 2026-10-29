@@ -9,10 +9,12 @@ release pull request, the default shape a configured component has, unless
 
 `locked` bumps every component to the same new version and releases all of them together,
 changed or not: one release pull request, branch `release-me/main`, with one changelog section
-per component, each updating its own `CHANGELOG.md`. Its title names the version and every
-component it covers, `chore: release vX.Y.Z (a, b, c)`. On merge, every component is tagged
-`<name>/vX.Y.Z` with the same version and released the same way an independent component is.
-`locked` always releases the whole family, so `--component` naming one of them is a usage
+per component, each updating its own `CHANGELOG.md`. The body carries the family's version
+heading once, then every component's sections, laid out by
+[the layout key](configuration.md#release-pull-request-layout). Its title names the version and
+every component it covers, `chore: release vX.Y.Z (a, b, c)`. On merge, every component is
+tagged `<name>/vX.Y.Z` with the same version and released the same way an independent component
+is. `locked` always releases the whole family, so `--component` naming one of them is a usage
 error for `next`, `changelog`, `pr`, `release` and `run` alike.
 
 `linked` shares one version line across every component, but releases only a component with
@@ -78,12 +80,16 @@ release-please's grouped pull request names the packages in its body. GitHub cap
 with 20-character names: `pr` refuses a longer title before it pushes or writes anything,
 naming its length and the components, since `release` could not read it back after the merge.
 Release more often, so fewer components carry changes at once, or switch to `per-component`.
-The body starts with
-`Release api v1.3.0, web v0.3.1`, the guide names every tag merging creates, and the changelog
-has one `#### <name>` section per component, each with that component's own heading and compare
-link. On merge, `release` reads the components and versions back from the title and tags each
-one on the merge commit, creates one GitHub release per component from the notes block and that
-component's own section, moves each component's major tag where `major-tag` applies, and swaps
+The body starts with `Release api v1.3.0, web v0.3.1`, the guide names every tag merging
+creates, and the changelog has one section per component, each with that component's own
+heading and compare link, laid out by
+[the layout key](configuration.md#release-pull-request-layout): a `## <name>` heading per
+component by default, a collapsed `<details>` block per component like release-please's with
+`details`, or the earlier `#### <name>` heading with `compact`. The layout is read back from the
+body, so changing the key while the pull request is open is safe. On merge, `release` reads the
+components and versions back from the title and tags each one on the merge commit, creates one
+GitHub release per component from the notes block and that component's own section, moves each
+component's major tag where `major-tag` applies, and swaps
 the labels once for the whole pull request.
 
 The pull request's pre-release label turns every component it carries into a pre-release of

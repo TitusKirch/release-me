@@ -112,6 +112,68 @@ There is no per-component override: it applies to the whole family.
 `locked`, which rejects `per-component`. See
 [shared release pull request](versioning-modes.md#shared-release-pull-request).
 
+## `release-pull-request-layout`
+
+How the changelog in the body of a release pull request carrying several components lays out
+each component, default `headings`. It applies to every such body, the
+[shared release pull request](versioning-modes.md#shared-release-pull-request) and the one a
+`locked` family shares; a pull request releasing one component has no component layout. Only
+the pull request body changes: every `CHANGELOG.md` and every GitHub release keep the heading
+levels they always had, and each component's release body is the same whichever layout the
+pull request was rendered in. `locked` keeps its one combined, unlinked version heading above
+every component in all three layouts, each component's slice then carrying only its sections.
+
+- `headings` gives each component a level two heading of its own, its section shifted one level
+  down below it:
+
+  ```markdown
+  ## api
+
+  ### [v1.3.0](https://github.com/owner/repo/compare/api/v1.2.0...api/v1.3.0) (2026-03-14)
+
+  #### Features
+
+  - add the export endpoint
+  ```
+
+- `details` collapses each component into a block of its own, summarised with its name and
+  version, the shape release-please renders. The section inside keeps its `CHANGELOG.md`
+  levels, a level two version heading and level three sections, since the summary already names
+  the component:
+
+  ```markdown
+  <details><summary>api v1.3.0</summary>
+
+  ## [v1.3.0](https://github.com/owner/repo/compare/api/v1.2.0...api/v1.3.0) (2026-03-14)
+
+  ### Features
+
+  - add the export endpoint
+
+  </details>
+  ```
+
+- `compact` is the layout before the key existed: a level four heading per component, its
+  section at its `CHANGELOG.md` levels, so the version heading renders larger than the name:
+
+  ```markdown
+  #### api
+
+  ## [v1.3.0](https://github.com/owner/repo/compare/api/v1.2.0...api/v1.3.0) (2026-03-14)
+
+  ### Features
+
+  - add the export endpoint
+  ```
+
+Any other value is a configuration error. Every command reads the layout back from the body
+itself, never from the key: a pull request opened before the key changed still releases every
+component it carries, and a `release-as <component>` comment still finds them. The next `pr`
+run rewrites the body in the new layout without pushing the release branch. A `<details>`
+block whose summary reads `<name> vX.Y.Z` marks `details`, a level two heading that is not a
+version heading marks `headings`, anything else is `compact`; the release notes and version
+override blocks are never read for components.
+
 ## `draft-until-assets-attach`
 
 Drafts every release instead of publishing it immediately, default `false`. There is no

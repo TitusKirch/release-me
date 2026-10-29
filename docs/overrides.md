@@ -65,8 +65,10 @@ version forward but never backward. On a shared release pull request with
 component first, `release-as api 2.0.0`, checked against that component's last tag; with no
 component named it applies to the one component the pull request releases and is refused as
 ambiguous when it releases several. A component the pull request does not release is refused
-too. Which components it releases is read from the body's `#### <name>` headings, the comment
-command's source of truth: a heading added or deleted by hand changes what the command accepts,
+too. Which components it releases is read from the body's component headings or `<details>`
+summaries, in whichever [layout](configuration.md#release-pull-request-layout) the body carries,
+the comment command's source of truth: a heading added or deleted by hand changes what the
+command accepts,
 and the recompute that follows still applies an override only to a component the pull request
 actually releases. Everywhere else there is one version to force, and naming a component is refused.
 `release-notes` takes the rest of the comment, verbatim, as the new content of the

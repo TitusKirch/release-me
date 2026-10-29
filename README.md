@@ -154,6 +154,7 @@ files:
 | `major-tag` | Moves the major tag on every stable release. | `false` | No |
 | `versioning` | How components' versions relate to each other. | `independent` | No |
 | `release-pull-request` | One release pull request per component or one shared by every component. | `per-component` | No |
+| `release-pull-request-layout` | How a release pull request with several components lays out each one: `headings`, `details` or `compact`. | `headings` | No |
 | `draft-until-assets-attach` | Drafts every release instead of publishing it immediately. | `false` | No |
 | `comment-mention` | Mention prefix for `release-as`/`release-notes` comment commands. | `@release-me` | No |
 | `components` | Maps a name to a path and optional per-component overrides. | none, one implicit `main` component | No |
