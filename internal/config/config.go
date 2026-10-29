@@ -4,7 +4,8 @@
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
 // changelog, changelog-source, labels, author, major-tag, versioning,
-// draft-until-assets-attach, comment-mention and components.
+// draft-until-assets-attach, comment-mention, delete-release-branch and
+// components.
 package config
 
 import (
@@ -263,6 +264,14 @@ type Config struct {
 	// command on the release pull request must start with, default
 	// DefaultCommentMention. There is no per-component override.
 	CommentMention string
+	// DeleteReleaseBranch is the top-level "delete-release-branch" key,
+	// default true: release deletes a release branch once every pull
+	// request it released from it this run is tagged and released, the
+	// branch still points at the merged head and no open pull request
+	// uses it. pr pushes the branch afresh for the next release, so
+	// nothing is lost; false keeps it, as release-me did before the key
+	// existed. There is no per-component override.
+	DeleteReleaseBranch bool
 	// Components is the "components" key, in the order release-me.yaml
 	// declares them, or nil when the key is absent: a repository without
 	// it is one component at the repository root, as Resolve reports.
@@ -461,6 +470,7 @@ type raw struct {
 	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
 	CommentMention           *string    `yaml:"comment-mention"`
+	DeleteReleaseBranch      *bool      `yaml:"delete-release-branch"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -501,6 +511,7 @@ func Default() Config {
 		ReleasePullRequest:       ReleasePullRequestPerComponent,
 		ReleasePullRequestLayout: DefaultReleasePullRequestLayout,
 		CommentMention:           DefaultCommentMention,
+		DeleteReleaseBranch:      true,
 	}
 }
 
@@ -662,6 +673,9 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: comment-mention is empty", path)
 		}
 		cfg.CommentMention = *r.CommentMention
+	}
+	if r.DeleteReleaseBranch != nil {
+		cfg.DeleteReleaseBranch = *r.DeleteReleaseBranch
 	}
 	if r.Components.Kind != 0 {
 		components, err := decodeComponents(path, &r.Components)
