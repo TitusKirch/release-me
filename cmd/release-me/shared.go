@@ -395,6 +395,6 @@ func reportSupersededPRs(
 
 // guideLabels returns the label names a release pull request body's guide
 // renders.
-func guideLabels(cfg config.Config) releasepr.GuideLabels {
-	return releasepr.GuideLabels{Tagged: cfg.Labels.Tagged, Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc}
+func guideLabels(cfg config.Config) *releasepr.GuideLabels {
+	return &releasepr.GuideLabels{Tagged: cfg.Labels.Tagged, Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc}
 }

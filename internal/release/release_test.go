@@ -1128,7 +1128,7 @@ func TestRunSharedReleasesTheSameBodiesWhicheverLayoutThePullRequestCarries(t *t
 			t.Parallel()
 			body := releasepr.SharedBody(
 				[]releasepr.Release{{Name: "api", Version: "1.3.0", Tag: "api/v1.3.0"}, {Name: "web", Version: "0.4.1", Tag: "web/v0.4.1"}},
-				releasepr.GuideLabels{Tagged: "release: tagged"}, true, "Ship it.", "",
+				&releasepr.GuideLabels{Tagged: "release: tagged"}, true, "Ship it.", "",
 				releasepr.RenderComponents(layout, layoutComponents)+"\n",
 			)
 			pr := forge.PullRequest{
@@ -1171,7 +1171,7 @@ func TestRunLockedReleasesTheSameBodiesWhicheverLayoutThePullRequestCarries(t *t
 		t.Run(string(layout), func(t *testing.T) {
 			t.Parallel()
 			section := "## v0.3.0 (2026-01-02)\n\n" + releasepr.RenderComponents(layout, components) + "\n"
-			body := releasepr.Body("0.3.0", "a/v0.3.0, b/v0.3.0", releasepr.GuideLabels{Tagged: "release: tagged"}, "", "", section)
+			body := releasepr.Body("0.3.0", "a/v0.3.0, b/v0.3.0", &releasepr.GuideLabels{Tagged: "release: tagged"}, "", "", section)
 			pr := forge.PullRequest{
 				Number: 9, Title: "chore: release v0.3.0 (a, b)", Body: body,
 				Labels: []string{"release: pending"}, Merged: true,
