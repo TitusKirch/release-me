@@ -1102,6 +1102,13 @@ func TestRunSharedResumesADraftLeftByAnEarlierRun(t *testing.T) {
 	}
 }
 
+// guides is a release pull request body's guide as pr renders it, with
+// the default "release-pull-request-guide: true" and with false.
+var guides = map[string]*releasepr.GuideLabels{
+	"with the guide":    {Tagged: "release: tagged"},
+	"without the guide": nil,
+}
+
 // layoutComponents is a shared release pull request's components, each
 // section as its own CHANGELOG.md carries it.
 var layoutComponents = []releasepr.ComponentChangelog{
@@ -1117,50 +1124,52 @@ var layoutComponents = []releasepr.ComponentChangelog{
 	},
 }
 
-func TestRunSharedReleasesTheSameBodiesWhicheverLayoutThePullRequestCarries(t *testing.T) {
+func TestRunSharedReleasesTheSameBodiesWhicheverLayoutAndGuideThePullRequestCarries(t *testing.T) {
 	t.Parallel()
 	want := []string{
 		"Ship it.\n\n" + layoutComponents[0].Section,
 		"Ship it.\n\n" + layoutComponents[1].Section,
 	}
 	for _, layout := range []releasepr.Layout{releasepr.LayoutHeadings, releasepr.LayoutDetails, releasepr.LayoutCompact} {
-		t.Run(string(layout), func(t *testing.T) {
-			t.Parallel()
-			body := releasepr.SharedBody(
-				[]releasepr.Release{{Name: "api", Version: "1.3.0", Tag: "api/v1.3.0"}, {Name: "web", Version: "0.4.1", Tag: "web/v0.4.1"}},
-				&releasepr.GuideLabels{Tagged: "release: tagged"}, true, "Ship it.", "",
-				releasepr.RenderComponents(layout, layoutComponents)+"\n",
-			)
-			pr := forge.PullRequest{
-				Number: 12, Title: "chore: release api v1.3.0, web v0.4.1", Body: body,
-				Labels: []string{"release: pending"}, Merged: true,
-			}
-			f := &forgetest.Fake{
-				ListResponses: []forgetest.ListResponse{
-					{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
-				},
-				MergeCommits: map[int]string{12: "cafe1234"},
-				PRLabels:     map[int][]string{12: {"release: pending"}},
-			}
-			comps := []release.Component{
-				{Name: "api", Branch: "release-me/main", TagPrefix: "api/v", Multi: true},
-				{Name: "web", Branch: "release-me/main", TagPrefix: "web/v", Multi: true},
-			}
-			if _, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger()); err != nil {
-				t.Fatalf("RunShared() error = %v", err)
-			}
-			var got []string
-			for _, r := range f.CreatedReleases {
-				got = append(got, r.Body)
-			}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("release bodies = %q, want %q", got, want)
-			}
-		})
+		for guideName, guide := range guides {
+			t.Run(string(layout)+"/"+guideName, func(t *testing.T) {
+				t.Parallel()
+				body := releasepr.SharedBody(
+					[]releasepr.Release{{Name: "api", Version: "1.3.0", Tag: "api/v1.3.0"}, {Name: "web", Version: "0.4.1", Tag: "web/v0.4.1"}},
+					guide, true, "Ship it.", "",
+					releasepr.RenderComponents(layout, layoutComponents)+"\n",
+				)
+				pr := forge.PullRequest{
+					Number: 12, Title: "chore: release api v1.3.0, web v0.4.1", Body: body,
+					Labels: []string{"release: pending"}, Merged: true,
+				}
+				f := &forgetest.Fake{
+					ListResponses: []forgetest.ListResponse{
+						{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+					},
+					MergeCommits: map[int]string{12: "cafe1234"},
+					PRLabels:     map[int][]string{12: {"release: pending"}},
+				}
+				comps := []release.Component{
+					{Name: "api", Branch: "release-me/main", TagPrefix: "api/v", Multi: true},
+					{Name: "web", Branch: "release-me/main", TagPrefix: "web/v", Multi: true},
+				}
+				if _, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger()); err != nil {
+					t.Fatalf("RunShared() error = %v", err)
+				}
+				var got []string
+				for _, r := range f.CreatedReleases {
+					got = append(got, r.Body)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("release bodies = %q, want %q", got, want)
+				}
+			})
+		}
 	}
 }
 
-func TestRunLockedReleasesTheSameBodiesWhicheverLayoutThePullRequestCarries(t *testing.T) {
+func TestRunLockedReleasesTheSameBodiesWhicheverLayoutAndGuideThePullRequestCarries(t *testing.T) {
 	t.Parallel()
 	components := []releasepr.ComponentChangelog{
 		{Name: "a", Version: "0.3.0", Section: "### Features\n\n- add thing a"},
@@ -1168,35 +1177,37 @@ func TestRunLockedReleasesTheSameBodiesWhicheverLayoutThePullRequestCarries(t *t
 	}
 	want := []string{"### Features\n\n- add thing a", "- Version bump without user facing changes."}
 	for _, layout := range []releasepr.Layout{releasepr.LayoutHeadings, releasepr.LayoutDetails, releasepr.LayoutCompact} {
-		t.Run(string(layout), func(t *testing.T) {
-			t.Parallel()
-			section := "## v0.3.0 (2026-01-02)\n\n" + releasepr.RenderComponents(layout, components) + "\n"
-			body := releasepr.Body("0.3.0", "a/v0.3.0, b/v0.3.0", &releasepr.GuideLabels{Tagged: "release: tagged"}, "", "", section)
-			pr := forge.PullRequest{
-				Number: 9, Title: "chore: release v0.3.0 (a, b)", Body: body,
-				Labels: []string{"release: pending"}, Merged: true,
-			}
-			f := &forgetest.Fake{
-				ListResponses: []forgetest.ListResponse{
-					{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
-				},
-				MergeCommits: map[int]string{9: "deadbeef"},
-				PRLabels:     map[int][]string{9: {"release: pending"}},
-			}
-			comps := []release.Component{
-				{Name: "a", Branch: "release-me/main", TagPrefix: "a/v", Multi: true},
-				{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
-			}
-			if _, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger()); err != nil {
-				t.Fatalf("RunLocked() error = %v", err)
-			}
-			var got []string
-			for _, r := range f.CreatedReleases {
-				got = append(got, r.Body)
-			}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("release bodies = %q, want %q", got, want)
-			}
-		})
+		for guideName, guide := range guides {
+			t.Run(string(layout)+"/"+guideName, func(t *testing.T) {
+				t.Parallel()
+				section := "## v0.3.0 (2026-01-02)\n\n" + releasepr.RenderComponents(layout, components) + "\n"
+				body := releasepr.Body("0.3.0", "a/v0.3.0, b/v0.3.0", guide, "", "", section)
+				pr := forge.PullRequest{
+					Number: 9, Title: "chore: release v0.3.0 (a, b)", Body: body,
+					Labels: []string{"release: pending"}, Merged: true,
+				}
+				f := &forgetest.Fake{
+					ListResponses: []forgetest.ListResponse{
+						{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}},
+					},
+					MergeCommits: map[int]string{9: "deadbeef"},
+					PRLabels:     map[int][]string{9: {"release: pending"}},
+				}
+				comps := []release.Component{
+					{Name: "a", Branch: "release-me/main", TagPrefix: "a/v", Multi: true},
+					{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
+				}
+				if _, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger()); err != nil {
+					t.Fatalf("RunLocked() error = %v", err)
+				}
+				var got []string
+				for _, r := range f.CreatedReleases {
+					got = append(got, r.Body)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("release bodies = %q, want %q", got, want)
+				}
+			})
+		}
 	}
 }
