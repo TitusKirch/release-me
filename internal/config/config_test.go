@@ -115,6 +115,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 			name: "reads every known key",
 			content: `initial-version: 0.2.0
 bump-minor-pre-major: true
+bump-patch-for-minor-pre-major: true
 hidden-types: [chore, docs]
 fallback-type: misc
 token-env: RELEASE_TOKEN
@@ -144,13 +145,14 @@ files:
     key: Version
 `,
 			want: config.Config{
-				InitialVersion:    "0.2.0",
-				BumpMinorPreMajor: true,
-				HiddenTypes:       []string{"chore", "docs"},
-				FallbackType:      "misc",
-				TokenEnv:          "RELEASE_TOKEN",
-				ChangelogPath:     "HISTORY.md",
-				ChangelogSource:   "all",
+				InitialVersion:            "0.2.0",
+				BumpMinorPreMajor:         true,
+				BumpPatchForMinorPreMajor: true,
+				HiddenTypes:               []string{"chore", "docs"},
+				FallbackType:              "misc",
+				TokenEnv:                  "RELEASE_TOKEN",
+				ChangelogPath:             "HISTORY.md",
+				ChangelogSource:           "all",
 				Labels: config.Labels{
 					Pending: "needs-release", Tagged: "released",
 					Alpha: "needs-alpha", Beta: "needs-beta", Rc: "needs-rc",
@@ -407,6 +409,7 @@ func TestResolveMergesComponentOverridesWithTheTopLevel(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, `initial-version: 0.5.0
 bump-minor-pre-major: true
+bump-patch-for-minor-pre-major: true
 hidden-types: [chore, docs]
 components:
   backend:
@@ -415,6 +418,7 @@ components:
     path: frontend
     initial-version: 0.2.0
     bump-minor-pre-major: false
+    bump-patch-for-minor-pre-major: false
     hidden-types: [chore]
     files:
       - path: frontend/package.json
@@ -429,7 +433,8 @@ components:
 		{
 			Name: "backend", Path: "backend", TagPrefix: "backend/v", Branch: "release-me/backend",
 			ChangelogPath: "backend/CHANGELOG.md", Multi: true,
-			InitialVersion: "0.5.0", BumpMinorPreMajor: true, HiddenTypes: []string{"chore", "docs"},
+			InitialVersion: "0.5.0", BumpMinorPreMajor: true, BumpPatchForMinorPreMajor: true,
+			HiddenTypes:     []string{"chore", "docs"},
 			ChangelogSource: config.DefaultChangelogSource,
 		},
 		{

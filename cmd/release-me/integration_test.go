@@ -90,6 +90,25 @@ func TestRunNextPrintsAMinorBumpForAFeature(t *testing.T) {
 	}
 }
 
+func TestRunNextBumpsAFeatureToAPatchBelowOneWithPatchForMinorPreMajor(t *testing.T) {
+	dir := newRepo(t)
+	writeConfig(t, dir, "bump-patch-for-minor-pre-major: true\n")
+	commitEntry(t, dir, "chore: initial commit")
+	tagRepo(t, dir)
+	commitEntry(t, dir, "feat: add the changelog command")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"next"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+	}
+	want := "0.1.1 (feat, patch below 1.0.0)\n"
+	if stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+}
+
 func TestRunNextPrintsNothingWhenThereIsNothingToRelease(t *testing.T) {
 	dir := newRepo(t)
 	commitEntry(t, dir, "chore: initial commit")

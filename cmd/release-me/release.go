@@ -103,7 +103,7 @@ func computeReleaseWith(
 		return release{}, false, fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
 
-	result, released, refused := version.Next(last, hasTag, changes, comp.InitialVersion, comp.BumpMinorPreMajor)
+	result, released, refused := version.Next(last, hasTag, changes, comp.Rules())
 	warnRefusedReleaseAs(logger, comp.Name, refused)
 	if !released {
 		return release{}, false, nil

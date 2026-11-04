@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package config loads release-me.yaml: initial-version,
-// bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
+// bump-minor-pre-major, bump-patch-for-minor-pre-major, hidden-types, fallback-type, token-env, files,
 // changelog, changelog-source, labels, author, major-tag, versioning,
 // draft-until-assets-attach, comment-mention, delete-release-branch and
 // components.
@@ -20,6 +20,7 @@ import (
 
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
+	"github.com/ostendorf-cloud/release-me/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -220,13 +221,14 @@ type Author struct {
 
 // Config is the release-me.yaml configuration.
 type Config struct {
-	InitialVersion    string
-	BumpMinorPreMajor bool
-	HiddenTypes       []string
-	FallbackType      string
-	TokenEnv          string
-	Files             []File
-	ChangelogPath     string
+	InitialVersion            string
+	BumpMinorPreMajor         bool
+	BumpPatchForMinorPreMajor bool
+	HiddenTypes               []string
+	FallbackType              string
+	TokenEnv                  string
+	Files                     []File
+	ChangelogPath             string
 	// ChangelogSource is the top-level "changelog-source" key: which
 	// commits become changelog entries. See the ChangelogSource*
 	// constants. A component overrides it through its own
@@ -294,20 +296,21 @@ type Config struct {
 
 // Component is one entry of the "components" key: a name mapped to a path
 // and optional overrides of the top-level initial-version,
-// bump-minor-pre-major, hidden-types, files, major-tag and
+// bump-minor-pre-major, bump-patch-for-minor-pre-major, hidden-types, files, major-tag and
 // changelog-source, plus its own tag-prefix and changelog path. A nil
 // field was left out of release-me.yaml and falls back to the top-level
 // value, the same left-out-versus-zero-value distinction Load applies to
 // the top level itself.
 type Component struct {
-	Name              string
-	Path              string
-	InitialVersion    *string
-	BumpMinorPreMajor *bool
-	HiddenTypes       *[]string
-	Files             *[]File
-	MajorTag          *bool
-	ChangelogSource   *string
+	Name                      string
+	Path                      string
+	InitialVersion            *string
+	BumpMinorPreMajor         *bool
+	BumpPatchForMinorPreMajor *bool
+	HiddenTypes               *[]string
+	Files                     *[]File
+	MajorTag                  *bool
+	ChangelogSource           *string
 	// TagPrefix is the component's "tag-prefix" key, nil when it was left
 	// out and the component keeps the derived "<name>/v".
 	TagPrefix *string
@@ -332,12 +335,13 @@ type ResolvedComponent struct {
 	// today's tag prefix "v" and release name instead of the generic
 	// "<name>/v" prefix and "<name> vX.Y.Z" release name a configured
 	// component carries.
-	Multi             bool
-	InitialVersion    string
-	BumpMinorPreMajor bool
-	HiddenTypes       []string
-	Files             []File
-	MajorTag          bool
+	Multi                     bool
+	InitialVersion            string
+	BumpMinorPreMajor         bool
+	BumpPatchForMinorPreMajor bool
+	HiddenTypes               []string
+	Files                     []File
+	MajorTag                  bool
 	// ChangelogSource is one of the ChangelogSource* constants: which
 	// commits become this component's changelog entries.
 	ChangelogSource string
@@ -351,17 +355,18 @@ type ResolvedComponent struct {
 func (cfg Config) Resolve() []ResolvedComponent {
 	if len(cfg.Components) == 0 {
 		return []ResolvedComponent{{
-			Name:              "main",
-			Path:              ".",
-			TagPrefix:         "v",
-			Branch:            "release-me/main",
-			ChangelogPath:     cfg.ChangelogPath,
-			InitialVersion:    cfg.InitialVersion,
-			BumpMinorPreMajor: cfg.BumpMinorPreMajor,
-			HiddenTypes:       cfg.HiddenTypes,
-			Files:             cfg.Files,
-			MajorTag:          cfg.MajorTag,
-			ChangelogSource:   cfg.ChangelogSource,
+			Name:                      "main",
+			Path:                      ".",
+			TagPrefix:                 "v",
+			Branch:                    "release-me/main",
+			ChangelogPath:             cfg.ChangelogPath,
+			InitialVersion:            cfg.InitialVersion,
+			BumpMinorPreMajor:         cfg.BumpMinorPreMajor,
+			BumpPatchForMinorPreMajor: cfg.BumpPatchForMinorPreMajor,
+			HiddenTypes:               cfg.HiddenTypes,
+			Files:                     cfg.Files,
+			MajorTag:                  cfg.MajorTag,
+			ChangelogSource:           cfg.ChangelogSource,
 		}}
 	}
 
@@ -378,24 +383,28 @@ func (cfg Config) Resolve() []ResolvedComponent {
 	out := make([]ResolvedComponent, 0, len(cfg.Components))
 	for _, c := range cfg.Components {
 		rc := ResolvedComponent{
-			Name:              c.Name,
-			Path:              c.Path,
-			TagPrefix:         c.tagPrefix(),
-			Branch:            branch(c.Name),
-			ChangelogPath:     c.changelogPath(),
-			Multi:             true,
-			InitialVersion:    cfg.InitialVersion,
-			BumpMinorPreMajor: cfg.BumpMinorPreMajor,
-			HiddenTypes:       cfg.HiddenTypes,
-			Files:             cfg.Files,
-			MajorTag:          cfg.MajorTag,
-			ChangelogSource:   cfg.ChangelogSource,
+			Name:                      c.Name,
+			Path:                      c.Path,
+			TagPrefix:                 c.tagPrefix(),
+			Branch:                    branch(c.Name),
+			ChangelogPath:             c.changelogPath(),
+			Multi:                     true,
+			InitialVersion:            cfg.InitialVersion,
+			BumpMinorPreMajor:         cfg.BumpMinorPreMajor,
+			BumpPatchForMinorPreMajor: cfg.BumpPatchForMinorPreMajor,
+			HiddenTypes:               cfg.HiddenTypes,
+			Files:                     cfg.Files,
+			MajorTag:                  cfg.MajorTag,
+			ChangelogSource:           cfg.ChangelogSource,
 		}
 		if c.InitialVersion != nil {
 			rc.InitialVersion = *c.InitialVersion
 		}
 		if c.BumpMinorPreMajor != nil {
 			rc.BumpMinorPreMajor = *c.BumpMinorPreMajor
+		}
+		if c.BumpPatchForMinorPreMajor != nil {
+			rc.BumpPatchForMinorPreMajor = *c.BumpPatchForMinorPreMajor
 		}
 		if c.HiddenTypes != nil {
 			rc.HiddenTypes = *c.HiddenTypes
@@ -412,6 +421,25 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		out = append(out, rc)
 	}
 	return out
+}
+
+// Rules returns the component's bump rules, for version.Next.
+func (rc ResolvedComponent) Rules() version.Rules {
+	return version.Rules{
+		InitialVersion:            rc.InitialVersion,
+		BumpMinorPreMajor:         rc.BumpMinorPreMajor,
+		BumpPatchForMinorPreMajor: rc.BumpPatchForMinorPreMajor,
+	}
+}
+
+// Rules returns the top-level bump rules, for version.Next: the rules a
+// linked or locked family computes its one shared version with.
+func (cfg Config) Rules() version.Rules {
+	return version.Rules{
+		InitialVersion:            cfg.InitialVersion,
+		BumpMinorPreMajor:         cfg.BumpMinorPreMajor,
+		BumpPatchForMinorPreMajor: cfg.BumpPatchForMinorPreMajor,
+	}
 }
 
 // rawFile mirrors File, the yaml shape of one "files" entry.
@@ -468,24 +496,25 @@ type rawAuthor struct {
 // raw mirrors Config with pointer fields, so Load can tell a key left out of
 // the file apart from one set to its zero value.
 type raw struct {
-	InitialVersion           *string    `yaml:"initial-version"`
-	BumpMinorPreMajor        *bool      `yaml:"bump-minor-pre-major"`
-	HiddenTypes              *[]string  `yaml:"hidden-types"`
-	FallbackType             *string    `yaml:"fallback-type"`
-	TokenEnv                 *string    `yaml:"token-env"`
-	Files                    *[]rawFile `yaml:"files"`
-	Changelog                *string    `yaml:"changelog"`
-	ChangelogSource          *string    `yaml:"changelog-source"`
-	Labels                   *rawLabels `yaml:"labels"`
-	Author                   *rawAuthor `yaml:"author"`
-	MajorTag                 *bool      `yaml:"major-tag"`
-	Versioning               *string    `yaml:"versioning"`
-	ReleasePullRequest       *string    `yaml:"release-pull-request"`
-	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
-	ReleasePullRequestGuide  *bool      `yaml:"release-pull-request-guide"`
-	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
-	CommentMention           *string    `yaml:"comment-mention"`
-	DeleteReleaseBranch      *bool      `yaml:"delete-release-branch"`
+	InitialVersion            *string    `yaml:"initial-version"`
+	BumpMinorPreMajor         *bool      `yaml:"bump-minor-pre-major"`
+	BumpPatchForMinorPreMajor *bool      `yaml:"bump-patch-for-minor-pre-major"`
+	HiddenTypes               *[]string  `yaml:"hidden-types"`
+	FallbackType              *string    `yaml:"fallback-type"`
+	TokenEnv                  *string    `yaml:"token-env"`
+	Files                     *[]rawFile `yaml:"files"`
+	Changelog                 *string    `yaml:"changelog"`
+	ChangelogSource           *string    `yaml:"changelog-source"`
+	Labels                    *rawLabels `yaml:"labels"`
+	Author                    *rawAuthor `yaml:"author"`
+	MajorTag                  *bool      `yaml:"major-tag"`
+	Versioning                *string    `yaml:"versioning"`
+	ReleasePullRequest        *string    `yaml:"release-pull-request"`
+	ReleasePullRequestLayout  *string    `yaml:"release-pull-request-layout"`
+	ReleasePullRequestGuide   *bool      `yaml:"release-pull-request-guide"`
+	DraftUntilAssetsAttach    *bool      `yaml:"draft-until-assets-attach"`
+	CommentMention            *string    `yaml:"comment-mention"`
+	DeleteReleaseBranch       *bool      `yaml:"delete-release-branch"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -497,15 +526,16 @@ type raw struct {
 // rawComponent mirrors Component with pointer fields, the yaml shape of one
 // "components" entry.
 type rawComponent struct {
-	Path              *string    `yaml:"path"`
-	InitialVersion    *string    `yaml:"initial-version"`
-	BumpMinorPreMajor *bool      `yaml:"bump-minor-pre-major"`
-	HiddenTypes       *[]string  `yaml:"hidden-types"`
-	Files             *[]rawFile `yaml:"files"`
-	MajorTag          *bool      `yaml:"major-tag"`
-	ChangelogSource   *string    `yaml:"changelog-source"`
-	TagPrefix         *string    `yaml:"tag-prefix"`
-	Changelog         *string    `yaml:"changelog"`
+	Path                      *string    `yaml:"path"`
+	InitialVersion            *string    `yaml:"initial-version"`
+	BumpMinorPreMajor         *bool      `yaml:"bump-minor-pre-major"`
+	BumpPatchForMinorPreMajor *bool      `yaml:"bump-patch-for-minor-pre-major"`
+	HiddenTypes               *[]string  `yaml:"hidden-types"`
+	Files                     *[]rawFile `yaml:"files"`
+	MajorTag                  *bool      `yaml:"major-tag"`
+	ChangelogSource           *string    `yaml:"changelog-source"`
+	TagPrefix                 *string    `yaml:"tag-prefix"`
+	Changelog                 *string    `yaml:"changelog"`
 }
 
 // Default is the configuration applied when release-me.yaml is absent.
@@ -576,6 +606,9 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.BumpMinorPreMajor != nil {
 		cfg.BumpMinorPreMajor = *r.BumpMinorPreMajor
+	}
+	if r.BumpPatchForMinorPreMajor != nil {
+		cfg.BumpPatchForMinorPreMajor = *r.BumpPatchForMinorPreMajor
 	}
 	if r.HiddenTypes != nil {
 		cfg.HiddenTypes = *r.HiddenTypes
@@ -799,7 +832,8 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 
 		c := Component{
 			Name: name, Path: *rc.Path, InitialVersion: rc.InitialVersion,
-			BumpMinorPreMajor: rc.BumpMinorPreMajor, HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag,
+			BumpMinorPreMajor: rc.BumpMinorPreMajor, BumpPatchForMinorPreMajor: rc.BumpPatchForMinorPreMajor,
+			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
 		}
 		if rc.Files != nil {

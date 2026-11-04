@@ -140,6 +140,7 @@ files:
 | --- | --- | --- | --- |
 | `initial-version` | Version used when no tag exists yet. | `0.1.0` | No |
 | `bump-minor-pre-major` | Turns a major bump into a minor one below `1.0.0`. | `false` | No |
+| `bump-patch-for-minor-pre-major` | Turns a minor bump into a patch one below `1.0.0`. | `false` | No |
 | `hidden-types` | Entry types hidden from the changelog. | `chore, docs, ci, style, refactor, test, build, other` | No |
 | `fallback-type` | Type assigned to text that does not parse as a conventional commit. | `other` | No |
 | `token-env` | Environment variable holding the GitHub token. | `GITHUB_TOKEN` | No |
