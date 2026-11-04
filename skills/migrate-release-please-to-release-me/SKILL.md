@@ -91,6 +91,9 @@ release-please collapsed each package into a `<details>` block: `migrate` leaves
 `release-pull-request-layout` out, add `release-pull-request-layout: details` only when the
 human wants the collapsed look kept.
 
+Its `pull-request-header` and `pull-request-footer` carry over as
+`release-pull-request-header` and `release-pull-request-footer`.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.
