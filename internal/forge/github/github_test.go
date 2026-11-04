@@ -544,7 +544,7 @@ func TestCreateReleaseCreatesADraftRelease(t *testing.T) {
 	})
 	f := newTestForge(t, mux)
 
-	if _, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false, true); err != nil {
+	if _, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "", "v0.1.0", "Release v0.1.0", false, true); err != nil {
 		t.Fatalf("CreateRelease() error = %v", err)
 	}
 	// draft-until-assets-attach is on: immutable releases rejects any
@@ -570,7 +570,7 @@ func TestCreateReleaseReturnsTheAddressesOfTheCreatedRelease(t *testing.T) {
 	})
 	f := newTestForge(t, mux)
 
-	got, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false, false)
+	got, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "", "v0.1.0", "Release v0.1.0", false, false)
 	if err != nil {
 		t.Fatalf("CreateRelease() error = %v", err)
 	}
@@ -580,6 +580,39 @@ func TestCreateReleaseReturnsTheAddressesOfTheCreatedRelease(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("CreateRelease() = %+v, want %+v", got, want)
+	}
+}
+
+func TestCreateReleaseSendsTheTargetCommitOnlyWhenOneIsGiven(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		target     string
+		wantTarget any
+	}{
+		{name: "sends the merge commit a tag left to the publish is created on", target: "4f2a9c1e", wantTarget: "4f2a9c1e"},
+		{name: "leaves target_commitish out for a tag release-me created itself", target: "", wantTarget: nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mux := http.NewServeMux()
+			var body map[string]any
+			mux.HandleFunc("/api/v3/repos/owner/repo/releases", func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode release body: %v", err)
+				}
+				fmt.Fprint(w, `{"id": 1, "tag_name": "v0.1.0"}`)
+			})
+			f := newTestForge(t, mux)
+
+			if _, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", tc.target, "v0.1.0", "Release v0.1.0", false, true); err != nil {
+				t.Fatalf("CreateRelease() error = %v", err)
+			}
+			if got := body["target_commitish"]; got != tc.wantTarget {
+				t.Fatalf("target_commitish = %v, want %v", got, tc.wantTarget)
+			}
+		})
 	}
 }
 
@@ -599,7 +632,7 @@ func TestCreateReleasePublishesImmediatelyWhenDraftIsFalse(t *testing.T) {
 	// publishes immediately, exactly as release-me did before that key
 	// existed, so a repository that never turns it on sees no behavior
 	// change at all.
-	if _, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "v0.1.0", "Release v0.1.0", false, false); err != nil {
+	if _, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", "", "v0.1.0", "Release v0.1.0", false, false); err != nil {
 		t.Fatalf("CreateRelease() error = %v", err)
 	}
 	if body["draft"] != false || body["prerelease"] != false {
@@ -619,7 +652,7 @@ func TestCreateReleaseMarksAPreReleaseVersionAsAPreReleaseDraft(t *testing.T) {
 	})
 	f := newTestForge(t, mux)
 
-	if _, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0-alpha.1", "v0.1.0-alpha.1", "Release v0.1.0-alpha.1", true, true); err != nil {
+	if _, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0-alpha.1", "", "v0.1.0-alpha.1", "Release v0.1.0-alpha.1", true, true); err != nil {
 		t.Fatalf("CreateRelease() error = %v", err)
 	}
 	if body["draft"] != true || body["prerelease"] != true {
@@ -639,7 +672,7 @@ func TestCreateReleaseMarksAPreReleaseVersionAsAPreReleaseWhenDraftIsFalse(t *te
 	})
 	f := newTestForge(t, mux)
 
-	if _, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0-alpha.1", "v0.1.0-alpha.1", "Release v0.1.0-alpha.1", true, false); err != nil {
+	if _, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0-alpha.1", "", "v0.1.0-alpha.1", "Release v0.1.0-alpha.1", true, false); err != nil {
 		t.Fatalf("CreateRelease() error = %v", err)
 	}
 	if body["draft"] != false || body["prerelease"] != true {
@@ -681,7 +714,7 @@ func TestCreateReleaseTellsAGenuineDuplicateApartFromAnImmutableRelease(t *testi
 			})
 			f := newTestForge(t, mux)
 
-			_, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.1", "v0.1.1", "Release v0.1.1", false, false)
+			_, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.1", "", "v0.1.1", "Release v0.1.1", false, false)
 			if err == nil {
 				t.Fatalf("CreateRelease() error = nil, want an error")
 			}
