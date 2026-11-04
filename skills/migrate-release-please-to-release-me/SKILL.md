@@ -115,6 +115,8 @@ only when the human wants the branches kept.
 
 Its `signoff` carries over as `signoff`.
 
+Its `draft-pull-request` carries over as `release-pull-request-draft`.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.
