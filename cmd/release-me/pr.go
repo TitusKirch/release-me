@@ -652,14 +652,16 @@ func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoN
 		if exists {
 			continue
 		}
-		draft, err := f.IsReleaseDraft(ctx, owner, repoName, tag)
+		// The draft is found by its release's tag name: a deferred tag
+		// does not exist as a git tag until the release is published.
+		rel, err := f.Release(ctx, owner, repoName, tag)
 		if errors.Is(err, forge.ErrReleaseNotFound) {
 			continue
 		}
 		if err != nil {
 			return false, fmt.Errorf("component %s pull request #%d: check deferred draft %s: %w", comp.Name, pr.Number, tag, err)
 		}
-		if draft {
+		if rel.Draft {
 			return true, nil
 		}
 	}

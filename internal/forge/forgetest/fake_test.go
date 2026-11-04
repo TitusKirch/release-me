@@ -459,7 +459,7 @@ func TestFakeReleaseReportsTheAddressesCreateReleaseReturned(t *testing.T) {
 	t.Parallel()
 	f := &forgetest.Fake{ExistingReleases: map[string]bool{"v0.1.0": true}}
 
-	created, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.2.0", "v0.2.0", "Release v0.2.0", false, true)
+	created, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.2.0", "", "v0.2.0", "Release v0.2.0", false, true)
 	if err != nil {
 		t.Fatalf("CreateRelease() error = %v", err)
 	}

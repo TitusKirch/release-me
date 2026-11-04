@@ -5,6 +5,7 @@ package release_test
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -617,4 +618,56 @@ func TestReleaseReportsTheCommitNotesAndAddressesOfEveryRelease(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeferredTagDraftReportsItsAddressesAndResumesByItsTagName(t *testing.T) {
+	t.Parallel()
+	comp := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", TagOnPublish: true}
+	f := mergedFake("chore(main): release v1.4.0", "release: pending")
+	results, err := runOwn(f, []release.Component{comp}, true, false)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(f.CreatedTags) != 0 || len(f.CreatedReleases) != 1 || f.CreatedReleases[0].Target != "4f2a9c1" || !f.CreatedReleases[0].Draft {
+		t.Fatalf("CreatedTags = %+v, CreatedReleases = %+v, want one draft on the merge commit and no tag", f.CreatedTags, f.CreatedReleases)
+	}
+	if len(results) != 1 || results[0].SHA != "4f2a9c1" || results[0].UploadURL == "" || results[0].HTMLURL == "" {
+		t.Fatalf("Run() = %+v, want the merge commit and the draft's addresses", results)
+	}
+
+	// The pull request is tagged now, the tag still absent: the next run
+	// finds the draft by its release's tag name and resumes it.
+	f.PRLabels[21] = []string{"release: tagged"}
+	f.ListResponses[0].PullRequests[0].Labels = []string{"release: tagged"}
+	resumed, err := runOwn(f, []release.Component{comp}, true, false)
+	if err != nil {
+		t.Fatalf("Run() resume error = %v", err)
+	}
+	if len(resumed) != 1 || resumed[0].UploadURL != results[0].UploadURL || resumed[0].HeadSHA != "" {
+		t.Fatalf("Run() resume = %+v, want the same draft resumed, its addresses kept and no head to clean up", resumed)
+	}
+	if len(f.CreatedReleases) != 1 {
+		t.Fatalf("CreatedReleases = %+v, want no second draft", f.CreatedReleases)
+	}
+}
+
+func TestTagOnlyReleaseReportsItsTagAndCommitWithoutReleaseAddresses(t *testing.T) {
+	t.Parallel()
+	comp := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", SkipGitHubRelease: true}
+	f := mergedFake("chore(main): release v1.4.0", "release: pending")
+	results, err := release.Run(context.Background(), noReleaseLookup{f}, "owner", "repo", comp, testLabels, true, false, discardLogger())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(results) != 1 || results[0].Tag != "v1.4.0" || results[0].SHA != "4f2a9c1" || results[0].HTMLURL != "" || results[0].UploadURL != "" {
+		t.Fatalf("Run() = %+v, want the tag and commit reported, no release addresses", results)
+	}
+}
+
+// noReleaseLookup is a forge whose release lookup fails: a run that must not
+// look a release up, one skipping its GitHub release, errors if it does.
+type noReleaseLookup struct{ *forgetest.Fake }
+
+func (noReleaseLookup) Release(context.Context, string, string, string) (forge.Release, error) {
+	return forge.Release{}, errors.New("release lookup must not run for a skipped release")
 }

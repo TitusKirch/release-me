@@ -53,7 +53,11 @@ phase fails still lists in `prs` the pull request its `pr` phase opened.
   - `body`, the release notes;
   - `html_url` and `upload_url`, the GitHub release's page and its asset upload template,
     `https://uploads.github.com/repos/<owner>/<repo>/releases/<id>/assets{?name,label}`. A
-    draft's `html_url` is GitHub's `untagged-…` address until it is published.
+    draft's `html_url` is GitHub's `untagged-…` address until it is published. A component with
+    [`skip-github-release`](configuration.md#skip-github-release) is `released` with its
+    `version`, `tag`, `sha` and `body`, and with both addresses empty, since it has no GitHub
+    release; with [`force-tag-creation: false`](configuration.md#force-tag-creation) a draft
+    reports its addresses before GitHub creates its tag on publish.
 
   `pr` is the release pull request opened, updated or found up to date for that component
   this run, shaped as in `prs`, else `null`. The names after `tag` are

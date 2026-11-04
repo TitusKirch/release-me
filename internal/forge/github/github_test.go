@@ -601,7 +601,7 @@ func TestCreateReleaseSendsTheTargetCommitOnlyWhenOneIsGiven(t *testing.T) {
 			})
 			f := newTestForge(t, mux)
 
-			if err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", tc.target, "v0.1.0", "Release v0.1.0", false, true); err != nil {
+			if _, err := f.CreateRelease(context.Background(), "owner", "repo", "v0.1.0", tc.target, "v0.1.0", "Release v0.1.0", false, true); err != nil {
 				t.Fatalf("CreateRelease() error = %v", err)
 			}
 			if got := body["target_commitish"]; got != tc.wantTarget {
