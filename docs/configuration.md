@@ -154,6 +154,16 @@ A component overrides it through its own `changelog-type` key, so a shared relea
 can carry GitHub's notes for one component and entries for another. Any other value is a
 configuration error.
 
+## `skip-changelog`
+
+Leaves the changelog file alone, default `false`, release-please's `skip-changelog`: `pr`
+neither creates nor prepends to it, for a repository that keeps its changelog elsewhere, or by
+hand. Everything else stays: the release pull request body and the release still carry the
+version's section, and the files under `files` are still bumped. With no file to bump, the
+release branch carries an empty release commit, so the release pull request still has one to
+merge. A component overrides it through its own `skip-changelog` key, so one component of a
+shared release pull request can skip its changelog while the others keep theirs.
+
 ## `changelog-source`
 
 Which commits become changelog entries, default `first-parent`. See
@@ -664,7 +674,7 @@ component's `path` or lies outside it is a configuration error.
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `hidden-types`, `files`, `major-tag`, `changelog-source`,
-`changelog-type`, `skip-github-release` and `changelog`, plus its own
+`changelog-type`, `skip-github-release`, `skip-changelog` and `changelog`, plus its own
 [`exclude-paths`](#exclude-paths), which the top-level key cannot apply beside configured
 components. A key left out of a component falls back to the top-level setting above. A
 repository without `components` is one component named `main` at path `.`, tag prefix `v`,
