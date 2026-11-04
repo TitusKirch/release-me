@@ -152,7 +152,16 @@ func UpdateGo(content, key, version string) (string, error) {
 // is kept unchanged. An error is returned when the path is not found in
 // that shape.
 func UpdateJSON(content, key, version string) (string, error) {
-	segments := strings.Split(key, ".")
+	if out, ok := updateJSONPath(content, strings.Split(key, "."), version); ok {
+		return out, nil
+	}
+	return "", fmt.Errorf("updater: json: key %q not found", key)
+}
+
+// updateJSONPath is UpdateJSON over a path already split into its
+// segments, so a segment may be empty, as the key of a package-lock.json's
+// root package is. It reports whether the path was found.
+func updateJSONPath(content string, segments []string, version string) (string, bool) {
 	lines := strings.Split(content, "\n")
 	last := valueLinePattern(`\s*"` + regexp.QuoteMeta(segments[len(segments)-1]) + `"\s*:\s*`)
 
@@ -175,7 +184,7 @@ func UpdateJSON(content, key, version string) (string, error) {
 		case matched == len(segments)-1 && depth == matched:
 			if m := last.FindStringSubmatch(line); m != nil {
 				lines[i] = m[1] + `"` + version + `"` + m[3]
-				return strings.Join(lines, "\n"), nil
+				return strings.Join(lines, "\n"), true
 			}
 		}
 
@@ -185,7 +194,7 @@ func UpdateJSON(content, key, version string) (string, error) {
 			matchDepths = matchDepths[:matched]
 		}
 	}
-	return "", fmt.Errorf("updater: json: key %q not found", key)
+	return "", false
 }
 
 // braceDelta returns the net change in JSON object nesting depth line
