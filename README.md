@@ -149,6 +149,8 @@ files:
 | `changelog-sentence-case` | Upper cases the first letter of every changelog entry. | `false` | No |
 | `changelog-authors` | Credits each changelog entry's author after its description. | `false` | No |
 | `changelog-sections` | Renames, reorders or adds changelog sections per type. | `Features`, `Bug Fixes`, `Performance`, `Reverts` | No |
+| `changelog-commit-links` | Links each changelog entry's commit. | `false` | No |
+| `changelog-issue-references` | Links the issues each changelog entry closes. | `false` | No |
 | `fallback-type` | Type assigned to text that does not parse as a conventional commit. | `other` | No |
 | `token-env` | Environment variable holding the GitHub token. | `GITHUB_TOKEN` | No |
 | `changelog` | Changelog file path. | `CHANGELOG.md` | No |
