@@ -59,7 +59,7 @@ type rpPackage struct {
 var packageKeys = []string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
-	"initial-version", "extra-files",
+	"initial-version", "extra-files", "changelog-host",
 }
 
 // topLevelKeys are the release-please settings that only exist at the top
@@ -177,6 +177,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	if err != nil {
 		return Result{}, err
 	}
+	st := style{host: translateChangelogHost(components, warn)}
 	// release-please groups every package into one release pull request
 	// unless separate-pull-requests is true; release-me's own default is one
 	// per component, so the grouped default is written out. locked always
@@ -208,11 +209,17 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		}
 	}
 
-	out, err := render(components, versioning, sharedPR, pending, tagged)
+	out, err := render(components, versioning, st, sharedPR, pending, tagged)
 	if err != nil {
 		return Result{}, err
 	}
 	return Result{YAML: out, Warnings: warnings, Tags: tags}, nil
+}
+
+// style is the top-level changelog style keys the translation writes,
+// carried over from release-please's settings.
+type style struct {
+	host string
 }
 
 // component is one translated release-please package.
@@ -228,6 +235,8 @@ type component struct {
 	bumpMinorPreMajor bool
 	initialVersion    string
 	files             []file
+	// changelogHost is release-please's changelog-host, "" for none.
+	changelogHost string
 }
 
 // file is one release-me "files" entry.
@@ -242,9 +251,9 @@ type file struct {
 // its release type and extra-files bump.
 func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any)) (component, error) {
 	var (
-		releaseType, packageName, componentName, separator, changelogPath, initialVersion string
-		includeComponent, includeV                                                        = true, true
-		bumpMinor, bumpPatchForMinor                                                      bool
+		releaseType, packageName, componentName, separator, changelogPath, initialVersion, changelogHost string
+		includeComponent, includeV                                                                       = true, true
+		bumpMinor, bumpPatchForMinor                                                                     bool
 	)
 	separator = "-"
 	changelogPath = "CHANGELOG.md"
@@ -253,6 +262,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"tag-separator": &separator, "changelog-path": &changelogPath, "initial-version": &initialVersion,
 		"include-component-in-tag": &includeComponent, "include-v-in-tag": &includeV,
 		"bump-minor-pre-major": &bumpMinor, "bump-patch-for-minor-pre-major": &bumpPatchForMinor,
+		"changelog-host": &changelogHost,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -323,6 +333,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		changelog:         repoPath(p.path, changelogPath),
 		bumpMinorPreMajor: bumpMinor,
 		initialVersion:    initialVersion,
+		changelogHost:     changelogHost,
 	}
 
 	// A version file the release type implies is carried over only where it
@@ -357,6 +368,27 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		c.files = append(c.files, files...)
 	}
 	return c, nil
+}
+
+// translateChangelogHost carries over a changelog-host every component
+// shares: release-me links every component's changelog on one host.
+func translateChangelogHost(components []component, warn func(string, ...any)) string {
+	host := components[0].changelogHost
+	for _, c := range components[1:] {
+		if c.changelogHost != host {
+			warn("changelog-host: release-me links every component on one host, left out")
+			return ""
+		}
+	}
+	if host == "" {
+		return ""
+	}
+	valid, err := config.ValidateChangelogHost(host)
+	if err != nil {
+		warn("changelog-host: %s, left out", err)
+		return ""
+	}
+	return valid
 }
 
 // translateExtraFiles carries over the extra-files entries a typed updater
@@ -513,7 +545,7 @@ func repoPath(pkgPath, file string) string {
 // the implicit main component and needs no components key; everything else
 // is a components mapping in release-please's package order, carrying only
 // the keys whose value differs from what release-me would derive.
-func render(components []component, versioning string, sharedPR bool, pending, tagged string) ([]byte, error) {
+func render(components []component, versioning string, st style, sharedPR bool, pending, tagged string) ([]byte, error) {
 	doc := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(m *yaml.Node, key string, value *yaml.Node) {
 		m.Content = append(m.Content, scalar(key), value)
@@ -533,6 +565,9 @@ func render(components []component, versioning string, sharedPR bool, pending, t
 		add(labels, t, boolean(false))
 	}
 	add(doc, "labels", labels)
+	if st.host != "" {
+		add(doc, "changelog-host", scalar(st.host))
+	}
 
 	// bump-minor-pre-major carried by every component is written once, at
 	// the top level, instead of repeated per component.
