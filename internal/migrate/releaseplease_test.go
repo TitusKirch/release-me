@@ -252,9 +252,9 @@ func TestFromReleasePleaseCarriesOverTheAlwaysBumpStrategies(t *testing.T) {
 	}
 }
 
-func TestFromReleasePleaseWarnsAboutAJavaVersioningStrategy(t *testing.T) {
+func TestFromReleasePleaseCarriesOverTheJavaVersioningStrategiesWithAWarning(t *testing.T) {
 	t.Parallel()
-	configJSON := `{"release-type": "simple", "packages": {
+	configJSON := `{"release-type": "simple", "separate-pull-requests": true, "packages": {
 	  "core": {"component": "core", "versioning": "service-pack"},
 	  "bom": {"component": "bom", "versioning": "dependency-manifest"}}}`
 
@@ -263,20 +263,44 @@ func TestFromReleasePleaseWarnsAboutAJavaVersioningStrategy(t *testing.T) {
 		t.Fatalf("FromReleasePlease() error = %v", err)
 	}
 
+	var strategies []version.Strategy
 	for _, c := range load(t, got.YAML).Resolve() {
-		if c.VersioningStrategy != "" {
-			t.Fatalf("%s VersioningStrategy = %q, want the default", c.Name, c.VersioningStrategy)
-		}
+		strategies = append(strategies, c.VersioningStrategy)
+	}
+	if want := []version.Strategy{version.StrategyServicePack, version.StrategyDependencyManifest}; !reflect.DeepEqual(strategies, want) {
+		t.Fatalf("strategies = %q, want %q\n%s", strategies, want, got.YAML)
 	}
 	for _, want := range []string{
-		"package core: versioning service-pack: release-me has no Maven service pack versions, " +
-			"X.Y.Z-sp.N would read as a pre-release, left out",
-		"package bom: versioning dependency-manifest: release-me bumps by the changes alone, " +
-			"not by a Java dependency manifest, left out",
+		"package core: versioning service-pack: release-me releases X.Y.Z-sp.N as a GitHub pre-release, " +
+			"semver orders it below X.Y.Z",
+		"package bom: versioning dependency-manifest: release-me reads the dependency update from the " +
+			"Renovate or Dependabot title, not from a Java manifest",
 	} {
 		if !slices.Contains(got.Warnings, want) {
 			t.Errorf("Warnings = %q, want it to contain %q", got.Warnings, want)
 		}
+	}
+}
+
+func TestFromReleasePleaseLeavesOutAServicePackInALockedFamily(t *testing.T) {
+	t.Parallel()
+	configJSON := `{"versioning": "service-pack", "release-type": "simple",
+	  "plugins": [{"type": "linked-versions", "groupName": "family", "components": ["a", "b"]}],
+	  "packages": {"a": {"component": "a"}, "b": {"component": "b"}}}`
+
+	got, err := migrate.FromReleasePlease([]byte(configJSON), nil, files(nil))
+	if err != nil {
+		t.Fatalf("FromReleasePlease() error = %v", err)
+	}
+
+	cfg := load(t, got.YAML)
+	if cfg.Versioning != config.VersioningLocked || cfg.VersioningStrategy != "" {
+		t.Fatalf("Versioning = %q, VersioningStrategy = %q, want locked and the default", cfg.Versioning, cfg.VersioningStrategy)
+	}
+	want := "package a: versioning service-pack: release-me releases service packs only with " +
+		"versioning independent, not in the locked family linked-versions became, left out"
+	if !slices.Contains(got.Warnings, want) {
+		t.Fatalf("Warnings = %q, want it to contain %q", got.Warnings, want)
 	}
 }
 
