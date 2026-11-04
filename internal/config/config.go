@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ostendorf-cloud/release-me/internal/changelog"
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"github.com/ostendorf-cloud/release-me/internal/version"
@@ -225,6 +226,10 @@ type ChangelogStyle struct {
 	// GitHub Enterprise Server's "https://github.example.com". No
 	// trailing slash.
 	Host string
+	// DateFormat is "changelog-date-format", "" by default for
+	// changelog.DefaultDateFormat: the strftime expression a version
+	// heading renders its date in.
+	DateFormat string
 }
 
 // Labels is the "labels" key: the label names release-me expects on the
@@ -680,6 +685,7 @@ type raw struct {
 	Files                     *[]rawFile             `yaml:"files"`
 	Changelog                 *string                `yaml:"changelog"`
 	ChangelogSource           *string                `yaml:"changelog-source"`
+	ChangelogDateFormat       *string                `yaml:"changelog-date-format"`
 	ChangelogHost             *string                `yaml:"changelog-host"`
 	ChangelogCommitLinks      *bool                  `yaml:"changelog-commit-links"`
 	ChangelogIssueRefs        *bool                  `yaml:"changelog-issue-references"`
@@ -868,6 +874,12 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: changelog-host %w", path, err)
 		}
 		cfg.ChangelogStyle.Host = host
+	}
+	if r.ChangelogDateFormat != nil {
+		if err := changelog.ValidateDateFormat(*r.ChangelogDateFormat); err != nil {
+			return Config{}, fmt.Errorf("config: parse %s: changelog-date-format %q %w", path, *r.ChangelogDateFormat, err)
+		}
+		cfg.ChangelogStyle.DateFormat = *r.ChangelogDateFormat
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {

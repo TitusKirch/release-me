@@ -245,14 +245,14 @@ func doPRComponent(
 
 	date := time.Now()
 	if existing != nil && !plan.changed {
-		if d, ok := releasepr.ExtractDate(existing.Body); ok {
+		if d, ok := releasepr.ExtractDate(existing.Body, cfg.ChangelogStyle.DateFormat); ok {
 			date = d
 		}
 	}
-	section := changelog.RenderHeading(versionStr, date, link) + "\n\n" + entriesBody + "\n"
+	section := changelog.RenderHeading(versionStr, date, link, cfg.ChangelogStyle.DateFormat) + "\n\n" + entriesBody + "\n"
 
 	title := releasepr.Title(comp.Name, versionStr)
-	body := releasepr.Body(versionStr, tag, bodyGuide(cfg), notes, versionOverride, section)
+	body := releasepr.Body(versionStr, tag, bodyGuide(cfg), notes, versionOverride, section) + releasepr.DateMarker(date, cfg.ChangelogStyle.DateFormat)
 
 	switch {
 	case existing != nil && !plan.changed && body == existing.Body:
@@ -289,7 +289,7 @@ func doPRComponent(
 			return nil
 		}
 
-		if err := plan.write(ctx, f, owner, repoName, existing, comp.Branch, date, title, logger); err != nil {
+		if err := plan.write(ctx, f, owner, repoName, existing, comp.Branch, date, cfg.ChangelogStyle.DateFormat, title, logger); err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
 
@@ -451,14 +451,14 @@ func doPRLocked(
 	}
 	date := time.Now()
 	if existing != nil && !plan.changed {
-		if d, ok := releasepr.ExtractDate(existing.Body); ok {
+		if d, ok := releasepr.ExtractDate(existing.Body, cfg.ChangelogStyle.DateFormat); ok {
 			date = d
 		}
 	}
 	// The combined heading stays unlinked: every component carries a tag
 	// of its own, so there is no one compare view for the family. Each
 	// component's own CHANGELOG.md heading links its own.
-	section := changelog.RenderHeading(versionStr, date, "") + "\n\n" +
+	section := changelog.RenderHeading(versionStr, date, "", cfg.ChangelogStyle.DateFormat) + "\n\n" +
 		releasepr.RenderComponents(releasepr.Layout(cfg.ReleasePullRequestLayout), bodyParts) + "\n"
 
 	tags := make([]string, 0, len(members))
@@ -467,7 +467,8 @@ func doPRLocked(
 	}
 
 	title := tagrelease.LockedTitle(versionStr, names)
-	body := releasepr.Body(versionStr, strings.Join(tags, ", "), bodyGuide(cfg), notes, versionOverride, section)
+	body := releasepr.Body(versionStr, strings.Join(tags, ", "), bodyGuide(cfg), notes, versionOverride, section) +
+		releasepr.DateMarker(date, cfg.ChangelogStyle.DateFormat)
 
 	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, "locked family", names, existing, plan, date, title, body, logger, dryRun, stdout)
 }
@@ -514,7 +515,7 @@ func publishSharedPR(
 			return nil
 		}
 
-		if err := plan.write(ctx, f, owner, repoName, existing, branch, date, title, logger); err != nil {
+		if err := plan.write(ctx, f, owner, repoName, existing, branch, date, cfg.ChangelogStyle.DateFormat, title, logger); err != nil {
 			return fmt.Errorf("release-me: %s: %w", who, err)
 		}
 
@@ -913,7 +914,7 @@ func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelog
 // and compareURL parses again, which the comparison in sameAsReleaseBranch
 // relies on. The date is irrelevant to that, so any date does.
 func headingReadsBack(version, compareURL string) bool {
-	_, ok := changelog.ParseHeading(changelog.RenderHeading(version, time.Time{}, compareURL))
+	_, ok := changelog.ParseHeading(changelog.RenderHeading(version, time.Time{}, compareURL, ""))
 	return ok
 }
 
@@ -936,8 +937,8 @@ func headingReadsBack(version, compareURL string) bool {
 // the token's own identity: cfg's author is not passed, since GitHub
 // leaves a commit with a custom author or committer unsigned.
 func (p *releasePlan) write(
-	ctx context.Context, f forge.Forge, owner, repoName string, existing *forge.PullRequest, branch string, date time.Time, commitMessage string,
-	logger *slog.Logger,
+	ctx context.Context, f forge.Forge, owner, repoName string, existing *forge.PullRequest, branch string, date time.Time, dateFormat,
+	commitMessage string, logger *slog.Logger,
 ) error {
 	parent, err := gitOutput(ctx, p.tmp, "rev-parse", "HEAD")
 	if err != nil {
@@ -953,7 +954,7 @@ func (p *releasePlan) write(
 		contents[path] = content
 	}
 	for _, c := range p.changelogs {
-		section := changelog.RenderHeading(c.version, date, c.compareURL) + "\n\n" + c.entriesBody + "\n"
+		section := changelog.RenderHeading(c.version, date, c.compareURL, dateFormat) + "\n\n" + c.entriesBody + "\n"
 		set(c.path, changelog.Prepend(c.baseline, section))
 	}
 	paths := make([]string, 0, len(p.desiredFiles))

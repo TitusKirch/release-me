@@ -17,7 +17,8 @@ import (
 // heading rendered together where that heading first appears, and every
 // type the list names decides its own visibility: one listed with a section
 // renders even when hidden-types names it, one listed hidden never does.
-// The changelog style keys carry over as they are.
+// The changelog style keys, changelog-date-format among them, carry over
+// as they are.
 func changelogOptions(comp config.ResolvedComponent) changelog.Options {
 	opts := changelog.Options{
 		HiddenTypes:     comp.HiddenTypes,
@@ -25,6 +26,7 @@ func changelogOptions(comp config.ResolvedComponent) changelog.Options {
 		Authors:         comp.ChangelogStyle.Authors,
 		CommitLinks:     comp.ChangelogStyle.CommitLinks,
 		IssueReferences: comp.ChangelogStyle.IssueReferences,
+		DateFormat:      comp.ChangelogStyle.DateFormat,
 	}
 	if comp.ChangelogSections == nil {
 		return opts

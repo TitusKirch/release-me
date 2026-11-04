@@ -154,6 +154,7 @@ files:
 | `changelog` | Changelog file path. | `CHANGELOG.md` | No |
 | `changelog-source` | Which commits become changelog entries. | `first-parent` | No |
 | `changelog-host` | Web address every changelog link points at. | the forge's own | No |
+| `changelog-date-format` | Format of the date in each version heading. | `%Y-%m-%d` | No |
 | `labels.pending` / `labels.tagged` | Label names `pr`, `release` and `check` use. | `release: pending` / `release: tagged` | No |
 | `labels.alpha` / `labels.beta` / `labels.rc` | Pre-release type labels. | `release: alpha` / `release: beta` / `release: rc` | No |
 | `prerelease-types` | Further pre-release types, each mapped to the label that selects it. | none | No |
