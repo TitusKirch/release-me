@@ -33,6 +33,14 @@ type Change struct {
 	ReleaseAs string
 }
 
+// Rules are the configured bump rules Next applies on top of the changes.
+type Rules struct {
+	// InitialVersion is the version a component's first release gets.
+	InitialVersion string
+	// BumpMinorPreMajor turns a major bump into a minor one below 1.0.0.
+	BumpMinorPreMajor bool
+}
+
 // Result is the computed next version.
 type Result struct {
 	Version string
@@ -43,7 +51,7 @@ type Result struct {
 // Next computes the next version from changes since the last tag.
 //
 // lastOK is false when no version tag exists yet; Next then returns
-// initialVersion, still only once at least one change bumps the version.
+// rules.InitialVersion, still only once at least one change bumps the version.
 // released is false when there is nothing to release: either no changes at
 // all, or no change of a type that bumps the version.
 //
@@ -52,9 +60,7 @@ type Result struct {
 // no change bumps the version. refused lists every footer value ReleaseAs
 // could not use, whatever Next returns otherwise: Next never logs, so the
 // caller reports them, once per computation.
-func Next(
-	last Semver, lastOK bool, changes []Change, initialVersion string, bumpMinorPreMajor bool,
-) (result Result, released bool, refused []Refusal) {
+func Next(last Semver, lastOK bool, changes []Change, rules Rules) (result Result, released bool, refused []Refusal) {
 	forced, ok, refused := ReleaseAs(last, lastOK, changes)
 	if ok {
 		return Result{Version: forced.String(), Bump: BumpForced, Reason: "Release-As footer"}, true, refused
@@ -66,13 +72,13 @@ func Next(
 	}
 
 	if !lastOK {
-		return Result{Version: initialVersion, Bump: BumpInitial, Reason: "initial version"}, true, refused
+		return Result{Version: rules.InitialVersion, Bump: BumpInitial, Reason: "initial version"}, true, refused
 	}
 
 	next := last
 	switch bump {
 	case BumpMajor:
-		if bumpMinorPreMajor && last.Major < 1 {
+		if rules.BumpMinorPreMajor && last.Major < 1 {
 			next = Semver{Major: last.Major, Minor: last.Minor + 1}
 			bump = BumpMinor
 			reason += ", minor below 1.0.0"
