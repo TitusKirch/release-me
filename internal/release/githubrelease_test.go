@@ -154,3 +154,22 @@ func TestReleaseSkipsTheGitHubReleaseButStillTagsAndSwapsTheLabel(t *testing.T) 
 		})
 	}
 }
+
+func TestTagOnlyReleaseReportsTheMergedHeadForBranchCleanup(t *testing.T) {
+	t.Parallel()
+	skipMain := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", SkipGitHubRelease: true}
+	for _, dryRun := range []bool{false, true} {
+		f := mergedFake("chore(main): release v1.4.0", "release: pending")
+		f.ListResponses[0].PullRequests[0].HeadSHA = "9c1e4f2a9c1e4f2a9c1e4f2a9c1e4f2a9c1e4f2a"
+		results, err := runOwn(f, []release.Component{skipMain}, false, dryRun)
+		if err != nil {
+			t.Fatalf("Run(dryRun %v) error = %v", dryRun, err)
+		}
+		if len(results) != 1 || results[0].HeadSHA != "9c1e4f2a9c1e4f2a9c1e4f2a9c1e4f2a9c1e4f2a" {
+			t.Fatalf("Run(dryRun %v) = %+v, want the tag-only release to report the merged head", dryRun, results)
+		}
+		if len(f.CreatedReleases) != 0 {
+			t.Fatalf("CreatedReleases = %+v, want none under skip-github-release", f.CreatedReleases)
+		}
+	}
+}
