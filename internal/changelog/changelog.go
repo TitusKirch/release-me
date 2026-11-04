@@ -38,6 +38,9 @@ type Options struct {
 	// line of its own, see sectionFor for the one case where its sub
 	// entries still earn it one.
 	HiddenTypes []string
+	// SentenceCase upper cases the first letter of every entry's
+	// description, see sentenceCase for the words it leaves alone.
+	SentenceCase bool
 }
 
 type section struct {
@@ -154,13 +157,17 @@ func renderEntry(e Entry, opts Options) []string {
 }
 
 // renderLine renders one entry's own list item, as opts shapes it.
-func renderLine(e Entry, _ Options) string {
+func renderLine(e Entry, opts Options) string {
 	var b strings.Builder
 	b.WriteString("- ")
 	if e.Scope != "" {
 		fmt.Fprintf(&b, "**%s:** ", e.Scope)
 	}
-	b.WriteString(e.Description)
+	description := e.Description
+	if opts.SentenceCase {
+		description = sentenceCase(description)
+	}
+	b.WriteString(description)
 	if e.PullRequestNumber > 0 && e.URL != "" {
 		fmt.Fprintf(&b, " ([#%d](%s))", e.PullRequestNumber, e.URL)
 	}
