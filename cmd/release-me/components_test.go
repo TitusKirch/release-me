@@ -347,6 +347,60 @@ func TestRunNextGivesARootComponentEveryFileOutsideTheOthers(t *testing.T) {
 	}
 }
 
+// TestRunNextLeavesExcludedPathsAndOtherComponentsOutOfARootComponent
+// combines a root component's own exclude-paths with the nested
+// component's path it leaves to that component: a change under either
+// does not count for the root, a Release-Component footer naming the root
+// still does, and an empty commit lands in every component.
+func TestRunNextLeavesExcludedPathsAndOtherComponentsOutOfARootComponent(t *testing.T) {
+	next := func(t *testing.T) string {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"next"}, &stdout, &stderr); code != 0 {
+			t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+		}
+		return stdout.String()
+	}
+	scaffold := func(t *testing.T) string {
+		t.Helper()
+		dir := newRepo(t)
+		writeConfig(t, dir, "components:\n  acme:\n    path: .\n    tag-prefix: v\n    exclude-paths: [docs]\n"+
+			"  web:\n    path: packages/web\n")
+		writeFiles(t, dir, "chore: scaffold the site and the web package", map[string]string{
+			"README.md":                 "acme\n",
+			"docs/index.md":             "# acme\n",
+			"packages/web/package.json": `{"name": "@acme/web", "version": "0.4.0"}` + "\n",
+		})
+		runGit(t, dir, "tag", "v1.2.0")
+		runGit(t, dir, "tag", "web/v0.4.0")
+		writeFiles(t, dir, "feat: document the install command", map[string]string{"docs/install.md": "npm i\n"})
+		writeFiles(t, dir, "feat(web): add the pricing page", map[string]string{"packages/web/pricing.vue": "<template />\n"})
+		return dir
+	}
+
+	t.Run("neither an excluded path nor the nested component counts for the root", func(t *testing.T) {
+		scaffold(t)
+		if got, want := next(t), "web: 0.5.0 (feat)\n"; got != want {
+			t.Fatalf("stdout = %q, want %q", got, want)
+		}
+	})
+	t.Run("a footer naming the root counts for it", func(t *testing.T) {
+		dir := scaffold(t)
+		writeFiles(t, dir, "fix: link the changelog from the docs\n\nRelease-Component: acme",
+			map[string]string{"docs/index.md": "# acme, see CHANGELOG.md\n"})
+		if got, want := next(t), "acme: 1.2.1 (fix)\nweb: 0.5.0 (feat)\n"; got != want {
+			t.Fatalf("stdout = %q, want %q", got, want)
+		}
+	})
+	t.Run("an empty commit lands in every component", func(t *testing.T) {
+		dir := scaffold(t)
+		commitEntry(t, dir, "fix: rebuild against the patched toolchain")
+		if got, want := next(t), "acme: 1.2.1 (fix)\nweb: 0.5.0 (feat)\n"; got != want {
+			t.Fatalf("stdout = %q, want %q", got, want)
+		}
+	})
+}
+
 // TestRunNextComponentFlagLimitsToOneComponent exercises --component
 // through run(): with two components configured, only the named one
 // prints, and without the "<name>: " prefix since the run targets one
