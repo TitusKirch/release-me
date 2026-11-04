@@ -7,6 +7,7 @@
 // changelog, changelog-source, changelog-sections, skip-changelog,
 // changelog-type, the changelog style keys ChangelogStyle lists, labels,
 // prerelease-types, author, major-tag, versioning,
+// release-pull-request-header, release-pull-request-footer,
 // draft-until-assets-attach, comment-mention, delete-release-branch,
 // exclude-paths, workspaces, always-link-local and components.
 package config
@@ -25,6 +26,7 @@ import (
 
 	"github.com/ostendorf-cloud/release-me/internal/changelog"
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
+	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"github.com/ostendorf-cloud/release-me/internal/version"
 	"github.com/ostendorf-cloud/release-me/internal/workspace"
@@ -385,6 +387,14 @@ type Config struct {
 	// stop being advertised in the body. Nothing reads the body back by the
 	// guide, so the key can change while a release pull request is open.
 	ReleasePullRequestGuide bool
+	// ReleasePullRequestHeader is the top-level "release-pull-request-header"
+	// key: free text above the version line of every release pull request
+	// body, "" for none. Nothing reads it back.
+	ReleasePullRequestHeader string
+	// ReleasePullRequestFooter is the top-level "release-pull-request-footer"
+	// key: free text below the changelog of every release pull request
+	// body, "" for none. Nothing reads it back.
+	ReleasePullRequestFooter string
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
 	// key, default false: when true, release creates every release as a
 	// draft instead of publishing it immediately, and resumes publishing
@@ -739,6 +749,8 @@ type raw struct {
 	Versioning                *string                `yaml:"versioning"`
 	ReleasePullRequest        *string                `yaml:"release-pull-request"`
 	ReleasePullRequestLayout  *string                `yaml:"release-pull-request-layout"`
+	ReleasePullRequestHeader  *string                `yaml:"release-pull-request-header"`
+	ReleasePullRequestFooter  *string                `yaml:"release-pull-request-footer"`
 	ReleasePullRequestGuide   *bool                  `yaml:"release-pull-request-guide"`
 	DraftUntilAssetsAttach    *bool                  `yaml:"draft-until-assets-attach"`
 	CommentMention            *string                `yaml:"comment-mention"`
@@ -810,6 +822,12 @@ func Default() Config {
 func (cfg Config) SharedPullRequest() bool {
 	return cfg.Versioning == VersioningLocked ||
 		(cfg.ReleasePullRequest == ReleasePullRequestShared && len(cfg.Components) > 0)
+}
+
+// Frame returns the header and footer every release pull request body
+// carries.
+func (cfg Config) Frame() releasepr.Frame {
+	return releasepr.Frame{Header: cfg.ReleasePullRequestHeader, Footer: cfg.ReleasePullRequestFooter}
 }
 
 // PerComponentBranch returns the release branch a component named name
@@ -1027,6 +1045,22 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.ReleasePullRequestGuide != nil {
 		cfg.ReleasePullRequestGuide = *r.ReleasePullRequestGuide
+	}
+	for _, text := range []struct {
+		key   string
+		value *string
+		dst   *string
+	}{
+		{"release-pull-request-header", r.ReleasePullRequestHeader, &cfg.ReleasePullRequestHeader},
+		{"release-pull-request-footer", r.ReleasePullRequestFooter, &cfg.ReleasePullRequestFooter},
+	} {
+		if text.value == nil {
+			continue
+		}
+		if err := releasepr.CheckFrameText(*text.value); err != nil {
+			return Config{}, fmt.Errorf("config: parse %s: %s %w", path, text.key, err)
+		}
+		*text.dst = *text.value
 	}
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach

@@ -114,6 +114,9 @@ deliberately.
 **Changelog type** carries over silently too: release-please's `changelog-type: github`
 translates to release-me's, GitHub's generated release notes in place of the entries.
 
+Its `pull-request-header` and `pull-request-footer` carry over as
+`release-pull-request-header` and `release-pull-request-footer`.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.
