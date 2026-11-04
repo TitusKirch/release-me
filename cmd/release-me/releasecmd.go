@@ -100,12 +100,7 @@ func doReleasePerComponent(
 	any := false
 	for _, comp := range components {
 		results, err := tagrelease.Run(
-			ctx, f, owner, repoName,
-			tagrelease.Component{
-				Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
-				Titles: cfg.TitlePatterns(),
-			},
-			labels, cfg.DraftUntilAssetsAttach, dryRun, logger,
+			ctx, f, owner, repoName, releaseComponent(cfg, comp), labels, cfg.DraftUntilAssetsAttach, dryRun, logger,
 		)
 		if err != nil {
 			return fmt.Errorf("release-me: %w", err)
@@ -131,6 +126,16 @@ func doReleasePerComponent(
 	return nil
 }
 
+// releaseComponent carries the settings of comp the release package reads
+// over to its own Component.
+func releaseComponent(cfg config.Config, comp config.ResolvedComponent) tagrelease.Component {
+	return tagrelease.Component{
+		Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
+		Titles:            cfg.TitlePatterns(),
+		SkipGitHubRelease: comp.SkipGitHubRelease,
+	}
+}
+
 // doReleaseLocked tags and releases every configured component together,
 // from the one release pull request a locked family shares: every merged,
 // pending-labeled pull request on branch "release-me/main" releases every
@@ -142,10 +147,7 @@ func doReleaseLocked(
 	resolved := cfg.Resolve()
 	comps := make([]tagrelease.Component, 0, len(resolved))
 	for _, comp := range resolved {
-		comps = append(comps, tagrelease.Component{
-			Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
-			Titles: cfg.TitlePatterns(),
-		})
+		comps = append(comps, releaseComponent(cfg, comp))
 	}
 	branch := resolved[0].Branch
 
@@ -201,10 +203,7 @@ func doReleaseShared(
 	branch := resolved[0].Branch
 	comps := make([]tagrelease.Component, 0, len(resolved))
 	for _, comp := range resolved {
-		comps = append(comps, tagrelease.Component{
-			Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
-			Titles: cfg.TitlePatterns(),
-		})
+		comps = append(comps, releaseComponent(cfg, comp))
 	}
 
 	results, err := tagrelease.RunShared(ctx, f, owner, repoName, branch, comps, cfg.SharedTitlePatterns(), labels, cfg.DraftUntilAssetsAttach, dryRun, logger)

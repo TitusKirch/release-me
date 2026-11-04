@@ -9,9 +9,9 @@
 // prerelease-types, author, major-tag, versioning, signoff,
 // release-pull-request-header, release-pull-request-footer,
 // release-pull-request-title, release-pull-request-shared-title,
-// release-pull-request-draft, draft-until-assets-attach, comment-mention,
-// delete-release-branch, exclude-paths, workspaces, always-link-local and
-// components.
+// release-pull-request-draft, draft-until-assets-attach,
+// skip-github-release, comment-mention, delete-release-branch,
+// exclude-paths, workspaces, always-link-local and components.
 package config
 
 import (
@@ -434,6 +434,12 @@ type Config struct {
 	// applies to the whole repository, there is no per-component
 	// override. See docs/adr/0001-draft-releases-until-assets-attach.md.
 	DraftUntilAssetsAttach bool
+	// SkipGitHubRelease is the top-level "skip-github-release" key,
+	// default false: when true, release tags a merged release pull request
+	// and swaps its label but creates no GitHub release, for a repository
+	// whose own workflow creates the release from the tag. A component
+	// overrides it through its own "skip-github-release" key.
+	SkipGitHubRelease bool
 	// CommentMention is the top-level "comment-mention" key: the mention
 	// prefix a write-access commenter's "release-as" or "release-notes"
 	// command on the release pull request must start with, default
@@ -474,8 +480,8 @@ type Config struct {
 // Component is one entry of the "components" key: a name mapped to a path
 // and optional overrides of the top-level initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, versioning-strategy,
-// release-as, hidden-types, files, major-tag and
-// changelog-source, plus its own tag-prefix, changelog path and
+// release-as, hidden-types, files, major-tag, changelog-source and
+// skip-github-release, plus its own tag-prefix, changelog path and
 // exclude-paths. A nil
 // field was left out of release-me.yaml and falls back to the top-level
 // value, the same left-out-versus-zero-value distinction Load applies to
@@ -494,6 +500,7 @@ type Component struct {
 	ChangelogType             *string
 	SkipChangelog             *bool
 	ChangelogSource           *string
+	SkipGitHubRelease         *bool
 	ChangelogSections         *[]ChangelogSection
 	// TagPrefix is the component's "tag-prefix" key, nil when it was left
 	// out and the component keeps the derived "<name>/v".
@@ -542,6 +549,9 @@ type ResolvedComponent struct {
 	// ChangelogSource is one of the ChangelogSource* constants: which
 	// commits become this component's changelog entries.
 	ChangelogSource string
+	// SkipGitHubRelease is true when release tags this component without
+	// creating a GitHub release for the tag.
+	SkipGitHubRelease bool
 	// ExcludePaths are the paths inside Path whose changes never count for
 	// the component, see history.Counts.
 	ExcludePaths []string
@@ -581,6 +591,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			ChangelogType:             cfg.ChangelogType,
 			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
+			SkipGitHubRelease:         cfg.SkipGitHubRelease,
 			ChangelogStyle:            cfg.ChangelogStyle,
 			ChangelogSections:         cfg.ChangelogSections,
 			ExcludePaths:              cfg.ExcludePaths,
@@ -617,6 +628,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			ChangelogType:             cfg.ChangelogType,
 			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
+			SkipGitHubRelease:         cfg.SkipGitHubRelease,
 			ChangelogStyle:            cfg.ChangelogStyle,
 			ChangelogSections:         cfg.ChangelogSections,
 			ExcludePaths:              c.ExcludePaths,
@@ -663,6 +675,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.ChangelogSections != nil {
 			rc.ChangelogSections = *c.ChangelogSections
+		}
+		if c.SkipGitHubRelease != nil {
+			rc.SkipGitHubRelease = *c.SkipGitHubRelease
 		}
 		out = append(out, rc)
 	}
@@ -819,6 +834,7 @@ type raw struct {
 	ReleasePullRequestFooter      *string   `yaml:"release-pull-request-footer"`
 	ReleasePullRequestGuide       *bool     `yaml:"release-pull-request-guide"`
 	DraftUntilAssetsAttach        *bool     `yaml:"draft-until-assets-attach"`
+	SkipGitHubRelease             *bool     `yaml:"skip-github-release"`
 	CommentMention                *string   `yaml:"comment-mention"`
 	Workspaces                    *[]string `yaml:"workspaces"`
 	AlwaysLinkLocal               *bool     `yaml:"always-link-local"`
@@ -850,6 +866,7 @@ type rawComponent struct {
 	ChangelogType             *string                `yaml:"changelog-type"`
 	SkipChangelog             *bool                  `yaml:"skip-changelog"`
 	ChangelogSource           *string                `yaml:"changelog-source"`
+	SkipGitHubRelease         *bool                  `yaml:"skip-github-release"`
 	ChangelogSections         *[]rawChangelogSection `yaml:"changelog-sections"`
 	TagPrefix                 *string                `yaml:"tag-prefix"`
 	Changelog                 *string                `yaml:"changelog"`
@@ -1215,6 +1232,9 @@ func Load(path string) (cfg Config, err error) {
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach
 	}
+	if r.SkipGitHubRelease != nil {
+		cfg.SkipGitHubRelease = *r.SkipGitHubRelease
+	}
 	if r.CommentMention != nil {
 		if *r.CommentMention == "" {
 			return Config{}, fmt.Errorf("config: parse %s: comment-mention is empty", path)
@@ -1491,6 +1511,7 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag, SkipChangelog: rc.SkipChangelog,
 			ChangelogType:   rc.ChangelogType,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
+			SkipGitHubRelease: rc.SkipGitHubRelease,
 		}
 		if rc.Files != nil {
 			files, err := decodeFiles(path, *rc.Files)
