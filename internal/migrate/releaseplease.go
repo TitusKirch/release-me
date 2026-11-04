@@ -66,7 +66,7 @@ var packageKeys = []string{
 // topLevelKeys are the release-please settings that only exist at the top
 // level and that this translation reads or deliberately leaves out.
 var topLevelKeys = []string{
-	"packages", "plugins", "label", "release-label", "separate-pull-requests", "$schema",
+	"packages", "plugins", "label", "release-label", "extra-label", "separate-pull-requests", "$schema",
 	"bootstrap-sha", "last-release-sha",
 }
 
@@ -193,11 +193,15 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		sharedPR = !separate
 	}
 
-	pending, err := label(topValues["label"], "autorelease: pending", "label", warn)
+	pending, err := labels(topValues["label"], "autorelease: pending", "label")
 	if err != nil {
 		return Result{}, err
 	}
-	tagged, err := label(topValues["release-label"], "autorelease: tagged", "release-label", warn)
+	tagged, err := labels(topValues["release-label"], "autorelease: tagged", "release-label")
+	if err != nil {
+		return Result{}, err
+	}
+	extra, err := labels(topValues["extra-label"], "", "extra-label")
 	if err != nil {
 		return Result{}, err
 	}
@@ -209,7 +213,8 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		}
 	}
 
-	out, err := render(components, versioning, sharedPR, pending, tagged)
+	opts := topLevel{versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, extra: extra}
+	out, err := render(components, opts)
 	if err != nil {
 		return Result{}, err
 	}
@@ -480,21 +485,26 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 	return versioning, nil
 }
 
-// label reads a release-please label key, a comma separated list. release-me
-// carries one label per role, so the first one is kept.
-func label(raw json.RawMessage, fallback, key string, warn func(string, ...any)) (string, error) {
-	if raw == nil {
-		return fallback, nil
+// labels reads a release-please label key, a comma separated list, every
+// label of it carried over: fallback alone when raw is nil or names none,
+// none when fallback is "" too.
+func labels(raw json.RawMessage, fallback, key string) ([]string, error) {
+	value := fallback
+	if raw != nil {
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, fmt.Errorf("migrate: %s: %w", key, err)
+		}
 	}
-	var value string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return "", fmt.Errorf("migrate: %s: %w", key, err)
+	var out []string
+	for _, l := range strings.Split(value, ",") {
+		if l = strings.TrimSpace(l); l != "" {
+			out = append(out, l)
+		}
 	}
-	labels := strings.Split(value, ",")
-	if len(labels) > 1 {
-		warn("%s: release-me carries one label, kept %q", key, strings.TrimSpace(labels[0]))
+	if len(out) == 0 && fallback != "" {
+		out = []string{fallback}
 	}
-	return strings.TrimSpace(labels[0]), nil
+	return out, nil
 }
 
 // sanitizeName turns a release-please component name into one
@@ -554,26 +564,39 @@ func repoPath(pkgPath, file string) string {
 	return stdpath.Join(pkgPath, file)
 }
 
+// topLevel is every top-level release-me key the translation writes besides
+// the components.
+type topLevel struct {
+	versioning string
+	sharedPR   bool
+	pending    []string
+	tagged     []string
+	extra      []string
+}
+
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
 // the implicit main component and needs no components key; everything else
 // is a components mapping in release-please's package order, carrying only
 // the keys whose value differs from what release-me would derive.
-func render(components []component, versioning string, sharedPR bool, pending, tagged string) ([]byte, error) {
+func render(components []component, top topLevel) ([]byte, error) {
 	doc := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(m *yaml.Node, key string, value *yaml.Node) {
 		m.Content = append(m.Content, scalar(key), value)
 	}
 
 	add(doc, "changelog-source", scalar("all"))
-	if versioning != "" {
-		add(doc, "versioning", scalar(versioning))
+	if top.versioning != "" {
+		add(doc, "versioning", scalar(top.versioning))
 	}
-	if sharedPR {
+	if top.sharedPR {
 		add(doc, "release-pull-request", scalar("shared"))
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
-	add(labels, "pending", scalar(pending))
-	add(labels, "tagged", scalar(tagged))
+	add(labels, "pending", labelNode(top.pending))
+	add(labels, "tagged", labelNode(top.tagged))
+	if len(top.extra) > 0 {
+		add(labels, "extra", labelNode(top.extra))
+	}
 	for _, t := range []string{"alpha", "beta", "rc"} {
 		add(labels, t, boolean(false))
 	}
@@ -664,6 +687,19 @@ func addSettings(m *yaml.Node, c component, shared sharedRules, add func(*yaml.N
 		}
 		add(m, "files", list)
 	}
+}
+
+// labelNode is one label name as a plain string, the form release-me.yaml
+// always accepted, or several as a list.
+func labelNode(names []string) *yaml.Node {
+	if len(names) == 1 {
+		return scalar(names[0])
+	}
+	list := &yaml.Node{Kind: yaml.SequenceNode}
+	for _, n := range names {
+		list.Content = append(list.Content, scalar(n))
+	}
+	return list
 }
 
 // scalar is a plain string node; yaml.v3 quotes it where YAML needs that,
