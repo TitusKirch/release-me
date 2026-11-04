@@ -113,6 +113,8 @@ tagging what merged from it. release-please has no such key, so the translation 
 `delete-release-branch` at its default, `true`; mention the difference, and set it to `false`
 only when the human wants the branches kept.
 
+Its `signoff` carries over as `signoff`.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.

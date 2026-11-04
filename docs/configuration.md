@@ -440,6 +440,21 @@ release-pull-request-shared-title: "chore(${branch}): release ${releases}"
 The pattern is checked, parsed back, length checked and read back after a change the same way
 as [`release-pull-request-title`](#release-pull-request-title).
 
+## `signoff`
+
+The identity, `Name <email>`, the release commit is signed off by, default none:
+
+```yaml
+signoff: "Release Bot <release-bot@example.com>"
+```
+
+`pr` ends the release commit's message with a `Signed-off-by: Release Bot
+<release-bot@example.com>` trailer, the line `git commit --signoff` writes, for a repository
+whose DCO check requires one on every commit. The trailer is part of the message, so it is the
+same whichever way the commit is created, and it changes neither the commit's author nor its
+committer, which [`author`](#author) sets. Anything other than a name and an email in angle
+brackets on one line is a configuration error.
+
 ## `draft-until-assets-attach`
 
 Drafts every release instead of publishing it immediately, default `false`. There is no

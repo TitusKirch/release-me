@@ -230,6 +230,7 @@ counted every commit. It also carries over:
   release-please's `${scope}` becoming `(${branch})` and its `${component}` the name after a
   space. A pattern lacking a placeholder release-me reads the title back with, such
   as release-please's default group pattern without any version, is left out with a warning.
+- `signoff` as [`signoff`](configuration.md#signoff).
 
 `changelog-source` is set to `all`, because release-please reads every commit since the last
 release, not the first parent history.
