@@ -4,6 +4,7 @@
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
 // changelog, changelog-source, labels, author, major-tag, versioning,
+// signoff,
 // draft-until-assets-attach, comment-mention and components.
 package config
 
@@ -18,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
+	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"gopkg.in/yaml.v3"
 )
@@ -250,6 +252,9 @@ type Config struct {
 	// changes: every CHANGELOG.md and every release body read back from it
 	// stays the same whichever layout is set.
 	ReleasePullRequestLayout ReleasePullRequestLayout
+	// Signoff is the top-level "signoff" key: "Name <email>" the release
+	// commit's message carries a "Signed-off-by:" trailer for, "" for none.
+	Signoff string
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
 	// key, default false: when true, release creates every release as a
 	// draft instead of publishing it immediately, and resumes publishing
@@ -458,9 +463,10 @@ type raw struct {
 	MajorTag                 *bool      `yaml:"major-tag"`
 	Versioning               *string    `yaml:"versioning"`
 	ReleasePullRequest       *string    `yaml:"release-pull-request"`
-	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
+	Signoff                  *string    `yaml:"signoff"`
 	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
 	CommentMention           *string    `yaml:"comment-mention"`
+	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -653,6 +659,14 @@ func Load(path string) (cfg Config, err error) {
 				path, *r.ReleasePullRequestLayout,
 			)
 		}
+	}
+	if r.Signoff != nil {
+		if *r.Signoff != "" {
+			if err := releasepr.CheckSignoff(*r.Signoff); err != nil {
+				return Config{}, fmt.Errorf("config: parse %s: signoff %q %w", path, *r.Signoff, err)
+			}
+		}
+		cfg.Signoff = *r.Signoff
 	}
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach
