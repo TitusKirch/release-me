@@ -4,6 +4,7 @@
 package updater_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/updater"
@@ -201,6 +202,26 @@ func TestUpdateSfdxRejectsAProjectWithoutADefaultPackageDirectory(t *testing.T) 
 			t.Parallel()
 			if _, err := updater.UpdateSfdx(tc.content, "2.0.0"); err == nil {
 				t.Fatal("UpdateSfdx() error = nil, want an error")
+			}
+		})
+	}
+}
+
+func TestBazelVersionArgumentIgnoresCommentsAndStringContents(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, content string }{
+		{name: "preceding version example in a comment", content: "module(\n    name = \"release_core\",\n    # version = \"0.9.0\"\n    version = \"1.0.0\",\n)\n"},
+		{name: "version-looking text in another string", content: "module(\n    name = 'release_core',\n    repo_name = \"example version = '0.9.0'\",\n    version = \"1.0.0\",\n)\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := updater.UpdateBazel(tc.content, "1.1.0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := strings.Replace(tc.content, `version = "1.0.0"`, `version = "1.1.0"`, 1)
+			if got != want {
+				t.Fatalf("MODULE.bazel = %s; want %s", got, want)
 			}
 		})
 	}
