@@ -624,6 +624,20 @@ See [release](commands.md#release) for what `true` changes, and
 setting needs: `publish.yaml`'s own webhook-triggered asset step for `false`, `release.yaml`
 attaching and publishing the release itself for `true`.
 
+## `force-tag-creation`
+
+Creates the tag on the merge commit before the release, default `true`, the way release-me
+always has, so a draft's tag exists while the draft waits. `false` leaves the tag to GitHub
+instead, the release-please default: the release is created with the merge commit as its
+target, and GitHub creates the tag on it when the release is published, right away for a
+published release, on publish for a draft from
+[`draft-until-assets-attach`](#draft-until-assets-attach). The run then reports
+`drafted <tag>, tagged on publish`. Until that publish the tag does not exist: a later step
+must not expect it, a rerun cannot tell a draft it tagged before, and the
+[major tag](#major-tag) already points at the merge commit. The draft is still found by its tag
+name, so the resume of `draft-until-assets-attach` and the guard against a second draft work
+the same. A component overrides it through its own `force-tag-creation` key.
+
 ## `skip-github-release`
 
 Tags a merged release pull request without creating a GitHub release, default `false`, for a
@@ -764,7 +778,8 @@ component's `path` or lies outside it is a configuration error.
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `release-as` (only with `versioning: independent`),
 `hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
-`changelog-type`, `skip-github-release`, `skip-changelog` and `changelog`, plus its own
+`changelog-type`, `force-tag-creation`, `skip-github-release`, `skip-changelog` and
+`changelog`, plus its own
 [`exclude-paths`](#exclude-paths), which the top-level key cannot apply beside configured
 components. A key left out of a component falls back to the top-level setting above. A
 repository without `components` is one component named `main` at path `.`, tag prefix `v`,
