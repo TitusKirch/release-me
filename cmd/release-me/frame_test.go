@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/forge/forgetest"
@@ -104,5 +105,33 @@ func TestRerunAddsTheHeaderWithoutAPushAndThenStaysUpToDate(t *testing.T) {
 	}
 	if len(f.UpdatedPullRequests) != 0 || !strings.Contains(third.String(), "release pull request up to date") {
 		t.Fatalf("third run updated %+v, stdout %q, want up to date", f.UpdatedPullRequests, third.String())
+	}
+}
+
+// TestCustomDateMarkerFollowsTheFooter frames every kind of release pull
+// request body and dates it in a custom format: the canonical date marker
+// changelog-date-format records lands after the footer, outside the frame,
+// and the date reads back from it.
+func TestCustomDateMarkerFollowsTheFooter(t *testing.T) {
+	for _, family := range prFamilies {
+		t.Run(family.name, func(t *testing.T) {
+			dir, origin, cfg := family.repo(t)
+			cfg.ReleasePullRequestHeader, cfg.ReleasePullRequestFooter = testHeader, testFooter
+			cfg.ChangelogStyle.DateFormat = "%d.%m.%Y"
+			f := newPRFake(origin)
+			var stdout bytes.Buffer
+			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+				t.Fatalf("doPR() error = %v", err)
+			}
+			body := f.CreatedPullRequests[0].Body
+			now := time.Now()
+			if want := testFooter + releasepr.DateMarker(now, cfg.ChangelogStyle.DateFormat); !strings.HasSuffix(body, want) {
+				t.Fatalf("body = %q, want it to end with the footer and then the date marker %q", body, want)
+			}
+			date, ok := releasepr.ExtractDate(body, cfg.ChangelogStyle.DateFormat)
+			if !ok || date.Format("2006-01-02") != now.Format("2006-01-02") {
+				t.Fatalf("ExtractDate() = %v, %v, want today read back from the marker", date, ok)
+			}
+		})
 	}
 }
