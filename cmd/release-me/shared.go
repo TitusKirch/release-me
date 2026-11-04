@@ -199,7 +199,7 @@ func doPRShared(
 	}
 	section := releasepr.RenderComponents(releasepr.Layout(cfg.ReleasePullRequestLayout), parts) + "\n"
 
-	body := releasepr.SharedBody(releases, guideLabels(cfg), perComponentVersion, notes, versionOverride, section)
+	body := releasepr.SharedBody(releases, guideLabels(cfg), perComponentVersion, notes, versionOverride, section) + releasepr.DateMarker(date, cfg.ChangelogStyle.DateFormat)
 	names := make([]string, 0, len(members))
 	for _, m := range members {
 		names = append(names, m.comp.Name)
