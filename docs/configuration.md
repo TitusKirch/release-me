@@ -212,6 +212,56 @@ A team that turns the guide off finds everything it says documented here:
 
 `migrate` leaves the key out, so a migrated repository keeps the guide.
 
+## `release-pull-request-title`
+
+The title pattern of every component's own release pull request, default
+`chore(${component}): release v${version}`. Literal text with these placeholders:
+
+- `${component}`: the component's name, `main` for the implicit one. Required.
+- `${version}`: the version, `X.Y.Z` or `X.Y.Z-<type>.N`, without a `v`. Required.
+- `${branch}`: the branch the pull request merges into, the default branch. Optional.
+
+```yaml
+release-pull-request-title: "chore(${branch}): release ${component} ${version}"
+```
+
+The title is where `release` reads the version back from after the merge, so the pattern has
+to carry every value it reads: a pattern without `${component}` or `${version}` is a
+configuration error, the same as an unknown placeholder such as release-please's `${scope}`, a
+placeholder used twice, two placeholders with no literal text between them, a line break, a
+`-->`, or a title that reads as a conventional commit bumping the version, such as
+`feat: release ${version}`: the title is the release commit's subject too. `pr` parses every
+title it renders back with the same pattern before it pushes or writes anything, and refuses
+one that does not give the same values back, such as `release ${component} ${version}-${branch}`
+onto a branch named `rc-2`, or one past GitHub's 256 characters.
+
+Changing the pattern while a release pull request is open is safe. The next `pr` run retitles
+it through a body update alone, without pushing the release branch. A pull request merged
+before that run still releases: `release` reads a title with the configured pattern, then with
+the pattern the body records in an HTML comment, `<!-- release-me-title-pattern: ... -->`,
+written for any pattern other than the default, then with the default, so a pull request
+opened before the key existed or under an earlier pattern is read too.
+
+## `release-pull-request-shared-title`
+
+The title pattern of the release pull request every component shares, with
+[`release-pull-request: shared`](#release-pull-request) or in `locked`. The placeholders depend
+on the versioning mode, since `release` reads every component and version back from the title:
+
+- `locked`, default `chore: release v${version} (${components})`: `${version}`, the family's
+  one version, and `${components}`, every component's name, comma separated, both required.
+- `independent` and `linked`, default `chore: release ${releases}`: `${releases}`, every
+  component with its version, `api v1.3.0, web v0.3.1`, required; `${components}` optional.
+- `${branch}` is optional in every mode.
+
+```yaml
+release-pull-request: shared
+release-pull-request-shared-title: "chore(${branch}): release ${releases}"
+```
+
+The pattern is checked, parsed back, length checked and read back after a change the same way
+as [`release-pull-request-title`](#release-pull-request-title).
+
 ## `draft-until-assets-attach`
 
 Drafts every release instead of publishing it immediately, default `false`. There is no
