@@ -132,3 +132,31 @@ func TestSetDependencyLeavesTheCratesOwnVersionAlone(t *testing.T) {
 		t.Fatalf("SetDependency() = %q, %v, want the content unchanged", got, err)
 	}
 }
+
+func TestCargoArrayTablesEndPackageAndDependencyContexts(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, content string
+		wantDeps      []workspace.Dependency
+	}{
+		{name: "binary after package", content: "[package]\nname = \"core\"\nversion = \"1.0.0\"\n[[bin]]\nname = \"core-tool\"\npath = \"src/bin/tool.rs\"\n"},
+		{name: "example after dependencies", content: "[package]\nname = \"core\"\nversion = \"1.0.0\"\n[dependencies]\nhelper = \"1.0.0\"\n[[example]]\nname = \"core-example\"\npath = \"examples/main.rs\"\n", wantDeps: []workspace.Dependency{{Name: "helper", Range: "1.0.0"}}},
+		{name: "binary after a dependency table", content: "[package]\nname = \"core\"\nversion = \"1.0.0\"\n[dependencies.helper]\nversion = \"1.0.0\"\n[[bin]]\nname = \"core-tool\"\npath = \"src/bin/tool.rs\"\n", wantDeps: []workspace.Dependency{{Name: "helper", Range: "1.0.0"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			pkg, err := workspace.Parse(workspace.Cargo, []byte(tc.content))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pkg.Name != "core" || pkg.Version != "1.0.0" || !reflect.DeepEqual(pkg.Dependencies, tc.wantDeps) {
+				t.Fatalf("package = %+v;want core 1.0.0 deps %+v", pkg, tc.wantDeps)
+			}
+			members := []workspace.Member{{Component: "core", Manager: workspace.Cargo, Package: pkg}, {Component: "cli", Manager: workspace.Cargo, Package: workspace.Package{Name: "cli", Dependencies: []workspace.Dependency{{Name: "core", Range: "1.0.0"}}}}}
+			links := workspace.Links(members)
+			if len(links) != 1 || links[0].Dependent != "cli" || links[0].Dependency != "core" {
+				t.Fatalf("links = %+v", links)
+			}
+		})
+	}
+}
