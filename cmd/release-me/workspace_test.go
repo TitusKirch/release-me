@@ -245,7 +245,7 @@ components:
 		t.Fatalf("config.Load() error = %v", err)
 	}
 
-	f := newFake()
+	f := newPRFake(origin)
 	var stdout bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
@@ -330,7 +330,7 @@ func TestCargoWorkspaceReleasesDependentsThroughInheritedAliases(t *testing.T) {
 			runGit(t, dir, "tag", "core/v1.0.0")
 			runGit(t, dir, "tag", "cli/v1.0.0")
 			writeFiles(t, dir, "feat: add the core API", map[string]string{"crates/core/src/lib.rs": "pub fn export() {}\n"})
-			f := newFake()
+			f := newPRFake(remote)
 			var out bytes.Buffer
 			if err := doPR(t.Context(), dir, loadConfig(t, dir), "", f, discardLogger(), false, &out); err != nil {
 				t.Fatal(err)
