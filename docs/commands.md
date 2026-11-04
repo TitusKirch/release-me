@@ -151,7 +151,9 @@ caller, such as a workflow step that still needs to attach binary assets, publis
 label swap removes `pending`, and the matching pre-release type label when the version carries
 one, replacing both with `tagged`. The implicit `main` component tags `vX.Y.Z` and names the
 release after the tag, today's shape; a configured component tags `<name>/vX.Y.Z`, or its
-`tag-prefix` followed by the version, and names the release `<name> vX.Y.Z`. A tag that already
+`tag-prefix` followed by the version, and names the release `<name> vX.Y.Z`, both without the
+`v` under [`include-v-in-release-name: false`](configuration.md#include-v-in-release-name). A
+tag that already
 exists, left over from an earlier, interrupted run, is not an error: the release and the label
 swap still happen, so the pull request does not stay pending forever, and the run reports it as
 already tagged.
@@ -239,10 +241,10 @@ only the files outside the other components' paths, where release-please's root 
 counted every commit. It also carries over:
 
 - `bump-minor-pre-major`, `bump-patch-for-minor-pre-major` and `initial-version`;
-- `skip-github-release`, `draft` and `force-tag-creation`, each at the top level when every package
-  carries the same value, on the component otherwise; a `draft` package that leaves
-  `force-tag-creation` out gets `false`, release-please's default, so GitHub still tags the draft on
-  publish;
+- `skip-github-release`, `draft`, `force-tag-creation` and `include-v-in-release-name`, each at the
+  top level when every package carries the same value, on the component otherwise; a `draft` package
+  that leaves `force-tag-creation` out gets `false`, release-please's default, so GitHub still tags
+  the draft on publish;
 - `versioning` as `versioning-strategy`, by name, with a warning for `service-pack` and
   `dependency-manifest`, whose release-me form differs from release-please's Java one;
 - `release-as`, unless the manifest already records it as released or release-me refuses the

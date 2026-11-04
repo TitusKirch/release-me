@@ -794,6 +794,14 @@ While a deferred version tag is absent and its release is an unpublished draft, 
 for `release` to resume that draft. It does not open another pull request for the same version,
 including after switching per-component releases to a shared pull request.
 
+## `include-v-in-release-name`
+
+Keeps the `v` before the version in the GitHub release's name, default `true`: `vX.Y.Z` for
+the implicit `main` component, `<name> vX.Y.Z` for a configured one. `false` names it
+`X.Y.Z` or `<name> X.Y.Z`. Only the release's name changes: the tag keeps its prefix, and the
+release pull request title, which `release` reads the version back from, keeps its `v`. A
+component overrides it through its own `include-v-in-release-name` key.
+
 ## `comment-mention`
 
 The mention prefix a comment on the release pull request names to issue a `release-as` or

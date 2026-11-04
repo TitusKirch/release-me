@@ -10,9 +10,9 @@
 // release-pull-request-header, release-pull-request-footer,
 // release-pull-request-title, release-pull-request-shared-title,
 // release-pull-request-draft, draft-until-assets-attach, draft,
-// skip-github-release, force-tag-creation, comment-mention,
-// delete-release-branch, exclude-paths, workspaces, always-link-local and
-// components.
+// skip-github-release, force-tag-creation, include-v-in-release-name,
+// comment-mention, delete-release-branch, exclude-paths, workspaces,
+// always-link-local and components.
 package config
 
 import (
@@ -454,6 +454,13 @@ type Config struct {
 	// for a published release, on publish for a draft. A component
 	// overrides it through its own "force-tag-creation" key.
 	ForceTagCreation bool
+	// IncludeVInReleaseName is the top-level "include-v-in-release-name"
+	// key, default true: the GitHub release is named "vX.Y.Z", or
+	// "<name> vX.Y.Z" for a configured component. False drops the "v",
+	// "X.Y.Z" and "<name> X.Y.Z". The tag keeps its prefix either way. A
+	// component overrides it through its own "include-v-in-release-name"
+	// key.
+	IncludeVInReleaseName bool
 	// CommentMention is the top-level "comment-mention" key: the mention
 	// prefix a write-access commenter's "release-as" or "release-notes"
 	// command on the release pull request must start with, default
@@ -495,8 +502,9 @@ type Config struct {
 // and optional overrides of the top-level initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, versioning-strategy,
 // release-as, hidden-types, files, major-tag, changelog-source,
-// skip-github-release, draft and force-tag-creation, plus its own
-// tag-prefix, changelog path and exclude-paths. A nil
+// skip-github-release, draft, force-tag-creation and
+// include-v-in-release-name, plus its own tag-prefix, changelog path and
+// exclude-paths. A nil
 // field was left out of release-me.yaml and falls back to the top-level
 // value, the same left-out-versus-zero-value distinction Load applies to
 // the top level itself.
@@ -514,10 +522,13 @@ type Component struct {
 	ChangelogType             *string
 	SkipChangelog             *bool
 	ChangelogSource           *string
-	ForceTagCreation          *bool
-	Draft                     *bool
-	SkipGitHubRelease         *bool
-	ChangelogSections         *[]ChangelogSection
+	// IncludeVInReleaseName is the component's
+	// "include-v-in-release-name" key.
+	IncludeVInReleaseName *bool
+	ForceTagCreation      *bool
+	Draft                 *bool
+	SkipGitHubRelease     *bool
+	ChangelogSections     *[]ChangelogSection
 	// TagPrefix is the component's "tag-prefix" key, nil when it was left
 	// out and the component keeps the derived "<name>/v".
 	TagPrefix *string
@@ -587,6 +598,9 @@ type ResolvedComponent struct {
 	// ForceTagCreation is true when release creates this component's tag
 	// itself, false when it leaves the tag to GitHub's release publish.
 	ForceTagCreation bool
+	// IncludeVInReleaseName is true when this component's release name
+	// carries the "v" before the version.
+	IncludeVInReleaseName bool
 }
 
 // Resolve returns the components a command should loop over, in
@@ -613,6 +627,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			ChangelogType:             cfg.ChangelogType,
 			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
+			IncludeVInReleaseName:     cfg.IncludeVInReleaseName,
 			ForceTagCreation:          cfg.ForceTagCreation,
 			Draft:                     cfg.Draft,
 			SkipGitHubRelease:         cfg.SkipGitHubRelease,
@@ -652,6 +667,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			ChangelogType:             cfg.ChangelogType,
 			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
+			IncludeVInReleaseName:     cfg.IncludeVInReleaseName,
 			ForceTagCreation:          cfg.ForceTagCreation,
 			Draft:                     cfg.Draft,
 			SkipGitHubRelease:         cfg.SkipGitHubRelease,
@@ -710,6 +726,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.ForceTagCreation != nil {
 			rc.ForceTagCreation = *c.ForceTagCreation
+		}
+		if c.IncludeVInReleaseName != nil {
+			rc.IncludeVInReleaseName = *c.IncludeVInReleaseName
 		}
 		out = append(out, rc)
 	}
@@ -866,6 +885,7 @@ type raw struct {
 	ReleasePullRequestFooter      *string   `yaml:"release-pull-request-footer"`
 	ReleasePullRequestGuide       *bool     `yaml:"release-pull-request-guide"`
 	DraftUntilAssetsAttach        *bool     `yaml:"draft-until-assets-attach"`
+	IncludeVInReleaseName         *bool     `yaml:"include-v-in-release-name"`
 	ForceTagCreation              *bool     `yaml:"force-tag-creation"`
 	Draft                         *bool     `yaml:"draft"`
 	SkipGitHubRelease             *bool     `yaml:"skip-github-release"`
@@ -900,6 +920,7 @@ type rawComponent struct {
 	ChangelogType             *string                `yaml:"changelog-type"`
 	SkipChangelog             *bool                  `yaml:"skip-changelog"`
 	ChangelogSource           *string                `yaml:"changelog-source"`
+	IncludeVInReleaseName     *bool                  `yaml:"include-v-in-release-name"`
 	ForceTagCreation          *bool                  `yaml:"force-tag-creation"`
 	Draft                     *bool                  `yaml:"draft"`
 	SkipGitHubRelease         *bool                  `yaml:"skip-github-release"`
@@ -931,6 +952,7 @@ func Default() Config {
 		DeleteReleaseBranch:      true,
 		AlwaysLinkLocal:          true,
 		ForceTagCreation:         true,
+		IncludeVInReleaseName:    true,
 	}
 }
 
@@ -1278,6 +1300,9 @@ func Load(path string) (cfg Config, err error) {
 	if r.ForceTagCreation != nil {
 		cfg.ForceTagCreation = *r.ForceTagCreation
 	}
+	if r.IncludeVInReleaseName != nil {
+		cfg.IncludeVInReleaseName = *r.IncludeVInReleaseName
+	}
 	if r.CommentMention != nil {
 		if *r.CommentMention == "" {
 			return Config{}, fmt.Errorf("config: parse %s: comment-mention is empty", path)
@@ -1554,9 +1579,10 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag, SkipChangelog: rc.SkipChangelog,
 			ChangelogType:   rc.ChangelogType,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
-			SkipGitHubRelease: rc.SkipGitHubRelease,
-			Draft:             rc.Draft,
-			ForceTagCreation:  rc.ForceTagCreation,
+			SkipGitHubRelease:     rc.SkipGitHubRelease,
+			Draft:                 rc.Draft,
+			ForceTagCreation:      rc.ForceTagCreation,
+			IncludeVInReleaseName: rc.IncludeVInReleaseName,
 		}
 		if rc.Files != nil {
 			files, err := decodeFiles(path, *rc.Files)

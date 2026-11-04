@@ -843,6 +843,7 @@ func TestFromReleasePleaseCarriesTheGitHubReleaseSettingsOver(t *testing.T) {
 	skip := func(c config.ResolvedComponent) bool { return c.SkipGitHubRelease }
 	draft := func(c config.ResolvedComponent) bool { return c.Draft }
 	forceTag := func(c config.ResolvedComponent) bool { return c.ForceTagCreation }
+	includeV := func(c config.ResolvedComponent) bool { return c.IncludeVInReleaseName }
 	cases := []struct {
 		name       string
 		configJSON string
@@ -938,6 +939,26 @@ func TestFromReleasePleaseCarriesTheGitHubReleaseSettingsOver(t *testing.T) {
 			  "api": {"component": "api", "release-type": "go", "draft": true},
 			  "web": {"component": "web", "release-type": "go"}}}`,
 			get: forceTag, want: []bool{false, true},
+		},
+		{
+			name: "writes include-v-in-release-name once when every package drops the v",
+			configJSON: `{"include-v-in-release-name": false, "packages": {
+			  "api": {"component": "api", "release-type": "go"}, "web": {"component": "web", "release-type": "go"}}}`,
+			wantYAML: "\ninclude-v-in-release-name: false\ncomponents:\n",
+			get:      includeV, want: []bool{false, false},
+		},
+		{
+			name: "writes include-v-in-release-name on the one package that drops the v",
+			configJSON: `{"packages": {
+			  "api": {"component": "api", "release-type": "go", "include-v-in-release-name": false},
+			  "web": {"component": "web", "release-type": "go"}}}`,
+			wantYAML: "    tag-prefix: api-v\n    include-v-in-release-name: false\n",
+			get:      includeV, want: []bool{false, true},
+		},
+		{
+			name:       "leaves out include-v-in-release-name at release-me's default",
+			configJSON: `{"include-v-in-release-name": true, "packages": {".": {"release-type": "go"}}}`,
+			get:        includeV, want: []bool{true},
 		},
 	}
 	for _, tc := range cases {
@@ -1044,6 +1065,13 @@ func TestFromReleasePleaseRejectsInvalidInput(t *testing.T) {
 		})
 	}
 }
+
+// files is a ReadFile over a fixed set of repository files.
+// load loads translated YAML the way every command does, so a test fails
+// on a translation release-me itself would refuse.
+// monorepoConfig is a release-please-config.json for a node monorepo with
+// component-prefixed "@" tags and the main package's changelog kept at the
+// repository root.
 
 // files is a ReadFile over a fixed set of repository files.
 // load loads translated YAML the way every command does, so a test fails
