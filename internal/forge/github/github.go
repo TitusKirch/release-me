@@ -208,13 +208,20 @@ func (f *Forge) MoveTag(ctx context.Context, owner, repo, tag, sha string) error
 // CommitBranch implements forge.Forge through the Git Data REST API: a
 // blob per file, a tree on top of the parent's, a commit with that one
 // parent, then the branch ref created or moved onto it. The commit is
-// sent without author or committer, so GitHub fills both from the token
-// and signs the commit itself, which it does only when neither is set.
+// sent without author or committer, so GitHub fills both from the token.
+// GitHub signs it only when neither is set and the token is a GitHub App
+// installation token, secrets.GITHUB_TOKEN included; for a personal
+// access token or an OAuth token the commit stays unsigned, which
+// CommitSignature reports.
 //
-// GraphQL's createCommitOnBranch would sign too, but it only appends to a
-// branch's current tip: it cannot rebuild a release branch from the
-// default branch's tip, which every push to an existing release branch
-// does. GitHub's REST ref update takes no expected value, so the lease on
+// GraphQL's createCommitOnBranch would sign too, for a fine-grained
+// personal access token as well, but it only appends to a branch's
+// current tip: it cannot rebuild a release branch from the default
+// branch's tip, which every push to an existing release branch does.
+// Resetting the branch to the default branch's tip first and appending
+// after is no way around that: for a moment the open release pull
+// request's head is a commit its base already contains, which GitHub may
+// take as the pull request merged or close it. GitHub's REST ref update takes no expected value, so the lease on
 // c.ExpectedHead is a read of the ref right before the forced update; the
 // window between the two is the one a concurrent writer could slip into.
 func (f *Forge) CommitBranch(ctx context.Context, owner, repo string, c forge.BranchCommit) (string, error) {
@@ -263,6 +270,18 @@ func (f *Forge) CommitBranch(ctx context.Context, owner, repo string, c forge.Br
 		return "", err
 	}
 	return sha, nil
+}
+
+// CommitSignature implements forge.Forge through the commits REST API,
+// "GET /repos/{owner}/{repo}/commits/{sha}", whose commit.verification
+// carries GitHub's verdict on the commit's signature.
+func (f *Forge) CommitSignature(ctx context.Context, owner, repo, sha string) (forge.Signature, error) {
+	commit, _, err := f.client.Repositories.GetCommit(ctx, owner, repo, sha, nil)
+	if err != nil {
+		return forge.Signature{}, fmt.Errorf("github: read signature of commit %s: %w", sha, err)
+	}
+	v := commit.GetCommit().GetVerification()
+	return forge.Signature{Verified: v.GetVerified(), Reason: v.GetReason()}, nil
 }
 
 // moveBranch points c.Branch at sha: replacing it outright when its

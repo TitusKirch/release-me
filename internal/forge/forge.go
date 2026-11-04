@@ -96,6 +96,17 @@ type BranchCommit struct {
 	ExpectedHead string
 }
 
+// Signature is what the forge reports about one commit's signature.
+// Verified is true only when the forge checked a signature on the commit
+// and accepted it, the condition a ruleset requiring signed commits
+// enforces. Reason is the forge's own word for the outcome, on GitHub
+// "valid" for a verified commit and "unsigned" for one with no signature
+// at all.
+type Signature struct {
+	Verified bool
+	Reason   string
+}
+
 // Forge reads and writes pull request, label, tag and release data on a
 // code hosting platform.
 //
@@ -187,13 +198,22 @@ type Forge interface {
 	// CommitBranch creates c as a commit on the forge itself, never
 	// through a local "git commit" and push, points c.Branch at it and
 	// returns its SHA. The forge writes the commit under the token's own
-	// identity, so a forge that signs the commits it creates, GitHub for
-	// an app or a user token, signs this one, and a ruleset requiring
-	// signed commits accepts it. No author or committer is passed: a
-	// custom one makes GitHub leave the commit unsigned.
+	// identity, so a forge that signs the commits it creates signs this
+	// one, and a ruleset requiring signed commits accepts it. GitHub does
+	// so for a GitHub App installation token, secrets.GITHUB_TOKEN
+	// included; a personal access token, classic or fine-grained, or an
+	// OAuth token yields an unsigned commit, which such a ruleset rejects.
+	// No author or committer is passed: a custom one makes GitHub leave
+	// the commit unsigned for any token. CommitSignature tells a caller
+	// which of the two it got.
 	// ErrBranchMoved is returned when the branch is not where
 	// c.ExpectedHead, or the plain push rule, expects it.
 	CommitBranch(ctx context.Context, owner, repo string, c BranchCommit) (string, error)
+
+	// CommitSignature reports what the forge verified about the
+	// signature of the commit sha, for a caller to tell a signed commit
+	// CommitBranch created from an unsigned one.
+	CommitSignature(ctx context.Context, owner, repo, sha string) (Signature, error)
 
 	// CompareURL returns the web address of the forge's compare view
 	// between the refs base and head, the tag a release is computed from
