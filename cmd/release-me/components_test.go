@@ -249,6 +249,58 @@ func TestRunNextPrefixesEachComponentWhenMoreThanOneIsConfigured(t *testing.T) {
 	}
 }
 
+// TestRunNextLeavesOutACommitThatChangedOnlyExcludedPaths exercises
+// "exclude-paths" through run(): a feat changing only a component's
+// excluded docs releases nothing for it, one changing its source does.
+func TestRunNextLeavesOutACommitThatChangedOnlyExcludedPaths(t *testing.T) {
+	cases := []struct {
+		name   string
+		config string
+		want   string
+	}{
+		{
+			name: "a component leaves out its excluded subpath",
+			config: "components:\n  frontend:\n    path: frontend\n    exclude-paths: [frontend/docs]\n" +
+				"  backend:\n    path: backend\n",
+			want: "backend: 0.1.1 (fix)\n",
+		},
+		{
+			name:   "the implicit main component leaves out the top-level excluded paths",
+			config: "exclude-paths: [frontend/docs, frontend/README.md]\n",
+			want:   "0.1.1 (fix)\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := newRepo(t)
+			writeConfig(t, dir, tc.config)
+			writeFiles(t, dir, "chore: scaffold the two components", map[string]string{
+				"frontend/README.md": "frontend\n",
+				"backend/README.md":  "backend\n",
+			})
+			runGit(t, dir, "tag", "v0.1.0")
+			runGit(t, dir, "tag", "frontend/v0.1.0")
+			runGit(t, dir, "tag", "backend/v0.1.0")
+			writeFiles(t, dir, "feat(frontend): document the layout prop", map[string]string{
+				"frontend/docs/layout.md": "# Layout\n",
+			})
+			writeFiles(t, dir, "fix(backend): answer the health check with 200", map[string]string{
+				"backend/health.go": "package backend\n",
+			})
+
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"next"}, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tc.want {
+				t.Fatalf("stdout = %q, want %q", stdout.String(), tc.want)
+			}
+		})
+	}
+}
+
 // TestRunNextComponentFlagLimitsToOneComponent exercises --component
 // through run(): with two components configured, only the named one
 // prints, and without the "<name>: " prefix since the run targets one

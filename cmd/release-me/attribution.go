@@ -53,13 +53,13 @@ func newAttribution(dir string, cfg config.Config, owner, repoName string, f for
 	}
 }
 
-// filter keeps only the entries that count for comp. comp.Path "." keeps
-// every entry without reading any commit's touched files or footers: it
-// is only ever the one component of its repository, so no footer can
-// change what counts for it, and a footer naming an unknown component
-// goes without a warning there.
+// filter keeps only the entries that count for comp. comp.Path "." without
+// "exclude-paths" keeps every entry without reading any commit's touched
+// files or footers: it is only ever the one component of its repository,
+// so no footer can change what counts for it, and a footer naming an
+// unknown component goes without a warning there.
 func (a *attribution) filter(ctx context.Context, entries []history.Entry, comp config.ResolvedComponent) ([]history.Entry, error) {
-	if comp.Path == "." {
+	if comp.Path == "." && len(comp.ExcludePaths) == 0 {
 		return entries, nil
 	}
 	filtered := make([]history.Entry, 0, len(entries))
@@ -72,7 +72,7 @@ func (a *attribution) filter(ctx context.Context, entries []history.Entry, comp 
 		if err != nil {
 			return nil, fmt.Errorf("commit %s: %w", e.SHA, err)
 		}
-		if history.Counts(paths, named, comp.Name, comp.Path) {
+		if history.Counts(paths, named, comp.Name, comp.Path, comp.ExcludePaths) {
 			filtered = append(filtered, e)
 		}
 	}
