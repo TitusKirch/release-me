@@ -281,6 +281,40 @@ release branch carries an empty release commit, so the release pull request stil
 merge. A component overrides it through its own `skip-changelog` key, so one component of a
 shared release pull request can skip its changelog while the others keep theirs.
 
+## `changelog-type`
+
+Where the changelog section comes from, release-please's `changelog-type`: `default`, the
+entries `changelog-source` reads, or `github`, the release notes GitHub generates for the release,
+the ones its "Generate release notes" button fills in:
+
+```markdown
+## [v0.2.0](https://github.com/owner/repo/compare/v0.1.0...v0.2.0) (2026-11-04)
+
+### What's Changed
+* feat: add the widget by @octocat in https://github.com/owner/repo/pull/12
+
+**Full Changelog**: https://github.com/owner/repo/compare/v0.1.0...v0.2.0
+```
+
+- The version still comes from the conventional commits since the last tag; only the section
+  under the heading changes, in the changelog file, the release pull request body and the
+  release alike. `release-me changelog` prints it the same way, so it calls GitHub too.
+- `pr` asks GitHub for the notes of the tag the release will get, on the commit it cuts the
+  release pull request from, since the component's last tag; for a first release GitHub picks
+  the previous release itself, or takes the whole history. GitHub's notes cover the whole
+  repository between those two points, not only a component's path, and follow the
+  repository's `.github/release.yml` categories when it has one.
+- The notes are fitted under the version heading: GitHub's `## What's Changed` and every heading
+  up to the third level become `###`, a deeper one a bold line, since a `##` heading would read
+  as the next version's and a `####` one as a component of a shared release pull request.
+- `hidden-types` shapes the default type only.
+- The request is a `POST` to `releases/generate-notes`, which creates nothing and needs the
+  `contents: write` permission the job already has for its tags.
+
+A component overrides it through its own `changelog-type` key, so a shared release pull request
+can carry GitHub's notes for one component and entries for another. Any other value is a
+configuration error.
+
 ## `changelog-source`
 
 Which commits become changelog entries, default `first-parent`. See
@@ -711,17 +745,17 @@ Setting the key without `node` in [`workspaces`](#workspaces) is a configuration
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `versioning-strategy`, `release-as` (only with `versioning:
 independent`), `hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
-`skip-changelog` and `changelog`, plus its own [`exclude-paths`](#exclude-paths). A key left out of
-a component falls back to the top-level setting above. A repository without `components` is one
-component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the default shape a
-repository with no configuration at all already has. A configured component gets tag prefix
-`<name>/v`, branch `release-me/<name>`, or `release-me/main` when the release pull request is
-shared, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A name holds ASCII
-letters, digits, `-`, `_` and `.` only, does not start with `.` or `-`, does not end with `.` or
-`.lock` and does not contain `..`; anything else is a configuration error naming the component and
-the character, since the name has to survive the tag prefix, the branch, the shared pull request
-title release reads back, the [Release-Component footer](overrides.md#release-component-footer) and
-the compare link.
+`skip-changelog`, `changelog-type` and `changelog`, plus its own [`exclude-paths`](#exclude-paths).
+A key left out of a component falls back to the top-level setting above. A repository without
+`components` is one component named `main` at path `.`, tag prefix `v`, branch `release-me/main`,
+the default shape a repository with no configuration at all already has. A configured component gets
+tag prefix `<name>/v`, branch `release-me/<name>`, or `release-me/main` when the release pull
+request is shared, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A name
+holds ASCII letters, digits, `-`, `_` and `.` only, does not start with `.` or `-`, does not end
+with `.` or `.lock` and does not contain `..`; anything else is a configuration error naming the
+component and the character, since the name has to survive the tag prefix, the branch, the shared
+pull request title release reads back, the [Release-Component
+footer](overrides.md#release-component-footer) and the compare link.
 
 `tag-prefix` replaces the derived prefix, for a component whose existing tags follow another
 scheme, such as `api@v1.4.0`: release-me continues from its last such tag instead of starting

@@ -876,6 +876,65 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestGenerateReleaseNotes(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		previousTag string
+		wantRequest map[string]any
+	}{
+		{
+			name:        "from the given previous tag",
+			previousTag: "v1.1.0",
+			wantRequest: map[string]any{"tag_name": "v1.2.0", "previous_tag_name": "v1.1.0", "target_commitish": "8fa6c1b"},
+		},
+		{
+			name:        "GitHub picks the previous release without one",
+			wantRequest: map[string]any{"tag_name": "v1.2.0", "target_commitish": "8fa6c1b"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mux := http.NewServeMux()
+			mux.HandleFunc("POST /api/v3/repos/owner/repo/releases/generate-notes", func(w http.ResponseWriter, r *http.Request) {
+				var got map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				if !reflect.DeepEqual(got, tc.wantRequest) {
+					t.Errorf("request = %v, want %v", got, tc.wantRequest)
+				}
+				fmt.Fprint(w, `{"name": "v1.2.0", "body": "## What's Changed\n* feat: add the widget by @octocat in https://github.com/owner/repo/pull/12"}`)
+			})
+			f := newTestForge(t, mux)
+
+			got, err := f.GenerateReleaseNotes(t.Context(), "owner", "repo", "v1.2.0", tc.previousTag, "8fa6c1b")
+			if err != nil {
+				t.Fatalf("GenerateReleaseNotes() error = %v", err)
+			}
+			if want := "## What's Changed\n* feat: add the widget by @octocat in https://github.com/owner/repo/pull/12"; got != want {
+				t.Fatalf("GenerateReleaseNotes() = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestGenerateReleaseNotesNamesTheTagOnAnError(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v3/repos/owner/repo/releases/generate-notes", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"message": "Resource not accessible by integration"}`)
+	})
+	f := newTestForge(t, mux)
+
+	_, err := f.GenerateReleaseNotes(t.Context(), "owner", "repo", "v1.2.0", "v1.1.0", "8fa6c1b")
+	if err == nil || !strings.Contains(err.Error(), "generate release notes for v1.2.0") {
+		t.Fatalf("GenerateReleaseNotes() error = %v, want one naming the tag", err)
+	}
+}
+
 func TestWebLinksUseTheWebHostOfTheAPIBaseURL(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

@@ -4,11 +4,11 @@
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, versioning-strategy,
 // release-as, hidden-types, fallback-type, token-env, files,
-// changelog, changelog-source, changelog-sections, skip-changelog, the
-// changelog style keys ChangelogStyle lists, labels, prerelease-types,
-// author, major-tag, versioning, draft-until-assets-attach,
-// comment-mention, delete-release-branch, exclude-paths, workspaces,
-// always-link-local and components.
+// changelog, changelog-source, changelog-sections, skip-changelog,
+// changelog-type, the changelog style keys ChangelogStyle lists, labels,
+// prerelease-types, author, major-tag, versioning,
+// draft-until-assets-attach, comment-mention, delete-release-branch,
+// exclude-paths, workspaces, always-link-local and components.
 package config
 
 import (
@@ -177,6 +177,17 @@ const (
 	ChangelogSourceNested = "nested"
 )
 
+// The changelog types "changelog-type" accepts, top level and per
+// component, release-please's own.
+const (
+	// ChangelogTypeDefault renders the changelog from the entries
+	// changelog-source reads, the default.
+	ChangelogTypeDefault = "default"
+	// ChangelogTypeGitHub renders it from the release notes GitHub
+	// generates for the release.
+	ChangelogTypeGitHub = "github"
+)
+
 // changelogSources lists every value "changelog-source" accepts, in the
 // order check and config errors report them.
 var changelogSources = []string{
@@ -342,6 +353,11 @@ type Config struct {
 	// request and the release still carry the changelog. A component
 	// overrides it through its own "skip-changelog" key.
 	SkipChangelog bool
+	// ChangelogType is the top-level "changelog-type" key, one of the
+	// ChangelogType* constants, "" when left out, which is
+	// ChangelogTypeDefault. A component overrides it through its own
+	// "changelog-type" key.
+	ChangelogType string
 	// Versioning is the top-level "versioning" key: how the configured
 	// components' versions relate to each other, default
 	// VersioningIndependent. It applies to the whole family; there is no
@@ -434,6 +450,7 @@ type Component struct {
 	HiddenTypes               *[]string
 	Files                     *[]File
 	MajorTag                  *bool
+	ChangelogType             *string
 	SkipChangelog             *bool
 	ChangelogSource           *string
 	ChangelogSections         *[]ChangelogSection
@@ -475,6 +492,9 @@ type ResolvedComponent struct {
 	HiddenTypes               []string
 	Files                     []File
 	MajorTag                  bool
+	// ChangelogType is one of the ChangelogType* constants, or "" for
+	// ChangelogTypeDefault: where this component's changelog comes from.
+	ChangelogType string
 	// SkipChangelog is true when pr leaves this component's changelog
 	// file alone.
 	SkipChangelog bool
@@ -517,6 +537,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			HiddenTypes:               cfg.HiddenTypes,
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
+			ChangelogType:             cfg.ChangelogType,
 			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
 			ChangelogStyle:            cfg.ChangelogStyle,
@@ -552,6 +573,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			HiddenTypes:               cfg.HiddenTypes,
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
+			ChangelogType:             cfg.ChangelogType,
 			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
 			ChangelogStyle:            cfg.ChangelogStyle,
@@ -584,6 +606,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.SkipChangelog != nil {
 			rc.SkipChangelog = *c.SkipChangelog
+		}
+		if c.ChangelogType != nil {
+			rc.ChangelogType = *c.ChangelogType
 		}
 		if c.ChangelogSource != nil {
 			rc.ChangelogSource = *c.ChangelogSource
@@ -709,6 +734,7 @@ type raw struct {
 	Labels                    *rawLabels             `yaml:"labels"`
 	Author                    *rawAuthor             `yaml:"author"`
 	MajorTag                  *bool                  `yaml:"major-tag"`
+	ChangelogType             *string                `yaml:"changelog-type"`
 	SkipChangelog             *bool                  `yaml:"skip-changelog"`
 	Versioning                *string                `yaml:"versioning"`
 	ReleasePullRequest        *string                `yaml:"release-pull-request"`
@@ -743,6 +769,7 @@ type rawComponent struct {
 	HiddenTypes               *[]string              `yaml:"hidden-types"`
 	Files                     *[]rawFile             `yaml:"files"`
 	MajorTag                  *bool                  `yaml:"major-tag"`
+	ChangelogType             *string                `yaml:"changelog-type"`
 	SkipChangelog             *bool                  `yaml:"skip-changelog"`
 	ChangelogSource           *string                `yaml:"changelog-source"`
 	ChangelogSections         *[]rawChangelogSection `yaml:"changelog-sections"`
@@ -952,6 +979,12 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.SkipChangelog != nil {
 		cfg.SkipChangelog = *r.SkipChangelog
+	}
+	if r.ChangelogType != nil {
+		if err := validateChangelogType(*r.ChangelogType); err != nil {
+			return Config{}, fmt.Errorf("config: parse %s: %w", path, err)
+		}
+		cfg.ChangelogType = *r.ChangelogType
 	}
 	if r.Versioning != nil {
 		cfg.Versioning = Versioning(*r.Versioning)
@@ -1178,6 +1211,15 @@ func ValidateChangelogHost(host string) (string, error) {
 	return strings.TrimRight(host, "/"), nil
 }
 
+// validateChangelogType rejects a "changelog-type" outside the
+// ChangelogType* constants.
+func validateChangelogType(value string) error {
+	if value != ChangelogTypeDefault && value != ChangelogTypeGitHub {
+		return fmt.Errorf("changelog-type %q is not %s or %s", value, ChangelogTypeDefault, ChangelogTypeGitHub)
+	}
+	return nil
+}
+
 // decodeComponents converts the "components" mapping node into []Component,
 // in the order its keys appear in release-me.yaml. Each entry's value is
 // decoded with the same strict, unknown-key-rejecting rules as the rest of
@@ -1231,6 +1273,11 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 				return nil, fmt.Errorf("config: parse %s: component %s: %w", path, name, err)
 			}
 		}
+		if rc.ChangelogType != nil {
+			if err := validateChangelogType(*rc.ChangelogType); err != nil {
+				return nil, fmt.Errorf("config: parse %s: component %s: %w", path, name, err)
+			}
+		}
 		if rc.ChangelogSource != nil && !slices.Contains(changelogSources, *rc.ChangelogSource) {
 			return nil, fmt.Errorf(
 				"config: parse %s: component %s: changelog-source %q is none of %s",
@@ -1258,6 +1305,7 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			BumpMinorPreMajor: rc.BumpMinorPreMajor, BumpPatchForMinorPreMajor: rc.BumpPatchForMinorPreMajor,
 			VersioningStrategy: strategy, ReleaseAs: rc.ReleaseAs,
 			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag, SkipChangelog: rc.SkipChangelog,
+			ChangelogType:   rc.ChangelogType,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
 		}
 		if rc.Files != nil {
