@@ -7,9 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
-	"github.com/ostendorf-cloud/release-me/internal/changelog"
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/history"
 )
@@ -58,9 +56,12 @@ func runChangelog(args []string, stdout, stderr io.Writer) int {
 			if !r.released {
 				continue
 			}
-			comp, rel := r.comp, r.rel
-			link := compareURL(f, owner, repoName, rel.fromTag, comp.TagPrefix+rel.version.Version)
-			printBlock(stdout, comp.Name, multi, changelog.Render(rel.version.Version, time.Now(), link, rel.entries, rel.options))
+			section, err := renderSection(ctx, f, dir, owner, repoName, r.comp, r.rel)
+			if err != nil {
+				fmt.Fprintf(stderr, "%v\n", err)
+				return 1
+			}
+			printBlock(stdout, r.comp.Name, multi, section)
 		}
 		return 0
 	}
@@ -79,8 +80,12 @@ func runChangelog(args []string, stdout, stderr io.Writer) int {
 		if !ok {
 			continue
 		}
-		link := compareURL(f, owner, repoName, rel.fromTag, comp.TagPrefix+rel.version.Version)
-		printBlock(stdout, comp.Name, multi, changelog.Render(rel.version.Version, time.Now(), link, rel.entries, rel.options))
+		section, err := renderSection(ctx, f, dir, owner, repoName, comp, rel)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		printBlock(stdout, comp.Name, multi, section)
 	}
 	return 0
 }
