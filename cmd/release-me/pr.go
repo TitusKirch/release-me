@@ -21,6 +21,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/history"
+	tagrelease "github.com/ostendorf-cloud/release-me/internal/release"
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"github.com/ostendorf-cloud/release-me/internal/version"
