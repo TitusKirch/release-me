@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
+	"github.com/ostendorf-cloud/release-me/internal/version"
 )
 
 func writeFile(t *testing.T, content string) string {
@@ -113,6 +114,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 			name: "reads every known key",
 			content: `initial-version: 0.2.0
 bump-minor-pre-major: true
+versioning-strategy: always-bump-patch
 hidden-types: [chore, docs]
 fallback-type: misc
 token-env: RELEASE_TOKEN
@@ -140,13 +142,14 @@ files:
     key: Version
 `,
 			want: config.Config{
-				InitialVersion:    "0.2.0",
-				BumpMinorPreMajor: true,
-				HiddenTypes:       []string{"chore", "docs"},
-				FallbackType:      "misc",
-				TokenEnv:          "RELEASE_TOKEN",
-				ChangelogPath:     "HISTORY.md",
-				ChangelogSource:   "all",
+				InitialVersion:     "0.2.0",
+				BumpMinorPreMajor:  true,
+				VersioningStrategy: version.StrategyAlwaysBumpPatch,
+				HiddenTypes:        []string{"chore", "docs"},
+				FallbackType:       "misc",
+				TokenEnv:           "RELEASE_TOKEN",
+				ChangelogPath:      "HISTORY.md",
+				ChangelogSource:    "all",
 				Labels: config.Labels{
 					Pending: "needs-release", Tagged: "released",
 					Alpha: "needs-alpha", Beta: "needs-beta", Rc: "needs-rc",
@@ -268,6 +271,11 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 		{name: "rejects malformed YAML", content: "initial-version: [0.1.0\n"},
 		{name: "rejects a fallback type that bumps the version", content: "fallback-type: feat\n"},
 		{name: "rejects an unknown changelog source", content: "changelog-source: rebase\n"},
+		{name: "rejects an unknown versioning strategy", content: "versioning-strategy: calendar\n"},
+		{
+			name:    "rejects an unknown versioning strategy on a component",
+			content: "components:\n  frontend:\n    path: frontend\n    versioning-strategy: always-bump-build\n",
+		},
 		{
 			name:    "rejects an unknown changelog source on a component",
 			content: "components:\n  frontend:\n    path: frontend\n    changelog-source: rebase\n",
@@ -396,6 +404,7 @@ func TestResolveMergesComponentOverridesWithTheTopLevel(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, `initial-version: 0.5.0
 bump-minor-pre-major: true
+versioning-strategy: always-bump-minor
 hidden-types: [chore, docs]
 components:
   backend:
@@ -404,6 +413,7 @@ components:
     path: frontend
     initial-version: 0.2.0
     bump-minor-pre-major: false
+    versioning-strategy: default
     hidden-types: [chore]
     files:
       - path: frontend/package.json
@@ -418,13 +428,16 @@ components:
 		{
 			Name: "backend", Path: "backend", TagPrefix: "backend/v", Branch: "release-me/backend",
 			ChangelogPath: "backend/CHANGELOG.md", Multi: true,
-			InitialVersion: "0.5.0", BumpMinorPreMajor: true, HiddenTypes: []string{"chore", "docs"},
-			ChangelogSource: config.DefaultChangelogSource,
+			InitialVersion: "0.5.0", BumpMinorPreMajor: true,
+			VersioningStrategy: version.StrategyAlwaysBumpMinor,
+			HiddenTypes:        []string{"chore", "docs"},
+			ChangelogSource:    config.DefaultChangelogSource,
 		},
 		{
 			Name: "frontend", Path: "frontend", TagPrefix: "frontend/v", Branch: "release-me/frontend",
 			ChangelogPath: "frontend/CHANGELOG.md", Multi: true,
-			InitialVersion: "0.2.0", BumpMinorPreMajor: false, HiddenTypes: []string{"chore"},
+			InitialVersion: "0.2.0", BumpMinorPreMajor: false, VersioningStrategy: version.StrategyDefault,
+			HiddenTypes:     []string{"chore"},
 			Files:           []config.File{{Path: "frontend/package.json", Updater: "marker"}},
 			ChangelogSource: config.DefaultChangelogSource,
 		},
