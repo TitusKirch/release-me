@@ -476,6 +476,20 @@ Inherited `workspace = true` dependencies resolve renamed package aliases from t
 workspace declarations. The root keeps the version requirement, and the child keeps its
 workspace declaration unchanged.
 
+## `delete-release-branch`
+
+Deletes a release branch once `release` has tagged and released every pull request merged from
+it, default `true`; `false` keeps it. There is no per-component override. See
+[release](commands.md#release) for when a branch stays and what `--dry-run` prints.
+
+GitHub's repository setting "Automatically delete head branches" deletes the branch at merge
+time, before `release` has tagged anything; `delete-release-branch` deletes it only after the
+tag and the GitHub release both succeeded. That ordering is why it is the safer of the two: a
+branch `release` still has to find a merged pull request by is never gone before that pull
+request is released, which the
+[shared release pull request's leftover sweep](versioning-modes.md#shared-release-pull-request)
+depends on. Both can be on: a branch GitHub already deleted is not an error.
+
 ## `components`
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
