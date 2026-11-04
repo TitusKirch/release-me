@@ -85,17 +85,16 @@ Everything else is derived:
   `squash`; rebase only is `all`.
 - **`files`** per component from its version file: `package.json` with updater `json` and key
   `version`, `Chart.yaml` with `helm`, `Cargo.toml` with `toml` and key `package.version`,
-  `pyproject.toml` with `toml` and key `project.version`, or `tool.poetry.version` where the
-  version sits under `[tool.poetry]` instead, a Go constant with `go` and the constant's name
-  as key, a `version.txt` or `VERSION` file holding only the version with `plain`, a `pom.xml`
-  with `xml` and key `project.version`, a `.csproj` with `xml` and key
-  `Project.PropertyGroup.Version`. A lockfile next to it is listed too: `package-lock.json` or
-  `npm-shrinkwrap.json` with `npm-lock`, `Cargo.lock` with `cargo-lock` and the crate name as
-  key, `Gemfile.lock` with `gemfile-lock` and the gem name as key. A language version file takes the updater named after it, no key: `python` for
-  `setup.py`, `setup.cfg` or an `__init__.py` holding `__version__`, `ruby` for a
-  `version.rb`, `elixir` for `mix.exs`, `ocaml` for an `.opam` file or `dune-project`, `r` for
-  `DESCRIPTION`, `bazel` for `MODULE.bazel`, `dart` for `pubspec.yaml`, `sfdx` for
-  `sfdx-project.json`.
+  `pyproject.toml` with `toml` and key `project.version`, or `tool.poetry.version` where the version
+  sits under `[tool.poetry]` instead, a Go constant with `go` and the constant's name as key, a
+  `version.txt` or `VERSION` file holding only the version with `plain`, a `pom.xml` with `xml` and
+  key `project.version`, a `.csproj` with `xml` and key `Project.PropertyGroup.Version`. A lockfile
+  next to it is listed too: `package-lock.json` or `npm-shrinkwrap.json` with `npm-lock`,
+  `Cargo.lock` with `cargo-lock` and the crate name as key, `Gemfile.lock` with `gemfile-lock` and
+  the gem name as key. A language version file takes the updater named after it, no key: `python`
+  for `setup.py`, `setup.cfg` or an `__init__.py` holding `__version__`, `ruby` for a `version.rb`,
+  `elixir` for `mix.exs`, `ocaml` for an `.opam` file or `dune-project`, `r` for `DESCRIPTION`,
+  `bazel` for `MODULE.bazel`, `dart` for `pubspec.yaml`, `sfdx` for `sfdx-project.json`.
 
 Done when every key the plan writes is either answered by the human or derived above.
 
