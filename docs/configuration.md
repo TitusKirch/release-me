@@ -370,10 +370,36 @@ A first parent entry belongs to every component whose path it touches, through t
 merge commit's branch changed; a pull request touching several components lands in every one
 of their changelogs. An empty commit lands in every component, and a
 [Release-Component footer](overrides.md#release-component-footer) adds the components it
-names. The component at path `.`, explicit or implicit, matches every entry.
-Two components with overlapping paths, or an unknown name on `--component`, are configuration
-errors.
+names. The component at path `.`, explicit or implicit, matches every entry and, beside other
+components, every entry outside their paths.
+Two components with overlapping paths, apart from a [root component](#root-component) beside
+others, or an unknown name on `--component`, are configuration errors.
 
 An unknown key is an error, inside a component too. The file is read from the repository
 root, found through `git rev-parse --show-toplevel`, whatever directory the command runs
 from.
+
+### Root component
+
+A component at path `.` may sit beside other components, the shape of a root package that
+versions the whole repository while its packages version themselves. It owns every file
+outside the other components' paths, and they keep their own: a feature in `packages/web`
+releases `web` only, a fix to the root `README.md` releases the root component only, and a
+pull request touching both releases both. A
+[Release-Component footer](overrides.md#release-component-footer) naming it still counts, and
+an empty commit counts for it as for every component. A repository with a root component
+alone, explicit or implicit, keeps every entry as before. Being a configured component, it
+gets the derived tag prefix `<name>/v` and changelog `CHANGELOG.md`; a root component
+continuing plain `vX.Y.Z` tags sets `tag-prefix: v`. Only one component can sit at the root,
+and every other path still must not overlap another:
+
+```yaml
+components:
+  acme:
+    path: .
+    tag-prefix: v
+  web:
+    path: packages/web
+  api:
+    path: packages/api
+```
