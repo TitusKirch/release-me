@@ -92,6 +92,21 @@ fails `pr`, naming the path and the key.
 - `json`, `yaml` and `toml` replace the value at `key`, a dotted path of object keys, mapping
   keys or table-and-key, such as `tool.poetry.version`.
 
+- `xml` replaces the text of every element at `key`, a dotted path of element names from the
+  root element down. Names match without their namespace prefix, and the whitespace around the
+  text is kept. An element that is empty-tagged, `<version/>`, or holds a child element or a
+  comment is an error. A `pom.xml` and a `.csproj`:
+
+  ```yaml
+  files:
+    - path: pom.xml
+      updater: xml
+      key: project.version
+    - path: src/Acme.Notes/Acme.Notes.csproj
+      updater: xml
+      key: Project.PropertyGroup.Version
+  ```
+
 Every file entry is validated when release-me.yaml loads: an unknown `updater`, a `key`
 missing where the updater requires one, and a `key` given to an updater that takes none are
 all errors.
