@@ -229,9 +229,12 @@ counted every commit. It also carries over:
 - `exclude-paths`, per package or as a top-level default, keeping each path that lies inside
   the package it is set on and warning about every other one, which excludes nothing there;
 - the version file of a `node` (`package.json`), `simple` (its `version-file`, default
-  `version.txt`, through `plain`) or `helm` (`Chart.yaml`) package where that file exists,
-  `node` being release-please's default type, and every `extra-files` entry of type `json`,
-  `yaml` or `toml` with a plain `$.a.b` jsonpath;
+  `version.txt`, through `plain`), `maven` (`pom.xml`, its project version or else its
+  parent's) or `helm` (`Chart.yaml`) package where that file exists, `node` being
+  release-please's default type. A multi-module `pom.xml` is warned about, since
+  release-please bumped every `pom.xml` below the package;
+- every `extra-files` entry of type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath, of
+  type `xml` with a plain absolute xpath such as `/project/version`, and of type `pom`;
 - `label` and `release-label` as the `pending` and `tagged` labels;
 - `prerelease-type` as a pre-release type selected by the label `release: <type>`: `alpha`,
   `beta` or `rc` stays on, any other name but `sp`, which `versioning-strategy: service-pack`

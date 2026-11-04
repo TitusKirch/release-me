@@ -21,6 +21,8 @@ const (
 	TOML   = "toml"
 
 	Plain = "plain"
+
+	XML = "xml"
 )
 
 // Func is the shape every registered updater implements: given a file's
@@ -46,6 +48,8 @@ var Updaters = map[string]Entry{
 	TOML:   {Update: UpdateTOML, NeedsKey: true},
 
 	Plain: {Update: ignoreKey(UpdatePlain)},
+
+	XML: {Update: UpdateXML, NeedsKey: true},
 }
 
 // ignoreKey adapts an updater that takes no key to the Func shape every
