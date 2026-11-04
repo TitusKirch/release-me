@@ -410,7 +410,8 @@ func translateExtraFiles(pkgPath string, raw json.RawMessage, warn func(string, 
 // workspacePlugins maps each release-please workspace plugin to the
 // package manager release-me's "workspaces" names for it.
 var workspacePlugins = map[string]string{
-	"node-workspace": workspace.Node,
+	"node-workspace":  workspace.Node,
+	"maven-workspace": workspace.Maven,
 }
 
 // workspacePluginOptions are the keys a workspace plugin object carries
