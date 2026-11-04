@@ -54,6 +54,9 @@ type PullRequest struct {
 	URL     string
 	Merged  bool
 	HeadSHA string
+	// Author is the login of the account that opened the pull request,
+	// without "@", "" when the forge does not report one.
+	Author string
 }
 
 // CommitFile is one file a commit made through CommitBranch writes: its

@@ -66,6 +66,7 @@ var packageKeys = []string{
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
 	"initial-version", "extra-files", "versioning", "release-as", "prerelease-type", "prerelease",
 	"exclude-paths", "version-file", "changelog-sections",
+	"include-commit-authors",
 }
 
 // topLevelKeys are the release-please settings that only exist at the top
@@ -194,6 +195,13 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			}
 		}
 	}
+	// release-me credits authors for every component or for none.
+	switch authors := slices.IndexFunc(components, func(c component) bool { return !c.includeCommitAuthors }) == -1; {
+	case authors:
+		st.authors = true
+	case slices.ContainsFunc(components, func(c component) bool { return c.includeCommitAuthors }):
+		warn("include-commit-authors: release-me credits authors for every component or none, left out")
+	}
 	// release-please groups every package into one release pull request
 	// unless separate-pull-requests is true; release-me's own default is one
 	// per component, so the grouped default is written out. locked always
@@ -267,6 +275,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	out, err := render(components, topLevel{
 		versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, workspaces: workspaces,
 		separateLinks: !linkLocal, sentenceCase: st.sentenceCase,
+		authors: st.authors,
 	})
 	if err != nil {
 		return Result{}, err
@@ -306,6 +315,8 @@ type component struct {
 	// changelogSections is release-please's changelog-sections, nil when
 	// the package leaves the default sections.
 	changelogSections *[]config.ChangelogSection
+	// includeCommitAuthors is release-please's include-commit-authors.
+	includeCommitAuthors bool
 }
 
 // file is one release-me "files" entry.
@@ -324,7 +335,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		releaseAs, preReleaseType, versionFileName                                                    string
 		preRelease                                                                                    bool
 		includeComponent, includeV                                                                    = true, true
-		bumpMinor, bumpPatchForMinor                                                                  bool
+		bumpMinor, bumpPatchForMinor, includeAuthors                                                  bool
 	)
 	separator = "-"
 	changelogPath = "CHANGELOG.md"
@@ -337,6 +348,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"versioning":      &versioning,
 		"release-as":      &releaseAs,
 		"prerelease-type": &preReleaseType, "prerelease": &preRelease,
+		"include-commit-authors": &includeAuthors,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -409,6 +421,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		releaseAs:                 translateReleaseAs(p.path, releaseAs, warn),
 		preReleaseType:            preReleaseType,
 		initialVersion:            initialVersion,
+		includeCommitAuthors:      includeAuthors,
 	}
 
 	// A version file the release type implies is carried over only where it
@@ -896,6 +909,7 @@ var workspacePluginOptions = []string{"type"}
 // carried over from release-please's plugins and settings.
 type style struct {
 	sentenceCase bool
+	authors      bool
 }
 
 // translatePlugins maps release-please's plugins onto release-me: the
@@ -1131,6 +1145,8 @@ type topLevel struct {
 	separateLinks bool
 	// sentenceCase writes changelog-sentence-case: true.
 	sentenceCase bool
+	// authors writes changelog-authors: true.
+	authors bool
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1190,6 +1206,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.sentenceCase {
 		add(doc, "changelog-sentence-case", boolean(true))
+	}
+	if top.authors {
+		add(doc, "changelog-authors", boolean(true))
 	}
 
 	// A pre-major rule, a release-as value and a changelog-sections list

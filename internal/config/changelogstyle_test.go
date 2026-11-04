@@ -4,6 +4,7 @@
 package config_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
@@ -22,6 +23,7 @@ func TestLoadReadsTheChangelogStyleKeys(t *testing.T) {
 			content: "changelog-sentence-case: true\n",
 			want:    config.ChangelogStyle{SentenceCase: true},
 		},
+		{name: "changelog-authors", content: "changelog-authors: true\n", want: config.ChangelogStyle{Authors: true}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -37,9 +39,13 @@ func TestLoadReadsTheChangelogStyleKeys(t *testing.T) {
 	}
 }
 
+// changelogStyleKeys is every top-level changelog style key, each set to
+// a value other than its default.
+var changelogStyleKeys = []string{"changelog-sentence-case: true", "changelog-authors: true"}
+
 func TestResolveGivesEveryComponentTheTopLevelChangelogStyle(t *testing.T) {
 	t.Parallel()
-	path := writeFile(t, "changelog-sentence-case: true\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n")
+	path := writeFile(t, strings.Join(changelogStyleKeys, "\n")+"\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n")
 
 	cfg, err := config.Load(path)
 	if err != nil {
@@ -54,8 +60,10 @@ func TestResolveGivesEveryComponentTheTopLevelChangelogStyle(t *testing.T) {
 
 func TestLoadRejectsAChangelogStyleKeyInsideAComponent(t *testing.T) {
 	t.Parallel()
-	_, err := config.Load(writeFile(t, "components:\n  api:\n    path: api\n    changelog-sentence-case: true\n"))
-	if err == nil {
-		t.Fatal("Load() error = nil, want the unknown component key refused")
+	for _, key := range changelogStyleKeys {
+		_, err := config.Load(writeFile(t, "components:\n  api:\n    path: api\n    "+key+"\n"))
+		if err == nil {
+			t.Fatalf("Load() error = nil, want the unknown component key %q refused", key)
+		}
 	}
 }
