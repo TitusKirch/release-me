@@ -339,7 +339,7 @@ func TestExtractDate(t *testing.T) {
 		{
 			name: "reads a heading date in the configured format",
 			body: releasepr.Body(
-				"1.2.3", "v1.2.3", testLabels, "", "", "## v1.2.3 (March 14, 2026)\n\n### Features\n\n- add the thing\n",
+				"1.2.3", "v1.2.3", testGuide, "", "", "## v1.2.3 (March 14, 2026)\n\n### Features\n\n- add the thing\n",
 			),
 			dateFormat: "%B %e, %Y",
 			wantOK:     true,
@@ -348,7 +348,7 @@ func TestExtractDate(t *testing.T) {
 		{
 			name: "reads a default heading date of a body rendered before the format was configured",
 			body: releasepr.Body(
-				"1.2.3", "v1.2.3", testLabels, "", "", "## v1.2.3 (2026-03-14)\n\n### Features\n\n- add the thing\n",
+				"1.2.3", "v1.2.3", testGuide, "", "", "## v1.2.3 (2026-03-14)\n\n### Features\n\n- add the thing\n",
 			),
 			dateFormat: "%d.%m.%Y",
 			wantOK:     true,
@@ -357,7 +357,7 @@ func TestExtractDate(t *testing.T) {
 		{
 			name: "a date neither format reads",
 			body: releasepr.Body(
-				"1.2.3", "v1.2.3", testLabels, "", "", "## v1.2.3 (soon)\n\n### Features\n\n- add the thing\n",
+				"1.2.3", "v1.2.3", testGuide, "", "", "## v1.2.3 (soon)\n\n### Features\n\n- add the thing\n",
 			),
 			dateFormat: "%d.%m.%Y",
 			wantOK:     false,
