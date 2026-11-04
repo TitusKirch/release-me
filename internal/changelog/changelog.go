@@ -24,11 +24,20 @@ type Entry struct {
 	// in the nested changelog source mode: the commits of the pull
 	// request's merge, each parsed on its own. A sub entry's own
 	// SubEntries, if any, is never rendered: nesting goes one level
-	// deep. hiddenTypes drops a sub entry from rendering the same way it
+	// deep. Options.HiddenTypes drops a sub entry from rendering the same way it
 	// drops a top level one. A sub entry never renders under a section of
 	// its own: it always renders under its parent's line, but see
 	// Sections for the one case where it decides which section that is.
 	SubEntries []Entry
+}
+
+// Options decides how Sections and Render turn entries into Markdown. The
+// zero value renders every section with nothing hidden.
+type Options struct {
+	// HiddenTypes drops an entry of one of these types: it produces no
+	// line of its own, see sectionFor for the one case where its sub
+	// entries still earn it one.
+	HiddenTypes []string
 }
 
 type section struct {
@@ -46,18 +55,18 @@ var sections = []section{
 
 // Sections renders the section bodies for one version's entries, with no
 // heading, so a caller can compare them independently of the version and
-// the date. It applies the same hiddenTypes and section rules as Render:
-// an entry whose own type is in hiddenTypes, or that belongs to none of
+// the date. It applies the same opts and section rules as Render: an
+// entry whose own type is in opts.HiddenTypes, or that belongs to none of
 // the five sections, breaking already counted as one, produces no line of
 // its own; its SubEntries can still earn it one, see sectionFor. Sections
 // returns "" when no entry is visible.
-func Sections(entries []Entry, hiddenTypes []string) string {
+func Sections(entries []Entry, opts Options) string {
 	var body strings.Builder
 	for i, s := range sections {
 		var lines []string
 		for _, e := range entries {
-			if idx, ok := sectionFor(e, hiddenTypes); ok && idx == i {
-				lines = append(lines, renderEntry(e, hiddenTypes)...)
+			if idx, ok := sectionFor(e, opts.HiddenTypes); ok && idx == i {
+				lines = append(lines, renderEntry(e, opts)...)
 			}
 		}
 		if len(lines) == 0 {
@@ -104,8 +113,8 @@ func sectionFor(e Entry, hiddenTypes []string) (idx int, ok bool) {
 // Render renders the Markdown changelog for one version: the heading, see
 // RenderHeading, then Sections. Render returns "" when Sections does, no
 // entry visible.
-func Render(version string, date time.Time, compareURL string, entries []Entry, hiddenTypes []string) string {
-	body := Sections(entries, hiddenTypes)
+func Render(version string, date time.Time, compareURL string, entries []Entry, opts Options) string {
+	body := Sections(entries, opts)
 	if body == "" {
 		return ""
 	}
@@ -132,19 +141,20 @@ func RenderHeading(version string, date time.Time, compareURL string) string {
 }
 
 // renderEntry renders one visible entry's own line, followed by one
-// indented line per sub entry that hiddenTypes does not drop.
-func renderEntry(e Entry, hiddenTypes []string) []string {
-	lines := []string{renderLine(e)}
+// indented line per sub entry that opts.HiddenTypes does not drop.
+func renderEntry(e Entry, opts Options) []string {
+	lines := []string{renderLine(e, opts)}
 	for _, sub := range e.SubEntries {
-		if slices.Contains(hiddenTypes, sub.Type) {
+		if slices.Contains(opts.HiddenTypes, sub.Type) {
 			continue
 		}
-		lines = append(lines, "  "+renderLine(sub))
+		lines = append(lines, "  "+renderLine(sub, opts))
 	}
 	return lines
 }
 
-func renderLine(e Entry) string {
+// renderLine renders one entry's own list item, as opts shapes it.
+func renderLine(e Entry, _ Options) string {
 	var b strings.Builder
 	b.WriteString("- ")
 	if e.Scope != "" {
