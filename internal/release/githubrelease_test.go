@@ -23,13 +23,13 @@ func runOwn(f *forgetest.Fake, comps []release.Component, draftUntilAssetsAttach
 
 func runLocked(f *forgetest.Fake, comps []release.Component, draftUntilAssetsAttach, dryRun bool) ([]release.Result, error) {
 	return release.RunLocked(
-		context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, draftUntilAssetsAttach, dryRun, discardLogger(),
+		context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, draftUntilAssetsAttach, dryRun, discardLogger(),
 	)
 }
 
 func runShared(f *forgetest.Fake, comps []release.Component, draftUntilAssetsAttach, dryRun bool) ([]release.Result, error) {
 	return release.RunShared(
-		context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, draftUntilAssetsAttach, dryRun, discardLogger(),
+		context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, draftUntilAssetsAttach, dryRun, discardLogger(),
 	)
 }
 
