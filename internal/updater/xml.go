@@ -41,6 +41,7 @@ func UpdateXML(content, key, version string) (string, error) {
 	type span struct{ start, end int }
 	var (
 		stack []string
+		names []xml.Name
 		spans []span
 		open  = -1
 	)
@@ -59,6 +60,7 @@ func UpdateXML(content, key, version string) (string, error) {
 				return "", fmt.Errorf("updater: xml: element %q holds child elements, not a version", key)
 			}
 			stack = append(stack, t.Name.Local)
+			names = append(names, t.Name)
 			if slices.Equal(stack, segments) {
 				end := int(dec.InputOffset())
 				if strings.HasSuffix(body[before:end], "/>") {
@@ -69,7 +71,7 @@ func UpdateXML(content, key, version string) (string, error) {
 		case xml.EndElement:
 			// RawToken leaves matching start and end elements to the
 			// caller.
-			if len(stack) == 0 || stack[len(stack)-1] != t.Name.Local {
+			if len(stack) == 0 || names[len(names)-1] != t.Name {
 				return "", fmt.Errorf("updater: xml: unexpected end element %q", t.Name.Local)
 			}
 			if open >= 0 && slices.Equal(stack, segments) {
@@ -77,6 +79,7 @@ func UpdateXML(content, key, version string) (string, error) {
 				open = -1
 			}
 			stack = stack[:len(stack)-1]
+			names = names[:len(names)-1]
 		}
 	}
 	if len(stack) > 0 {
