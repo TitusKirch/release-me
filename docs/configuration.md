@@ -187,6 +187,20 @@ See [release](commands.md#release) for what `true` changes, and
 setting needs: `publish.yaml`'s own webhook-triggered asset step for `false`, `release.yaml`
 attaching and publishing the release itself for `true`.
 
+## `force-tag-creation`
+
+Creates the tag on the merge commit before the release, default `true`, the way release-me
+always has, so a draft's tag exists while the draft waits. `false` leaves the tag to GitHub
+instead, the release-please default: the release is created with the merge commit as its
+target, and GitHub creates the tag on it when the release is published, right away for a
+published release, on publish for a draft from
+[`draft-until-assets-attach`](#draft-until-assets-attach). The run then reports
+`drafted <tag>, tagged on publish`. Until that publish the tag does not exist: a later step
+must not expect it, a rerun cannot tell a draft it tagged before, and the
+[major tag](#major-tag) already points at the merge commit. The draft is still found by its tag
+name, so the resume of `draft-until-assets-attach` and the guard against a second draft work
+the same. A component overrides it through its own `force-tag-creation` key.
+
 ## `comment-mention`
 
 The mention prefix a comment on the release pull request names to issue a `release-as` or
@@ -196,7 +210,8 @@ The mention prefix a comment on the release pull request names to issue a `relea
 ## `components`
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
-`hidden-types`, `files`, `major-tag`, `changelog-source` and `changelog`. A key left out of a
+`hidden-types`, `files`, `major-tag`, `changelog-source`, `force-tag-creation` and
+`changelog`. A key left out of a
 component falls back to the top-level setting above. A repository without `components` is one
 component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the default
 shape a repository with no configuration at all already has. A configured component gets tag
