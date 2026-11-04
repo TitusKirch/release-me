@@ -45,9 +45,9 @@ func prChangelog(t *testing.T, f *forgetest.Fake, configYAML string, build func(
 	return section, f.CreatedPullRequests[0].Body
 }
 
-// withPullRequests returns newFake with responses configured for every
+// withAuthorPullRequests returns newFake with responses configured for every
 // pull request in prs, keyed by number.
-func withPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
+func withAuthorPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
 	f := newFake()
 	f.Responses = map[int]forgetest.Response{}
 	for _, pr := range prs {
@@ -68,7 +68,7 @@ func TestDoPRRendersTheConfiguredChangelogStyle(t *testing.T) {
 		{
 			name:       "changelog-authors credits the pull request's login and a direct commit's author",
 			configYAML: "changelog-authors: true\n",
-			forge: withPullRequests(forge.PullRequest{
+			forge: withAuthorPullRequests(forge.PullRequest{
 				Number: 12, Title: "feat: add the widget", URL: "https://github.com/owner/repo/pull/12", Author: "octocat",
 			}),
 			build: func(t *testing.T, dir string) {
@@ -81,7 +81,7 @@ func TestDoPRRendersTheConfiguredChangelogStyle(t *testing.T) {
 		},
 		{
 			name: "without changelog-authors no one is credited",
-			forge: withPullRequests(forge.PullRequest{
+			forge: withAuthorPullRequests(forge.PullRequest{
 				Number: 12, Title: "feat: add the widget", URL: "https://github.com/owner/repo/pull/12", Author: "octocat",
 			}),
 			build: func(t *testing.T, dir string) {
