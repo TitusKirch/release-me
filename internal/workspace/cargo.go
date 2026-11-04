@@ -55,8 +55,11 @@ func parseCargo(content []byte) (Package, error) {
 	}
 	table := ""
 	for _, line := range lines {
-		if m := cargoHeader.FindStringSubmatch(line); m != nil {
-			table = m[1]
+		if strings.HasPrefix(strings.TrimSpace(line), "[") {
+			table = ""
+			if m := cargoHeader.FindStringSubmatch(line); m != nil {
+				table = m[1]
+			}
 			continue
 		}
 		if table != "package" {
@@ -83,8 +86,11 @@ func cargoDecls(lines []string) []cargoDecl {
 	var decls []cargoDecl
 	table, tableDep := "", -1
 	for i, line := range lines {
-		if m := cargoHeader.FindStringSubmatch(line); m != nil {
-			table, tableDep = m[1], -1
+		if strings.HasPrefix(strings.TrimSpace(line), "[") {
+			table, tableDep = "", -1
+			if m := cargoHeader.FindStringSubmatch(line); m != nil {
+				table = m[1]
+			}
 			if t := cargoDepTable.FindStringSubmatch(table); t != nil && t[2] != "" {
 				key := unquoteKey(t[2])
 				decls = append(decls, cargoDecl{key: key, crate: key, line: i, table: true})
