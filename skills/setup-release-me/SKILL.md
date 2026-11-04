@@ -101,12 +101,13 @@ write after confirmation:
   for the human to create; labels are repository settings, and the skill creates none.
 - `.github/workflows/release.yaml` from the README's action section: `push` to the default
   branch plus `pull_request` with types `labeled` and `unlabeled`, the job guard listing
-  exactly the configured label names, a checkout of the base branch with `fetch-depth: 0`, and
-  `ostendorf-cloud/release-me/action` pinned to the release's commit SHA with the version as a
-  trailing comment.
+  exactly the configured pending, tagged and pre-release label names, a checkout of the base
+  branch with `fetch-depth: 0`, and `ostendorf-cloud/release-me/action` pinned to the
+  release's commit SHA with the version as a trailing comment.
 
 Done when both files exist, the missing labels are handed over, and the guard's label list
-equals the labels in `release-me.yaml`, name for name.
+equals the pending, tagged and pre-release labels in `release-me.yaml`, name for name, every
+one of a list.
 
 ### 4. Prove
 
