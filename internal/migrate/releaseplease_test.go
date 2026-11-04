@@ -841,7 +841,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 	configJSON := `{
 	  "label": "autorelease: pending,release",
 	  "pull-request-title-pattern": "chore: release ${version}",
-	  "plugins": ["sentence-case", {"type": "linked-versions", "groupName": "half", "components": ["a"]}],
+	  "plugins": ["group-priority", {"type": "linked-versions", "groupName": "half", "components": ["a"]}],
 	  "packages": {
 	    "a": {"component": "a", "release-type": "java", "draft": true, "extra-files": [
 	      "src/version.py",
@@ -872,7 +872,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 		"package a: extra-files: a/src/version.py does not exist, left out of files",
 		`package a: extra-files: pom.xml: type "xml" at "//version" has no typed updater, add it under files`,
 		".release-please-manifest.json: c: no package configured at this path, left out",
-		"plugins: sentence-case: no release-me equivalent, left out",
+		"plugins: group-priority: no release-me equivalent, left out",
 		"plugins: linked-versions: release-me links every component or none, left out",
 		`label: release-me carries one label, kept "autorelease: pending"`,
 	} {
