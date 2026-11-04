@@ -173,7 +173,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			"needs a path of its own, the directory holding its source, before release-me.yaml loads")
 	}
 
-	versioning, err := translatePlugins(topValues["plugins"], components, warn)
+	versioning, st, err := translatePlugins(topValues["plugins"], components, warn)
 	if err != nil {
 		return Result{}, err
 	}
@@ -208,7 +208,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		}
 	}
 
-	out, err := render(components, versioning, sharedPR, pending, tagged)
+	out, err := render(components, versioning, st, sharedPR, pending, tagged)
 	if err != nil {
 		return Result{}, err
 	}
@@ -393,31 +393,52 @@ func translateExtraFiles(pkgPath string, raw json.RawMessage, warn func(string, 
 	return files, nil
 }
 
-// translatePlugins maps release-please's linked-versions plugin to a
-// release-me versioning mode. It releases every component of its group at
-// the group's highest version, changed or not, which is release-me's
-// locked mode when the group is every component.
-func translatePlugins(raw json.RawMessage, components []component, warn func(string, ...any)) (string, error) {
+// style is the top-level changelog style keys the translation writes,
+// carried over from release-please's plugins and settings.
+type style struct {
+	sentenceCase bool
+}
+
+// translatePlugins maps release-please's plugins onto release-me. The
+// linked-versions plugin releases every component of its group at the
+// group's highest version, changed or not, which is release-me's locked
+// mode when the group is every component. The sentence-case plugin is
+// changelog-sentence-case.
+func translatePlugins(raw json.RawMessage, components []component, warn func(string, ...any)) (string, style, error) {
+	var st style
 	if raw == nil {
-		return "", nil
+		return "", st, nil
 	}
 	var plugins []json.RawMessage
 	if err := json.Unmarshal(raw, &plugins); err != nil {
-		return "", fmt.Errorf("migrate: plugins: %w", err)
+		return "", st, fmt.Errorf("migrate: plugins: %w", err)
 	}
 	versioning := ""
 	for _, p := range plugins {
 		var name string
 		if json.Unmarshal(p, &name) == nil {
+			if name == "sentence-case" {
+				st.sentenceCase = true
+				continue
+			}
 			warn("plugins: %s: no release-me equivalent, left out", name)
 			continue
 		}
 		var plugin struct {
-			Type       string   `json:"type"`
-			Components []string `json:"components"`
+			Type         string   `json:"type"`
+			Components   []string `json:"components"`
+			SpecialWords []string `json:"specialWords"`
 		}
 		if err := json.Unmarshal(p, &plugin); err != nil {
-			return "", fmt.Errorf("migrate: plugins: %w", err)
+			return "", st, fmt.Errorf("migrate: plugins: %w", err)
+		}
+		if plugin.Type == "sentence-case" {
+			st.sentenceCase = true
+			if len(plugin.SpecialWords) > 0 {
+				warn("plugins: sentence-case: specialWords: release-me keeps gRPC, npm and any first word "+
+					"already holding an upper case letter as written, %s left out", strings.Join(plugin.SpecialWords, ", "))
+			}
+			continue
 		}
 		if plugin.Type != "linked-versions" {
 			warn("plugins: %s: no release-me equivalent, left out", plugin.Type)
@@ -432,7 +453,7 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 		}
 		versioning = "locked"
 	}
-	return versioning, nil
+	return versioning, st, nil
 }
 
 // label reads a release-please label key, a comma separated list. release-me
@@ -513,7 +534,7 @@ func repoPath(pkgPath, file string) string {
 // the implicit main component and needs no components key; everything else
 // is a components mapping in release-please's package order, carrying only
 // the keys whose value differs from what release-me would derive.
-func render(components []component, versioning string, sharedPR bool, pending, tagged string) ([]byte, error) {
+func render(components []component, versioning string, st style, sharedPR bool, pending, tagged string) ([]byte, error) {
 	doc := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(m *yaml.Node, key string, value *yaml.Node) {
 		m.Content = append(m.Content, scalar(key), value)
@@ -533,6 +554,9 @@ func render(components []component, versioning string, sharedPR bool, pending, t
 		add(labels, t, boolean(false))
 	}
 	add(doc, "labels", labels)
+	if st.sentenceCase {
+		add(doc, "changelog-sentence-case", boolean(true))
+	}
 
 	// bump-minor-pre-major carried by every component is written once, at
 	// the top level, instead of repeated per component.
