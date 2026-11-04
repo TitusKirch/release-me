@@ -253,7 +253,10 @@ type Config struct {
 	// ReleasePullRequestGuide is the top-level "release-pull-request-guide"
 	// key, default true: every release pull request body, per component,
 	// shared or locked, opens with the collapsed "How this release works"
-	// guide. false leaves the guide out. Nothing reads the body back by the
+	// guide. false leaves the guide out and disables nothing it advertises:
+	// the release-me-notes block, the release-me-version block, the
+	// pre-release labels and both comment commands keep working, they only
+	// stop being advertised in the body. Nothing reads the body back by the
 	// guide, so the key can change while a release pull request is open.
 	ReleasePullRequestGuide bool
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
