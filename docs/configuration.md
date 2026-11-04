@@ -9,7 +9,39 @@ The version when no tag exists yet, default `0.1.0`.
 
 ## `bump-minor-pre-major`
 
-Turns a major bump into a minor one below `1.0.0`, default `false`.
+Turns a major bump into a minor one below `1.0.0`, default `false`. A component overrides it
+through its own `bump-minor-pre-major` key; a `locked` or `linked` family computes its one
+shared version with the top-level value.
+
+## `versioning-strategy`
+
+How a release bumps the version, default `default`:
+
+| Value | Bump of a release |
+| --- | --- |
+| `default` | By its highest change: major for a breaking change, minor for a `feat`, patch for a `fix`, `perf` or `revert`. |
+| `always-bump-patch` | Always the patch, whatever its changes are. |
+| `always-bump-minor` | Always the minor. |
+| `always-bump-major` | Always the major. |
+
+The changes still decide whether there is a release at all: a range of only hidden types, a
+`chore` alone for one, releases nothing under any strategy. A
+[Release-As footer](overrides.md#release-as-footer), a
+[comment command](overrides.md#comment-commands) and `initial-version` for a first release win
+over the strategy, the same as over the default bump. `bump-minor-pre-major` applies to
+`default` only: an always-bump strategy bumps the part it names below `1.0.0` too, as in
+release-please. `next` names the strategy in its reason,
+`1.3.0 (fix, always-bump-minor)`. Any other value is a configuration error. A component
+overrides it through its own `versioning-strategy` key; a `locked` or `linked` family computes
+its one shared version with the top-level value.
+
+The key is release-please's `versioning`, renamed because release-me's own
+[`versioning`](#versioning) already names how a family's versions relate. release-please's
+`service-pack` and `dependency-manifest` strategies have no counterpart: both are Java
+specific. `service-pack` releases Maven service pack versions such as `1.2.3-sp.1`, which
+semver, and with it release-me, reads as a pre-release below `1.2.3`; `dependency-manifest`
+bumps by the dependency changes a Java manifest records, which release-me does not read.
+`release-me migrate release-please` warns about either by name.
 
 ## `hidden-types`
 
@@ -196,17 +228,17 @@ The mention prefix a comment on the release pull request names to issue a `relea
 ## `components`
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
-`hidden-types`, `files`, `major-tag`, `changelog-source` and `changelog`. A key left out of a
-component falls back to the top-level setting above. A repository without `components` is one
-component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the default
-shape a repository with no configuration at all already has. A configured component gets tag
-prefix `<name>/v`, branch `release-me/<name>`, or `release-me/main` when the release pull
-request is shared, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A
-name holds ASCII letters, digits, `-`, `_` and `.` only, does not start with `.` or `-`, does
-not end with `.` or `.lock` and does not contain `..`; anything else is a configuration error
-naming the component and the character, since the name has to survive the tag prefix, the
-branch, the shared pull request title release reads back, the
-[Release-Component footer](overrides.md#release-component-footer) and the compare link.
+`versioning-strategy`, `hidden-types`, `files`, `major-tag`, `changelog-source` and
+`changelog`. A key left out of a component falls back to the top-level setting above. A
+repository without `components` is one component named `main` at path `.`, tag prefix `v`,
+branch `release-me/main`, the default shape a repository with no configuration at all already
+has. A configured component gets tag prefix `<name>/v`, branch `release-me/<name>`, or
+`release-me/main` when the release pull request is shared, changelog `<path>/CHANGELOG.md`, and
+a release title `<name> vX.Y.Z`. A name holds ASCII letters, digits, `-`, `_` and `.` only,
+does not start with `.` or `-`, does not end with `.` or `.lock` and does not contain `..`;
+anything else is a configuration error naming the component and the character, since the name
+has to survive the tag prefix, the branch, the shared pull request title release reads back,
+the [Release-Component footer](overrides.md#release-component-footer) and the compare link.
 
 `tag-prefix` replaces the derived prefix, for a component whose existing tags follow another
 scheme, such as `api@v1.4.0`: release-me continues from its last such tag instead of starting
