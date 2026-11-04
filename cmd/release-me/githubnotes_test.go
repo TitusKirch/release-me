@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ostendorf-cloud/release-me/internal/changelog"
 	"github.com/ostendorf-cloud/release-me/internal/config"
@@ -155,5 +156,25 @@ func TestRenderSectionPrintsGitHubsNotesUnderTheHeading(t *testing.T) {
 	}
 	if !strings.HasPrefix(got, "## v0.1.0 (") || !strings.HasSuffix(got, ")\n\n### What's Changed\n* feat: add the widget by @octocat\n") {
 		t.Fatalf("renderSection() = %q, want the heading over GitHub's notes", got)
+	}
+}
+
+func TestRenderSectionDatesGitHubsNotesInTheConfiguredFormat(t *testing.T) {
+	dir := newRepo(t)
+	commitEntry(t, dir, "feat: add the widget")
+	f := newFake()
+	f.ReleaseNotes = map[string]string{"v0.1.0": "## What's Changed\n* feat: add the widget by @octocat"}
+	comp := config.Default().Resolve()[0]
+	comp.ChangelogType = config.ChangelogTypeGitHub
+	comp.ChangelogStyle.DateFormat = "%d.%m.%Y"
+
+	rel := release{options: changelogOptions(comp)}
+	rel.version.Version = "0.1.0"
+	got, err := renderSection(t.Context(), f, dir, "owner", "repo", comp, rel)
+	if err != nil {
+		t.Fatalf("renderSection() error = %v", err)
+	}
+	if want := "## v0.1.0 (" + time.Now().Format("02.01.2006") + ")\n\n### What's Changed\n"; !strings.HasPrefix(got, want) {
+		t.Fatalf("renderSection() = %q, want it to open with %q, the date as changelog-date-format writes it", got, want)
 	}
 }
