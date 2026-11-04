@@ -382,9 +382,15 @@ The mention prefix a comment on the release pull request names to issue a `relea
 
 ## `workspaces`
 
-The package managers whose manifests link components to each other, default none: `node`,
-an npm, pnpm or yarn workspace, read from each component's `<path>/package.json`. A
-component without that manifest is no member of the workspace.
+The package managers whose manifests link components to each other, default none:
+
+- `node`, an npm, pnpm or yarn workspace, read from each component's `<path>/package.json`;
+- `cargo`, a Cargo workspace, read from each component's `<path>/Cargo.toml`.
+
+A component without that manifest is no member of the workspace. Without a component at path
+`.`, the manifest at the repository root, such as a virtual Cargo workspace's `Cargo.toml`, is
+read too: its dependencies on a released component move,
+`[workspace.dependencies]` included, but it releases nothing itself.
 
 ```yaml
 release-pull-request: shared
@@ -408,9 +414,20 @@ becomes `workspace:~1.3.0`, while one naming no single version, such as `workspa
 component's own version moves through its `files` as always. `next` and `changelog` report a
 component's own changes only: the dependents join the release at `pr`.
 
-The dependency objects must open on a line of their own and declare one dependency per line,
-the layout npm, pnpm and yarn write; `pr` fails naming the file and the dependency otherwise.
-Lockfiles are not updated.
+For `node`, the dependency objects must open on a line of their own and declare one
+dependency per line, the layout npm, pnpm and yarn write; `pr` fails naming the file and the
+dependency otherwise.
+
+For `cargo`, a dependency on a crate by its `[package]` name, or through `package =` when
+renamed, links under `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, their
+`[target.<cfg>.…]` forms and `[workspace.dependencies]`. Its version moves as a plain
+requirement, `acme-core = "1.2.0"`, inside a one-line inline table,
+`{ path = "../core", version = "=1.2.0" }`, or as the `version` of a
+`[dependencies.acme-core]` table, keeping its operator; `1.2`, a partial version, becomes the
+full new one. A dependency without a version, `{ workspace = true }` or a bare `path`, stays as
+written and still releases the dependent. A dependency spread over several lines is not read.
+
+Lockfiles, `package-lock.json`, `pnpm-lock.yaml` or `Cargo.lock`, are not updated.
 
 A dependent releases together with its dependency, so `workspaces` needs `components` and
 one release pull request for all of them, `release-pull-request: shared` or
