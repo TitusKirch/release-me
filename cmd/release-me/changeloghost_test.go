@@ -76,3 +76,43 @@ func TestChangelogHostKeepsAPathPrefixAndLeavesOtherCallsAlone(t *testing.T) {
 		t.Fatalf("CreatePullRequest() = %+v, %v, want the release pull request's own URL untouched", created, err)
 	}
 }
+
+func TestDoPRPointsCommitAndIssueLinksAtTheChangelogHost(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeConfig(t, dir, "changelog-host: https://github.example.com/\n"+
+		"changelog-commit-links: true\nchangelog-issue-references: true\n")
+	commitEntry(t, dir, "chore: initial commit")
+	tagRepo(t, dir)
+	mergePullRequest(t, dir, 12, "fix/empty", map[string]string{"parse.go": "package parse\n"})
+	mergeSHA := headSHA(t, dir)
+	runGit(t, dir, "commit", "--allow-empty", "-q", "-m", "feat: add the widget\n\nFixes #9")
+	directSHA := headSHA(t, dir)
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	f := withHostedPullRequests(forge.PullRequest{
+		Number: 12, Title: "fix: handle the empty case", Body: "Closes #7",
+		URL: "https://github.com/owner/repo/pull/12",
+	})
+	f.GitDir = origin
+	if err := doPR(t.Context(), dir, cfg, "", withChangelogHost(cfg, f), discardLogger(), false, io.Discard); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	section, _ := changelog.TopSection(showBareBranchFile(t, origin, "CHANGELOG.md"))
+	host := "https://github.example.com/owner/repo/"
+	want := "### Features\n\n" +
+		"- add the widget ([" + directSHA[:7] + "](" + host + "commit/" + directSHA + ")), " +
+		"refs [#9](" + host + "issues/9)\n\n" +
+		"### Bug Fixes\n\n" +
+		"- handle the empty case ([#12](" + host + "pull/12)) " +
+		"([" + mergeSHA[:7] + "](" + host + "commit/" + mergeSHA + ")), refs [#7](" + host + "issues/7)"
+	if section != want {
+		t.Fatalf("CHANGELOG.md section = %q, want every link on the changelog host, %q", section, want)
+	}
+	if body := f.CreatedPullRequests[0].Body; strings.Contains(body, "https://github.com/") {
+		t.Fatalf("pull request body = %q, want no link left on github.com", body)
+	}
+}
