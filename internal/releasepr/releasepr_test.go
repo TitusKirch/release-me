@@ -133,11 +133,28 @@ func TestBodyListsAConfiguredPreReleaseTypeAfterRc(t *testing.T) {
 		Others: []string{"release: next", "release: preview"},
 	}
 
-	got := releasepr.Body("0.4.0", "v0.4.0", labels, "", "", "## v0.4.0\n")
+	got := releasepr.Body("0.4.0", "v0.4.0", releasepr.Guide{Show: true, Labels: labels}, "", "", "## v0.4.0\n")
 
 	want := "`release: alpha`, `release: rc`, `release: next` or `release: preview`"
 	if !strings.Contains(got, want) {
 		t.Fatalf("Body() = %q, want it to contain %q", got, want)
+	}
+}
+
+func TestBodyLeavesAConfiguredPreReleaseTypeOutWithTheGuideOff(t *testing.T) {
+	t.Parallel()
+	labels := releasepr.GuideLabels{
+		Tagged: "release: tagged", Alpha: "release: alpha", Rc: "release: rc",
+		Others: []string{"release: next"},
+	}
+
+	got := releasepr.Body("0.4.0", "v0.4.0", releasepr.Guide{Show: false, Labels: labels}, "", "", "## v0.4.0\n")
+
+	if strings.Contains(got, "release: next") || strings.Contains(got, "How this release works") {
+		t.Fatalf("Body() = %q, want no guide and so no pre-release label", got)
+	}
+	if !strings.Contains(got, "## v0.4.0") {
+		t.Fatalf("Body() = %q, want the changelog section kept", got)
 	}
 }
 
