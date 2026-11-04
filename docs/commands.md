@@ -228,11 +228,12 @@ release-me continues from the existing tags and changelogs. A single root packag
   type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
 - `label` and `release-label` as the `pending` and `tagged` labels;
 - `prerelease-type` as a pre-release type selected by the label `release: <type>`: `alpha`,
-  `beta` or `rc` stays on, any other name becomes a
+  `beta` or `rc` stays on, any other name but `sp`, which `versioning-strategy: service-pack`
+  owns and which is left out with a warning, becomes a
   [`prerelease-types`](configuration.md#prerelease-types) entry, and every type no package names
   is turned off. release-me cuts the pre-release while the release pull request carries that
-  label, not on every release, so this is warned about, as is `prerelease: true`, which has no
-  always-on counterpart;
+  label, not on every release, so this is warned about, as are `prerelease: true` and
+  `versioning: prerelease`, which have no always-on counterpart;
 - a `linked-versions` plugin over every component as `versioning: locked`: both release every
   component at the family's version, changed or not;
 - `separate-pull-requests`, default `false` in release-please: more than one package without it,

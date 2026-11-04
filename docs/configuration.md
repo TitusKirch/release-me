@@ -163,11 +163,12 @@ after `rc`, and `release` swaps it for `tagged`. `labels.alpha`, `labels.beta` a
 keep configuring the three built-in types, `false` included; a pull request carrying more than
 one type label is an error naming them in the order `alpha`, `beta`, `rc`, then this key's.
 
-A type name is one semver pre-release identifier: ASCII letters, digits and `-`, not only
-digits, so `next`, `preview` and `nightly-build` work, `pre.view` and `2024` do not. `alpha`,
-`beta` and `rc` are configured under `labels`, so all three are refused. A label is a non-empty
-string, and must differ from every other label, `labels.pending` and `labels.tagged` included;
-anything else is a configuration error naming the key.
+A type name is one semver pre-release identifier: ASCII letters, digits and `-`, not only digits, so
+`next`, `preview` and `nightly-build` work, `pre.view` and `2024` do not. `alpha`, `beta` and `rc`
+are configured under `labels`, so all three are refused, and so is `sp`, which
+[`versioning-strategy: service-pack`](#versioning-strategy) owns for its `X.Y.Z-sp.N` service packs.
+A label is a non-empty string, and must differ from every other label, `labels.pending` and
+`labels.tagged` included; anything else is a configuration error naming the key.
 
 This is release-please's `prerelease-type` with a free name. A pre-release stays something a
 human asks for on the release pull request: there is no key that cuts every release as a

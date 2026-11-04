@@ -426,6 +426,9 @@ func translateVersioning(pkgPath, versioning string, warn func(string, ...any)) 
 		warn("package %s: versioning dependency-manifest: release-me reads the dependency update from the "+
 			"Renovate or Dependabot title, not from a Java manifest", pkgPath)
 		return versioning
+	case "prerelease":
+		warn("package %s: versioning prerelease: release-me cuts a pre-release only while the release pull "+
+			"request carries a pre-release type label, left out", pkgPath)
 	default:
 		warn("package %s: versioning %s: no release-me equivalent, left out", pkgPath, versioning)
 	}
@@ -475,7 +478,8 @@ var preReleaseTypeName = regexp.MustCompile(`^[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]
 
 // translatePreReleaseType carries release-please's prerelease-type over as
 // a pre-release type release-me selects through its label: alpha, beta and
-// rc stay on, any other valid name becomes a prerelease-types entry.
+// rc stay on, any other valid name but sp, which versioning-strategy
+// service-pack owns, becomes a prerelease-types entry.
 // release-please cuts it on every release with prerelease true;
 // release-me cuts it while the label is on the release pull request, so
 // either way the difference is warned about. A name release-me cannot
@@ -486,6 +490,11 @@ func translatePreReleaseType(pkgPath, preReleaseType string, preRelease bool, wa
 			warn("package %s: prerelease: release-me cuts a pre-release only while the release pull request "+
 				"carries a pre-release type label, left out", pkgPath)
 		}
+		return ""
+	}
+	if preReleaseType == "sp" {
+		warn("package %s: prerelease-type sp: release-me reserves sp for versioning-strategy service-pack, "+
+			"left out", pkgPath)
 		return ""
 	}
 	if !preReleaseTypeName.MatchString(preReleaseType) {

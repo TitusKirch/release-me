@@ -1212,11 +1212,18 @@ func validateLabels(path string, l Labels) error {
 // alpha, beta and rc are configured under "labels".
 var reservedPreReleaseTypes = []string{"alpha", "beta", "rc"}
 
+// servicePackType is the pre-release type "prerelease-types" refuses
+// because versioning-strategy service-pack owns it: a label selecting sp
+// would cut X.Y.Z-sp.N releases that count up the same counter as the
+// strategy's service packs, and the service pack of a version would no
+// longer be told apart from a pre-release of the next one.
+const servicePackType = "sp"
+
 // decodePreReleaseTypes converts the "prerelease-types" mapping node, type
 // name to label, into []PreReleaseType in release-me.yaml's order. A type
 // name is one semver pre-release identifier that is not only digits, the
-// "<type>" of "X.Y.Z-<type>.N", and none of reservedPreReleaseTypes; a
-// label is a non-empty string.
+// "<type>" of "X.Y.Z-<type>.N", none of reservedPreReleaseTypes and not
+// servicePackType; a label is a non-empty string.
 func decodePreReleaseTypes(path string, node *yaml.Node) ([]PreReleaseType, error) {
 	if node.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("config: parse %s: prerelease-types: must be a mapping of type to label", path)
@@ -1231,6 +1238,10 @@ func decodePreReleaseTypes(path string, node *yaml.Node) ([]PreReleaseType, erro
 		if slices.Contains(reservedPreReleaseTypes, name) {
 			return nil, fmt.Errorf("config: parse %s: prerelease-types: type %q is reserved, "+
 				"alpha, beta and rc are configured under labels", path, name)
+		}
+		if name == servicePackType {
+			return nil, fmt.Errorf("config: parse %s: prerelease-types: type %q is reserved, "+
+				"versioning-strategy service-pack releases X.Y.Z-sp.N", path, name)
 		}
 		if value.Kind != yaml.ScalarNode || value.Tag != "!!str" || value.Value == "" {
 			return nil, fmt.Errorf("config: parse %s: prerelease-types.%s: the label must be a non-empty string", path, name)

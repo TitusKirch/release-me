@@ -465,7 +465,8 @@ func TestFromReleasePleaseWarnsAboutAPreReleaseItCannotCarryOver(t *testing.T) {
 	configJSON := `{"release-type": "go", "separate-pull-requests": true, "packages": {
 	  "web": {"component": "web", "prerelease": true},
 	  "api": {"component": "api", "versioning": "prerelease"},
-	  "cli": {"component": "cli", "prerelease-type": "pre.view"}}}`
+	  "cli": {"component": "cli", "prerelease-type": "pre.view"},
+	  "svc": {"component": "svc", "prerelease-type": "sp"}}}`
 
 	got, err := migrate.FromReleasePlease([]byte(configJSON), nil, files(nil))
 	if err != nil {
@@ -478,8 +479,10 @@ func TestFromReleasePleaseWarnsAboutAPreReleaseItCannotCarryOver(t *testing.T) {
 	for _, w := range []string{
 		"package web: prerelease: release-me cuts a pre-release only while the release pull request " +
 			"carries a pre-release type label, left out",
-		"package api: versioning: no release-me equivalent, left out",
+		"package api: versioning prerelease: release-me cuts a pre-release only while the release pull " +
+			"request carries a pre-release type label, left out",
 		"package cli: prerelease-type pre.view: not a pre-release type release-me can carry, left out",
+		"package svc: prerelease-type sp: release-me reserves sp for versioning-strategy service-pack, left out",
 	} {
 		if !slices.Contains(got.Warnings, w) {
 			t.Errorf("Warnings = %q, want it to contain %q", got.Warnings, w)

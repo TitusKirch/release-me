@@ -1157,6 +1157,11 @@ func TestLoadRejectsAnInvalidPreReleaseType(t *testing.T) {
 		want    string
 	}{
 		{name: "rejects a type configured under labels", content: "prerelease-types:\n  rc: \"release: candidate\"\n", want: `type "rc" is reserved`},
+		{
+			name:    "rejects the service pack type",
+			content: "prerelease-types:\n  sp: \"release: service pack\"\n",
+			want:    `type "sp" is reserved, versioning-strategy service-pack releases X.Y.Z-sp.N`,
+		},
 		{name: "rejects a type with a dot", content: "prerelease-types:\n  pre.view: \"release: preview\"\n", want: "is not one pre-release identifier"},
 		{name: "rejects a type of digits only", content: "prerelease-types:\n  \"2024\": \"release: 2024\"\n", want: "is not one pre-release identifier"},
 		{name: "rejects an empty label", content: "prerelease-types:\n  next: \"\"\n", want: "must be a non-empty string"},
