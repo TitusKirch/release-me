@@ -143,6 +143,8 @@ func TestUpdateXMLRejectsAnElementItCannotBump(t *testing.T) {
 		{name: "rejects an element holding child elements", content: pomXML, key: "project.parent"},
 		{name: "rejects an empty-tagged element", content: "<project>\n  <version/>\n</project>\n", key: "project.version"},
 		{name: "rejects an element holding a comment", content: "<project><version><!-- x -->1.0.0</version></project>", key: "project.version"},
+		{name: "rejects mismatched namespace prefixes", content: `<project xmlns:a="urn:a" xmlns:b="urn:b"><a:version>1.0.0</b:version></project>`, key: "project.version"},
+		{name: "rejects different prefixes even for the same namespace", content: `<project xmlns:a="urn:a" xmlns:b="urn:a"><a:version>1.0.0</b:version></project>`, key: "project.version"},
 		{name: "rejects content that is not XML", content: "<project><version>1.0.0</project>", key: "project.version"},
 	}
 	for _, tc := range cases {
