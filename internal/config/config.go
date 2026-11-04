@@ -4,7 +4,8 @@
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
 // changelog, changelog-source, labels, author, major-tag, versioning,
-// draft-until-assets-attach, comment-mention and components.
+// draft-until-assets-attach, skip-github-release, comment-mention and
+// components.
 package config
 
 import (
@@ -258,6 +259,12 @@ type Config struct {
 	// applies to the whole repository, there is no per-component
 	// override. See docs/adr/0001-draft-releases-until-assets-attach.md.
 	DraftUntilAssetsAttach bool
+	// SkipGitHubRelease is the top-level "skip-github-release" key,
+	// default false: when true, release tags a merged release pull request
+	// and swaps its label but creates no GitHub release, for a repository
+	// whose own workflow creates the release from the tag. A component
+	// overrides it through its own "skip-github-release" key.
+	SkipGitHubRelease bool
 	// CommentMention is the top-level "comment-mention" key: the mention
 	// prefix a write-access commenter's "release-as" or "release-notes"
 	// command on the release pull request must start with, default
@@ -271,8 +278,8 @@ type Config struct {
 
 // Component is one entry of the "components" key: a name mapped to a path
 // and optional overrides of the top-level initial-version,
-// bump-minor-pre-major, hidden-types, files, major-tag and
-// changelog-source, plus its own tag-prefix and changelog path. A nil
+// bump-minor-pre-major, hidden-types, files, major-tag, changelog-source
+// and skip-github-release, plus its own tag-prefix and changelog path. A nil
 // field was left out of release-me.yaml and falls back to the top-level
 // value, the same left-out-versus-zero-value distinction Load applies to
 // the top level itself.
@@ -285,6 +292,7 @@ type Component struct {
 	Files             *[]File
 	MajorTag          *bool
 	ChangelogSource   *string
+	SkipGitHubRelease *bool
 	// TagPrefix is the component's "tag-prefix" key, nil when it was left
 	// out and the component keeps the derived "<name>/v".
 	TagPrefix *string
@@ -318,6 +326,9 @@ type ResolvedComponent struct {
 	// ChangelogSource is one of the ChangelogSource* constants: which
 	// commits become this component's changelog entries.
 	ChangelogSource string
+	// SkipGitHubRelease is true when release tags this component without
+	// creating a GitHub release for the tag.
+	SkipGitHubRelease bool
 }
 
 // Resolve returns the components a command should loop over, in
@@ -339,6 +350,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
 			ChangelogSource:   cfg.ChangelogSource,
+			SkipGitHubRelease: cfg.SkipGitHubRelease,
 		}}
 	}
 
@@ -367,6 +379,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
 			ChangelogSource:   cfg.ChangelogSource,
+			SkipGitHubRelease: cfg.SkipGitHubRelease,
 		}
 		if c.InitialVersion != nil {
 			rc.InitialVersion = *c.InitialVersion
@@ -385,6 +398,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.ChangelogSource != nil {
 			rc.ChangelogSource = *c.ChangelogSource
+		}
+		if c.SkipGitHubRelease != nil {
+			rc.SkipGitHubRelease = *c.SkipGitHubRelease
 		}
 		out = append(out, rc)
 	}
@@ -458,9 +474,10 @@ type raw struct {
 	MajorTag                 *bool      `yaml:"major-tag"`
 	Versioning               *string    `yaml:"versioning"`
 	ReleasePullRequest       *string    `yaml:"release-pull-request"`
-	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
+	SkipGitHubRelease        *bool      `yaml:"skip-github-release"`
 	CommentMention           *string    `yaml:"comment-mention"`
+	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -479,6 +496,7 @@ type rawComponent struct {
 	Files             *[]rawFile `yaml:"files"`
 	MajorTag          *bool      `yaml:"major-tag"`
 	ChangelogSource   *string    `yaml:"changelog-source"`
+	SkipGitHubRelease *bool      `yaml:"skip-github-release"`
 	TagPrefix         *string    `yaml:"tag-prefix"`
 	Changelog         *string    `yaml:"changelog"`
 }
@@ -657,6 +675,9 @@ func Load(path string) (cfg Config, err error) {
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach
 	}
+	if r.SkipGitHubRelease != nil {
+		cfg.SkipGitHubRelease = *r.SkipGitHubRelease
+	}
 	if r.CommentMention != nil {
 		if *r.CommentMention == "" {
 			return Config{}, fmt.Errorf("config: parse %s: comment-mention is empty", path)
@@ -766,6 +787,7 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			Name: name, Path: *rc.Path, InitialVersion: rc.InitialVersion,
 			BumpMinorPreMajor: rc.BumpMinorPreMajor, HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
+			SkipGitHubRelease: rc.SkipGitHubRelease,
 		}
 		if rc.Files != nil {
 			files, err := decodeFiles(path, *rc.Files)
