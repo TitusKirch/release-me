@@ -6,7 +6,6 @@ package forgetest
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,12 +27,8 @@ const (
 	FakeCommitter = "GitHub <noreply@github.com>"
 )
 
-// zeroSHA is the old value "git update-ref" takes to mean the ref must not
-// exist yet.
-const zeroSHA = "0000000000000000000000000000000000000000"
-
 // commitInto creates c in the git directory gitDir through plumbing alone,
-// never touching a worktree, and moves c.Branch onto it.
+// never touching a worktree or publishing a branch.
 func commitInto(ctx context.Context, gitDir string, c forge.BranchCommit) (string, error) {
 	tmp, err := os.MkdirTemp("", "forgetest-index-")
 	if err != nil {
@@ -67,29 +62,6 @@ func commitInto(ctx context.Context, gitDir string, c forge.BranchCommit) (strin
 		return "", fmt.Errorf("forgetest: branch %s: commit: %w", c.Branch, err)
 	}
 
-	ref := "refs/heads/" + c.Branch
-	old := c.ExpectedHead
-	if old == "" {
-		current, err := g.run(ctx, nil, "rev-parse", "--verify", "--quiet", ref)
-		switch {
-		case err != nil:
-			old = zeroSHA
-		default:
-			if _, err := g.run(ctx, nil, "merge-base", "--is-ancestor", current, sha); err != nil {
-				return "", fmt.Errorf("forgetest: update branch %s: not a fast-forward: %w", c.Branch, forge.ErrBranchMoved)
-			}
-			old = current
-		}
-	}
-	// "update-ref <ref> <new> <old>" is a genuine compare-and-swap, so the
-	// lease here is atomic. That is strictly stronger than production:
-	// the GitHub implementation's moveBranch reads the ref and then forces
-	// the update, two requests with a window between them a concurrent
-	// writer can slip into. No test against this fake can exercise that
-	// window, so a green suite says nothing about it.
-	if _, err := g.run(ctx, nil, "update-ref", ref, sha, old); err != nil {
-		return "", fmt.Errorf("forgetest: update branch %s: expected %s: %w", c.Branch, old, errors.Join(forge.ErrBranchMoved, err))
-	}
 	return sha, nil
 }
 

@@ -79,15 +79,10 @@ type CommitFile struct {
 	Executable bool
 }
 
-// BranchCommit is one commit CommitBranch creates and points Branch at.
-//
-// Parent is the commit the new one builds on, its tree the base Files
-// apply to; it must already exist on the forge. ExpectedHead is the
-// commit Branch must currently point at for CommitBranch to replace it
-// whatever its history, the lease "git push --force-with-lease" takes.
-// Left empty, Branch is created when it does not exist yet and otherwise
-// moved only when the new commit descends from its current tip, the rule
-// a plain "git push" follows.
+// BranchCommit is a commit prepared for Branch, built on Parent's tree.
+// Parent must already exist on the forge. ExpectedHead records the caller's
+// publication lease; CommitBranch creates objects only, and the command
+// layer publishes the returned SHA with that lease.
 type BranchCommit struct {
 	Branch       string
 	Parent       string
@@ -195,19 +190,11 @@ type Forge interface {
 	// any one existing comment.
 	CreateComment(ctx context.Context, owner, repo string, number int, body string) error
 
-	// CommitBranch creates c as a commit on the forge itself, never
-	// through a local "git commit" and push, points c.Branch at it and
-	// returns its SHA. The forge writes the commit under the token's own
-	// identity, so a forge that signs the commits it creates signs this
-	// one, and a ruleset requiring signed commits accepts it. GitHub does
-	// so for a GitHub App installation token, secrets.GITHUB_TOKEN
-	// included; a personal access token, classic or fine-grained, or an
-	// OAuth token yields an unsigned commit, which such a ruleset rejects.
-	// No author or committer is passed: a custom one makes GitHub leave
-	// the commit unsigned for any token. CommitSignature tells a caller
-	// which of the two it got.
-	// ErrBranchMoved is returned when the branch is not where
-	// c.ExpectedHead, or the plain push rule, expects it.
+	// CommitBranch creates c on the forge and returns its SHA without
+	// changing any branch reference. The command layer publishes it.
+	// No author or committer is supplied: GitHub signs API commits for
+	// App installation tokens using the token's identity. User tokens
+	// yield unsigned commits, as reported by CommitSignature.
 	CommitBranch(ctx context.Context, owner, repo string, c BranchCommit) (string, error)
 
 	// CommitSignature reports what the forge verified about the

@@ -221,9 +221,8 @@ func (f *Forge) MoveTag(ctx context.Context, owner, repo, tag, sha string) error
 // Resetting the branch to the default branch's tip first and appending
 // after is no way around that: for a moment the open release pull
 // request's head is a commit its base already contains, which GitHub may
-// take as the pull request merged or close it. GitHub's REST ref update takes no expected value, so the lease on
-// c.ExpectedHead is a read of the ref right before the forced update; the
-// window between the two is the one a concurrent writer could slip into.
+// take as the pull request merged or close it. The command layer publishes
+// the returned commit with a Git transport lease; the API never moves a ref.
 func (f *Forge) CommitBranch(ctx context.Context, owner, repo string, c forge.BranchCommit) (string, error) {
 	parent, _, err := f.client.Git.GetCommit(ctx, owner, repo, c.Parent)
 	if err != nil {
@@ -265,11 +264,7 @@ func (f *Forge) CommitBranch(ctx context.Context, owner, repo string, c forge.Br
 		return "", fmt.Errorf("github: branch %s: create commit: %w", c.Branch, err)
 	}
 
-	sha := commit.GetSHA()
-	if err := f.moveBranch(ctx, owner, repo, c, sha); err != nil {
-		return "", err
-	}
-	return sha, nil
+	return commit.GetSHA(), nil
 }
 
 // CommitSignature implements forge.Forge through the commits REST API,
@@ -282,48 +277,6 @@ func (f *Forge) CommitSignature(ctx context.Context, owner, repo, sha string) (f
 	}
 	v := commit.GetCommit().GetVerification()
 	return forge.Signature{Verified: v.GetVerified(), Reason: v.GetReason()}, nil
-}
-
-// moveBranch points c.Branch at sha: replacing it outright when its
-// current tip is c.ExpectedHead, or, with no ExpectedHead, creating it or
-// fast-forwarding it, GitHub rejecting any other move.
-func (f *Forge) moveBranch(ctx context.Context, owner, repo string, c forge.BranchCommit, sha string) error {
-	ref := "refs/heads/" + c.Branch
-
-	if c.ExpectedHead == "" {
-		_, resp, err := f.client.Git.CreateRef(ctx, owner, repo, gogithub.CreateRef{Ref: ref, SHA: sha})
-		if err == nil {
-			return nil
-		}
-		if resp == nil || resp.StatusCode != http.StatusUnprocessableEntity {
-			return fmt.Errorf("github: create branch %s: %w", c.Branch, err)
-		}
-		// The branch already exists: move it the way a plain push would,
-		// fast-forward only.
-		_, resp, err = f.client.Git.UpdateRef(ctx, owner, repo, ref, gogithub.UpdateRef{SHA: sha, Force: new(false)})
-		if err != nil {
-			if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
-				return fmt.Errorf("github: update branch %s: not a fast-forward: %w", c.Branch, forge.ErrBranchMoved)
-			}
-			return fmt.Errorf("github: update branch %s: %w", c.Branch, err)
-		}
-		return nil
-	}
-
-	current, resp, err := f.client.Git.GetRef(ctx, owner, repo, ref)
-	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			return fmt.Errorf("github: update branch %s: it no longer exists, expected %s: %w", c.Branch, c.ExpectedHead, forge.ErrBranchMoved)
-		}
-		return fmt.Errorf("github: read branch %s: %w", c.Branch, err)
-	}
-	if got := current.GetObject().GetSHA(); got != c.ExpectedHead {
-		return fmt.Errorf("github: update branch %s: it is at %s, expected %s: %w", c.Branch, got, c.ExpectedHead, forge.ErrBranchMoved)
-	}
-	if _, _, err := f.client.Git.UpdateRef(ctx, owner, repo, ref, gogithub.UpdateRef{SHA: sha, Force: new(true)}); err != nil {
-		return fmt.Errorf("github: update branch %s: %w", c.Branch, err)
-	}
-	return nil
 }
 
 // CreateRelease implements forge.Forge. draft is the caller's own choice,

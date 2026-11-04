@@ -747,6 +747,7 @@ func TestDoPRRendersTheGuideWithTheRealTagAndConfiguredLabelNames(t *testing.T) 
 	cfg.Labels.Rc = "pre: rc"
 
 	f := &forgetest.Fake{
+		GitDir:            gitOut(t, dir, "remote", "get-url", "--push", "origin"),
 		RepoLabels:        []string{"release: pending", "status: released", "pre: alpha", "pre: beta", "pre: rc"},
 		DefaultBranchName: "main",
 	}
@@ -994,7 +995,7 @@ func TestDoPRUsesTheForgesDefaultBranchAsBase(t *testing.T) {
 	dir, _ := newPRRepo(t)
 	commitEntry(t, dir, "feat: add the next command")
 
-	f := newFake()
+	f := newPRFake(gitOut(t, dir, "remote", "get-url", "--push", "origin"))
 	f.DefaultBranchName = "trunk"
 	var stdout bytes.Buffer
 
@@ -1011,7 +1012,7 @@ func TestDoPRFallsBackToOriginHEADWhenTheForgeDefaultBranchFails(t *testing.T) {
 	commitEntry(t, dir, "feat: add the next command")
 	runGit(t, dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
 
-	f := newFake()
+	f := newPRFake(gitOut(t, dir, "remote", "get-url", "--push", "origin"))
 	f.DefaultBranchErr = errors.New("boom")
 	var stdout bytes.Buffer
 

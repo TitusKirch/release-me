@@ -60,40 +60,38 @@ func TestFakeCommitBranchWritesIntoGitDir(t *testing.T) {
 		wantErrIs error
 	}{
 		{
-			name: "creates a fresh branch",
+			name: "creates commit objects for a fresh branch",
 			setup: func(*testing.T, string, string, string) (string, string) {
 				return "", ""
 			},
 		},
 		{
-			name: "fast-forwards an existing branch with no expected head",
+			name: "leaves an existing ancestor branch untouched",
 			setup: func(t *testing.T, remote, base, next string) (string, string) {
 				gitIn(t, remote, "update-ref", "refs/heads/release-me/main", base)
 				return next, ""
 			},
 		},
 		{
-			name: "refuses a non fast-forward with no expected head",
+			name: "creates objects without rewinding an existing branch",
 			setup: func(t *testing.T, remote, base, next string) (string, string) {
 				gitIn(t, remote, "update-ref", "refs/heads/release-me/main", next)
 				return base, ""
 			},
-			wantErrIs: forge.ErrBranchMoved,
 		},
 		{
-			name: "replaces the branch at the expected head",
+			name: "leaves a branch at the expected head untouched",
 			setup: func(t *testing.T, remote, base, next string) (string, string) {
 				gitIn(t, remote, "update-ref", "refs/heads/release-me/main", next)
 				return base, next
 			},
 		},
 		{
-			name: "refuses a branch away from the expected head",
+			name: "leaves a moved branch untouched",
 			setup: func(t *testing.T, remote, base, next string) (string, string) {
 				gitIn(t, remote, "update-ref", "refs/heads/release-me/main", next)
 				return base, base
 			},
-			wantErrIs: forge.ErrBranchMoved,
 		},
 	}
 	for _, tc := range cases {
@@ -128,8 +126,8 @@ func TestFakeCommitBranchWritesIntoGitDir(t *testing.T) {
 				t.Fatalf("CommitBranch() error = %v", err)
 			}
 
-			if got := gitIn(t, remote, "rev-parse", "release-me/main"); got != sha {
-				t.Fatalf("branch = %s, want %s", got, sha)
+			if got := gitIn(t, remote, "for-each-ref", "--format=%(objectname)", "refs/heads/release-me/main"); got == sha {
+				t.Fatal("commit creation published a branch")
 			}
 			if got := gitIn(t, remote, "rev-parse", sha+"^"); got != parent {
 				t.Fatalf("parent = %s, want %s", got, parent)

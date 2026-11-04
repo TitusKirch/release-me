@@ -170,7 +170,7 @@ func TestDoPRLimitsToOneComponentWithTheComponentFlag(t *testing.T) {
 	mergePullRequest(t, dir, 3, "backend-only", map[string]string{"backend/app.go": "package backend\n"})
 	writeConfig(t, dir, "components:\n  frontend:\n    path: frontend\n  backend:\n    path: backend\n")
 
-	f := newFake()
+	f := newPRFake(gitOut(t, dir, "remote", "get-url", "--push", "origin"))
 	f.Responses = map[int]forgetest.Response{
 		2: {PullRequest: forge.PullRequest{Title: "feat: add the frontend widget"}},
 		3: {PullRequest: forge.PullRequest{Title: "feat: add the backend endpoint"}},

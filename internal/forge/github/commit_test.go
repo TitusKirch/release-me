@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -63,66 +62,11 @@ func TestCommitBranch(t *testing.T) {
 	}
 	cases := []struct {
 		name         string
-		expectedHead string
-		createRef    int
-		getRef       int
-		getRefSHA    string
-		patchRef     int
 		createCommit int
-		wantErrIs    error
 		wantErrHas   string
-		wantForce    any
-		wantPatch    bool
 	}{
-		{
-			name:      "creates a fresh branch on the new commit",
-			createRef: http.StatusCreated,
-		},
-		{
-			name:      "fast-forwards an existing branch with no expected head",
-			createRef: http.StatusUnprocessableEntity,
-			patchRef:  http.StatusOK,
-			wantPatch: true,
-			wantForce: false,
-		},
-		{
-			name:       "refuses to rewind an existing branch with no expected head",
-			createRef:  http.StatusUnprocessableEntity,
-			patchRef:   http.StatusUnprocessableEntity,
-			wantPatch:  true,
-			wantForce:  false,
-			wantErrIs:  forge.ErrBranchMoved,
-			wantErrHas: "release-me/main",
-		},
-		{
-			name:         "replaces the branch while it is at the expected head",
-			expectedHead: oldHead,
-			getRef:       http.StatusOK,
-			getRefSHA:    oldHead,
-			patchRef:     http.StatusOK,
-			wantPatch:    true,
-			wantForce:    true,
-		},
-		{
-			name:         "leaves a branch that moved past the expected head",
-			expectedHead: oldHead,
-			getRef:       http.StatusOK,
-			getRefSHA:    "5ca1ab1e5ca1ab1e5ca1ab1e5ca1ab1e5ca1ab1e",
-			wantErrIs:    forge.ErrBranchMoved,
-			wantErrHas:   oldHead,
-		},
-		{
-			name:         "leaves a branch deleted since the expected head was read",
-			expectedHead: oldHead,
-			getRef:       http.StatusNotFound,
-			wantErrIs:    forge.ErrBranchMoved,
-			wantErrHas:   "no longer exists",
-		},
-		{
-			name:         "names the branch when the commit cannot be created",
-			createCommit: http.StatusInternalServerError,
-			wantErrHas:   "branch release-me/main: create commit",
-		},
+		{name: "creates signed commit objects without publishing a ref"},
+		{name: "names the branch when the commit cannot be created", createCommit: http.StatusInternalServerError, wantErrHas: "branch release-me/main: create commit"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,50 +100,19 @@ func TestCommitBranch(t *testing.T) {
 				w.WriteHeader(http.StatusCreated)
 				fmt.Fprintf(w, `{"sha": %q}`, newCommit)
 			})
-			mux.HandleFunc("POST /api/v3/repos/owner/repo/git/refs", func(w http.ResponseWriter, r *http.Request) {
-				srv.record(t, r)
-				w.WriteHeader(tc.createRef)
-				if tc.createRef == http.StatusUnprocessableEntity {
-					fmt.Fprint(w, `{"message": "Reference already exists"}`)
-					return
-				}
-				fmt.Fprintf(w, `{"ref": "refs/heads/release-me/main", "object": {"sha": %q}}`, newCommit)
-			})
-			mux.HandleFunc("GET /api/v3/repos/owner/repo/git/ref/heads/release-me/main", func(w http.ResponseWriter, r *http.Request) {
-				srv.record(t, r)
-				w.WriteHeader(tc.getRef)
-				if tc.getRef == http.StatusNotFound {
-					fmt.Fprint(w, `{"message": "Not Found"}`)
-					return
-				}
-				fmt.Fprintf(w, `{"ref": "refs/heads/release-me/main", "object": {"sha": %q}}`, tc.getRefSHA)
-			})
-			mux.HandleFunc("PATCH "+branchPath, func(w http.ResponseWriter, r *http.Request) {
-				srv.record(t, r)
-				w.WriteHeader(tc.patchRef)
-				if tc.patchRef == http.StatusUnprocessableEntity {
-					fmt.Fprint(w, `{"message": "Update is not a fast forward"}`)
-					return
-				}
-				fmt.Fprintf(w, `{"ref": "refs/heads/release-me/main", "object": {"sha": %q}}`, newCommit)
-			})
 			f := newTestForge(t, mux)
 
 			sha, err := f.CommitBranch(context.Background(), "owner", "repo", forge.BranchCommit{
-				Branch:       "release-me/main",
-				Parent:       parentSHA,
-				Message:      "chore(main): release v0.2.0",
-				Files:        files,
-				ExpectedHead: tc.expectedHead,
+				Branch:  "release-me/main",
+				Parent:  parentSHA,
+				Message: "chore(main): release v0.2.0",
+				Files:   files,
 			})
 
 			switch {
-			case tc.wantErrIs != nil || tc.wantErrHas != "":
+			case tc.wantErrHas != "":
 				if err == nil {
 					t.Fatalf("CommitBranch() = %s, want an error", sha)
-				}
-				if tc.wantErrIs != nil && !errors.Is(err, tc.wantErrIs) {
-					t.Fatalf("CommitBranch() error = %v, want %v", err, tc.wantErrIs)
 				}
 				if !strings.Contains(err.Error(), tc.wantErrHas) {
 					t.Fatalf("CommitBranch() error = %q, want it to contain %q", err, tc.wantErrHas)
@@ -250,22 +163,6 @@ func TestCommitBranch(t *testing.T) {
 					t.Fatalf("ref writes = %d after a failed commit, want none", n)
 				}
 				return
-			}
-
-			patches := srv.calls("PATCH " + branchPath)
-			if !tc.wantPatch {
-				if len(patches) != 0 {
-					t.Fatalf("ref updates = %v, want none", patches)
-				}
-			} else if len(patches) != 1 || patches[0]["sha"] != newCommit || patches[0]["force"] != tc.wantForce {
-				t.Fatalf("ref updates = %v, want one to %s with force %v", patches, newCommit, tc.wantForce)
-			}
-			if creates := srv.calls("POST /api/v3/repos/owner/repo/git/refs"); tc.expectedHead == "" {
-				if len(creates) != 1 || creates[0]["ref"] != "refs/heads/release-me/main" || creates[0]["sha"] != newCommit {
-					t.Fatalf("ref creates = %v, want one for refs/heads/release-me/main at %s", creates, newCommit)
-				}
-			} else if len(creates) != 0 {
-				t.Fatalf("ref creates = %v, want none with an expected head", creates)
 			}
 		})
 	}

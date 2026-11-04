@@ -266,7 +266,7 @@ The type assigned to text that does not parse as a conventional commit, default 
 The environment variable holding the GitHub token, default `GITHUB_TOKEN`. It governs every API
 call, the release commit `pr` creates included, so the kind of token decides whether GitHub
 signs that commit: see [signed release commits](commands.md#signed-release-commits). Reading
-the release branch back, to compare it, goes through the git credentials the checkout's
+and publishing the release branch go through the git credentials the checkout's
 `origin` remote already carries.
 
 ## `changelog`
