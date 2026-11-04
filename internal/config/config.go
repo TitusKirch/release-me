@@ -19,6 +19,7 @@ import (
 
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
+	"github.com/ostendorf-cloud/release-me/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -389,6 +390,17 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		out = append(out, rc)
 	}
 	return out
+}
+
+// Rules returns the component's bump rules, for version.Next.
+func (rc ResolvedComponent) Rules() version.Rules {
+	return version.Rules{InitialVersion: rc.InitialVersion, BumpMinorPreMajor: rc.BumpMinorPreMajor}
+}
+
+// Rules returns the top-level bump rules, for version.Next: the rules a
+// linked or locked family computes its one shared version with.
+func (cfg Config) Rules() version.Rules {
+	return version.Rules{InitialVersion: cfg.InitialVersion, BumpMinorPreMajor: cfg.BumpMinorPreMajor}
 }
 
 // rawFile mirrors File, the yaml shape of one "files" entry.
