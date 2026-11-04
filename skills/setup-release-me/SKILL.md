@@ -87,9 +87,10 @@ Everything else is derived:
   `pyproject.toml` with `toml` and key `project.version`, or `tool.poetry.version` where the
   version sits under `[tool.poetry]` instead, a Go constant with `go` and the constant's name
   as key, a `pom.xml` with `xml` and key `project.version`, a `.csproj` with `xml` and key
-  `Project.PropertyGroup.Version`. A lockfile next to it is listed too: `package-lock.json` or
-  `npm-shrinkwrap.json` with `npm-lock`, `Cargo.lock` with `cargo-lock` and the crate name as
-  key, `Gemfile.lock` with `gemfile-lock` and the gem name as key.
+  `Project.PropertyGroup.Version`, a `version.txt` or `VERSION` file holding only the version
+  with `plain`. A lockfile next to it is listed too: `package-lock.json` or `npm-shrinkwrap.json`
+  with `npm-lock`, `Cargo.lock` with `cargo-lock` and the crate name as key, `Gemfile.lock` with
+  `gemfile-lock` and the gem name as key.
 
 Done when every key the plan writes is either answered by the human or derived above.
 
