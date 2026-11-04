@@ -166,6 +166,10 @@ With `skip-github-release: true`, `release` tags the merge commit, swaps the lab
 the `released-tag` marker as usual, but creates no GitHub release, for a workflow that creates
 it from the tag itself. See [configuration](configuration.md#skip-github-release).
 
+With `draft: true`, the release starts a draft too, reported as `tagged and drafted <tag>`, but
+it is left for a human to publish: a later run never resumes it, the way it resumes one under
+`draft-until-assets-attach`. See [configuration](configuration.md#draft).
+
 With `major-tag: true`, every stable release additionally creates or force-moves the major
 tag, `vX` for the implicit `main` component or its tag prefix followed by `X` for a configured
 one, onto the same commit. A tag that does not exist yet is created; one that does is moved,
@@ -230,8 +234,8 @@ only the files outside the other components' paths, where release-please's root 
 counted every commit. It also carries over:
 
 - `bump-minor-pre-major`, `bump-patch-for-minor-pre-major` and `initial-version`;
-- `skip-github-release`, at the top level when every package carries the same value, on the
-  component otherwise;
+- `skip-github-release` and `draft`, each at the top level when every package carries the same
+  value, on the component otherwise;
 - `versioning` as `versioning-strategy`, by name, with a warning for `service-pack` and
   `dependency-manifest`, whose release-me form differs from release-please's Java one;
 - `release-as`, unless the manifest already records it as released or release-me refuses the

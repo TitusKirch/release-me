@@ -84,6 +84,7 @@ type releaseFlag struct {
 // over, in the order release-me.yaml lists them.
 var releaseFlags = []releaseFlag{
 	{key: "skip-github-release", def: false},
+	{key: "draft", def: false},
 }
 
 // releaseFlagKeys returns the key of every entry in releaseFlags.

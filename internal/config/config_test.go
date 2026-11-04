@@ -685,6 +685,7 @@ const releaseKeysConfig = `components:
 func TestResolveAppliesTheGitHubReleaseKeysFromTheTopLevelAndPerComponentOverride(t *testing.T) {
 	t.Parallel()
 	skip := func(c config.ResolvedComponent) bool { return c.SkipGitHubRelease }
+	draft := func(c config.ResolvedComponent) bool { return c.Draft }
 	cases := []struct {
 		name    string
 		content string
@@ -705,6 +706,23 @@ func TestResolveAppliesTheGitHubReleaseKeysFromTheTopLevelAndPerComponentOverrid
 			name:    "a component turns skip-github-release on for itself alone",
 			content: releaseKeysConfig + "    skip-github-release: true\n",
 			get:     skip, want: []bool{false, true},
+		},
+		{name: "draft is off by default", get: draft, want: []bool{false}},
+		{name: "draft applies to the implicit main component", content: "draft: true\n", get: draft, want: []bool{true}},
+		{
+			name:    "a component overrides the top-level draft",
+			content: "draft: true\n" + releaseKeysConfig + "    draft: false\n",
+			get:     draft, want: []bool{true, false},
+		},
+		{
+			name:    "a component turns draft on for itself alone",
+			content: releaseKeysConfig + "    draft: true\n",
+			get:     draft, want: []bool{false, true},
+		},
+		{
+			name:    "draft-until-assets-attach leaves draft off",
+			content: "draft-until-assets-attach: true\n",
+			get:     draft, want: []bool{false},
 		},
 	}
 	for _, tc := range cases {

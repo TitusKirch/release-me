@@ -766,6 +766,16 @@ and every action output, so a later step knows which tag to release. With
 release has no draft to attach assets to or to resume. A component overrides it through its
 own `skip-github-release` key.
 
+## `draft`
+
+Creates each GitHub release as a draft and leaves it one, default `false`, for a human to
+review and publish. The tag, the label swap, the `released-tag` marker and the action outputs
+still happen as for a published release, so a later step can attach assets to the draft. It
+differs from [`draft-until-assets-attach`](#draft-until-assets-attach) in one way: a draft
+left on purpose is never resumed, so a later run does not print its `released-tag` marker
+again while it waits for a human. With both on, the release drafts and resumes the way
+`draft-until-assets-attach` does. A component overrides it through its own `draft` key.
+
 ## `comment-mention`
 
 The mention prefix a comment on the release pull request names to issue a `release-as` or
@@ -892,7 +902,7 @@ Setting the key without `node` in [`workspaces`](#workspaces) is a configuration
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `versioning-strategy`, `release-as` (only with `versioning:
 independent`), `hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
-`skip-changelog`, `changelog-type`, `skip-github-release` and `changelog`, plus its own
+`skip-changelog`, `changelog-type`, `skip-github-release`, `draft` and `changelog`, plus its own
 [`exclude-paths`](#exclude-paths). A key left out of a component falls back to the top-level setting
 above. A repository without `components` is one component named `main` at path `.`, tag prefix `v`,
 branch `release-me/main`, the default shape a repository with no configuration at all already has. A

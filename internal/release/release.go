@@ -369,7 +369,7 @@ func releaseShared(
 
 		if !comp.SkipGitHubRelease {
 			body := lockedReleaseBody(pr.Body, comp.Name)
-			if err := createRelease(ctx, f, owner, repoName, tag, name, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
+			if err := createRelease(ctx, f, owner, repoName, tag, name, body, ver.IsPreRelease(), comp.draft(draftUntilAssetsAttach)); err != nil {
 				return nil, fmt.Errorf("release: %s: component %s: pull request #%d: %w", who, comp.Name, pr.Number, err)
 			}
 		}
@@ -420,6 +420,17 @@ type Component struct {
 	// true, a merged release pull request still gets its tag, major tag
 	// and label swap, but no GitHub release.
 	SkipGitHubRelease bool
+	// Draft is comp's resolved "draft" key: when true, the GitHub release
+	// is created as a draft, for a human to publish. Unlike
+	// draft-until-assets-attach it never resumes one: a draft left on
+	// purpose is no interrupted run.
+	Draft bool
+}
+
+// draft reports whether comp's release is created as a draft: comp's own
+// "draft" key, or draftUntilAssetsAttach for the whole repository.
+func (comp Component) draft(draftUntilAssetsAttach bool) bool {
+	return comp.Draft || draftUntilAssetsAttach
 }
 
 // releaseName returns the name of comp's release at versionStr, "X.Y.Z"
@@ -689,7 +700,7 @@ func releaseOne(
 
 	if !comp.SkipGitHubRelease {
 		body := releasepr.ReleaseBody(pr.Body)
-		if err := createRelease(ctx, f, owner, repoName, tag, releaseName, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
+		if err := createRelease(ctx, f, owner, repoName, tag, releaseName, body, ver.IsPreRelease(), comp.draft(draftUntilAssetsAttach)); err != nil {
 			return Result{}, fmt.Errorf("release: component %s: pull request #%d: %w", componentName, pr.Number, err)
 		}
 	}
@@ -722,14 +733,17 @@ func releaseOne(
 }
 
 // releasedMessage reports what release did for comp at tag: already
-// tagged by an earlier run, tagged without a GitHub release, or tagged and
-// released.
+// tagged by an earlier run, tagged without a GitHub release, tagged with a
+// release left a draft on purpose, or tagged and released. Skipping the
+// GitHub release wins over drafting it: there is no release to draft.
 func releasedMessage(comp Component, tag string, alreadyTagged bool) string {
 	switch {
 	case alreadyTagged:
 		return fmt.Sprintf("already tagged %s", tag)
 	case comp.SkipGitHubRelease:
 		return fmt.Sprintf("tagged %s, GitHub release skipped", tag)
+	case comp.Draft:
+		return fmt.Sprintf("tagged and drafted %s", tag)
 	default:
 		return fmt.Sprintf("tagged and released %s", tag)
 	}
@@ -737,10 +751,14 @@ func releasedMessage(comp Component, tag string, alreadyTagged bool) string {
 
 // dryRunMessage reports what release would do for comp at tag.
 func dryRunMessage(comp Component, tag string) string {
-	if comp.SkipGitHubRelease {
+	switch {
+	case comp.SkipGitHubRelease:
 		return fmt.Sprintf("would tag %s, GitHub release skipped", tag)
+	case comp.Draft:
+		return fmt.Sprintf("would tag and draft %s", tag)
+	default:
+		return fmt.Sprintf("would tag and release %s", tag)
 	}
-	return fmt.Sprintf("would tag and release %s", tag)
 }
 
 // createRelease creates the release for tag, named name with body, a

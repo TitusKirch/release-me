@@ -176,6 +176,7 @@ files:
 | `signoff` | `Name <email>` the release commit carries a `Signed-off-by:` trailer for. | none | No |
 | `draft-until-assets-attach` | Drafts every release instead of publishing it immediately. | `false` | No |
 | `skip-github-release` | Tags a merged release pull request without creating a GitHub release. | `false` | No |
+| `draft` | Creates each GitHub release as a draft and leaves it for a human to publish. | `false` | No |
 | `comment-mention` | Mention prefix for `release-as`/`release-notes` comment commands. | `@release-me` | No |
 | `delete-release-branch` | Deletes a release branch once `release` has tagged and released it. | `true` | No |
 | `exclude-paths` | Subpaths whose changes never count for a component. | none | No |

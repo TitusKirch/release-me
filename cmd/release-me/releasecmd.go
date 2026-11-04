@@ -133,6 +133,7 @@ func releaseComponent(cfg config.Config, comp config.ResolvedComponent) tagrelea
 		Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
 		Titles:            cfg.TitlePatterns(),
 		SkipGitHubRelease: comp.SkipGitHubRelease,
+		Draft:             comp.Draft,
 	}
 }
 
