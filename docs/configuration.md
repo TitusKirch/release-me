@@ -367,7 +367,6 @@ request is released, which the
 [shared release pull request's leftover sweep](versioning-modes.md#shared-release-pull-request)
 depends on. Both can be on: a branch GitHub already deleted is not an error.
 
-
 ## `exclude-paths`
 
 Paths whose changes never count for a component, default none. Each one is relative to the
