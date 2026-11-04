@@ -302,7 +302,7 @@ func doPRComponent(
 		}
 
 		if existing == nil {
-			created, err := f.CreatePullRequest(ctx, owner, repoName, base, comp.Branch, title, body, cfg.Labels.Opened(), false)
+			created, err := f.CreatePullRequest(ctx, owner, repoName, base, comp.Branch, title, body, cfg.Labels.Opened(), cfg.ReleasePullRequestDraft)
 			if err != nil {
 				return fmt.Errorf(
 					"release-me: component %s: create release pull request: pushed branch %s but the pull request failed: %w",
@@ -536,7 +536,7 @@ func publishSharedPR(
 		}
 
 		if existing == nil {
-			created, err := f.CreatePullRequest(ctx, owner, repoName, base, branch, title, body, cfg.Labels.Opened(), false)
+			created, err := f.CreatePullRequest(ctx, owner, repoName, base, branch, title, body, cfg.Labels.Opened(), cfg.ReleasePullRequestDraft)
 			if err != nil {
 				return fmt.Errorf(
 					"release-me: %s: create release pull request: pushed branch %s but the pull request failed: %w", who, branch, err,

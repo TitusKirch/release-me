@@ -7,8 +7,8 @@
 // changelog-type, skip-changelog, the changelog style keys ChangelogStyle
 // lists, labels, prerelease-types, author, major-tag, versioning, signoff,
 // release-pull-request-title, release-pull-request-shared-title,
-// draft-until-assets-attach, force-tag-creation, skip-github-release,
-// comment-mention, delete-release-branch, workspaces, always-link-local,
+// release-pull-request-draft, draft-until-assets-attach, force-tag-creation,
+// skip-github-release, comment-mention, delete-release-branch, workspaces, always-link-local,
 // exclude-paths and components.
 package config
 
@@ -394,6 +394,10 @@ type Config struct {
 	// releasepr.DefaultSharedTitlePattern otherwise. Load checks it for the
 	// configured versioning mode.
 	ReleasePullRequestSharedTitle string
+	// ReleasePullRequestDraft is the top-level "release-pull-request-draft"
+	// key, default false: when true, pr opens every release pull request as
+	// a draft. It never touches one already open.
+	ReleasePullRequestDraft bool
 	// Signoff is the top-level "signoff" key: "Name <email>" the release
 	// commit's message carries a "Signed-off-by:" trailer for, "" for none.
 	Signoff string
@@ -801,6 +805,7 @@ type raw struct {
 	ReleasePullRequest            *string                `yaml:"release-pull-request"`
 	ReleasePullRequestLayout      *string                `yaml:"release-pull-request-layout"`
 	ReleasePullRequestGuide       *bool                  `yaml:"release-pull-request-guide"`
+	ReleasePullRequestDraft       *bool                  `yaml:"release-pull-request-draft"`
 	Signoff                       *string                `yaml:"signoff"`
 	DraftUntilAssetsAttach        *bool                  `yaml:"draft-until-assets-attach"`
 	ForceTagCreation              *bool                  `yaml:"force-tag-creation"`
@@ -1147,6 +1152,9 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: release-pull-request-shared-title %q %w", path, *r.ReleasePullRequestSharedTitle, err)
 		}
 		cfg.ReleasePullRequestSharedTitle = *r.ReleasePullRequestSharedTitle
+	}
+	if r.ReleasePullRequestDraft != nil {
+		cfg.ReleasePullRequestDraft = *r.ReleasePullRequestDraft
 	}
 	if r.Signoff != nil {
 		if *r.Signoff != "" {
