@@ -776,6 +776,24 @@ left on purpose is never resumed, so a later run does not print its `released-ta
 again while it waits for a human. With both on, the release drafts and resumes the way
 `draft-until-assets-attach` does. A component overrides it through its own `draft` key.
 
+## `force-tag-creation`
+
+Creates the tag on the merge commit before the release, default `true`, the way release-me
+always has, so a draft's tag exists while the draft waits. `false` leaves the tag to GitHub
+instead, the release-please default: the release is created with the merge commit as its
+target, and GitHub creates the tag on it when the release is published, right away for a
+published release, on publish for a draft from
+[`draft-until-assets-attach`](#draft-until-assets-attach). The run then reports
+`drafted <tag>, tagged on publish`. Until that publish the tag does not exist: a later step
+must not expect it, a rerun cannot tell a draft it tagged before, and the
+[major tag](#major-tag) already points at the merge commit. The draft is still found by its tag
+name, so the resume of `draft-until-assets-attach` and the guard against a second draft work
+the same. A component overrides it through its own `force-tag-creation` key.
+
+While a deferred version tag is absent and its release is an unpublished draft, `pr` waits
+for `release` to resume that draft. It does not open another pull request for the same version,
+including after switching per-component releases to a shared pull request.
+
 ## `comment-mention`
 
 The mention prefix a comment on the release pull request names to issue a `release-as` or
@@ -902,17 +920,17 @@ Setting the key without `node` in [`workspaces`](#workspaces) is a configuration
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `versioning-strategy`, `release-as` (only with `versioning:
 independent`), `hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
-`skip-changelog`, `changelog-type`, `skip-github-release`, `draft` and `changelog`, plus its own
-[`exclude-paths`](#exclude-paths). A key left out of a component falls back to the top-level setting
-above. A repository without `components` is one component named `main` at path `.`, tag prefix `v`,
-branch `release-me/main`, the default shape a repository with no configuration at all already has. A
-configured component gets tag prefix `<name>/v`, branch `release-me/<name>`, or `release-me/main`
-when the release pull request is shared, changelog `<path>/CHANGELOG.md`, and a release title
-`<name> vX.Y.Z`. A name holds ASCII letters, digits, `-`, `_` and `.` only, does not start with `.`
-or `-`, does not end with `.` or `.lock` and does not contain `..`; anything else is a configuration
-error naming the component and the character, since the name has to survive the tag prefix, the
-branch, the shared pull request title release reads back, the [Release-Component
-footer](overrides.md#release-component-footer) and the compare link.
+`skip-changelog`, `changelog-type`, `skip-github-release`, `draft`, `force-tag-creation` and
+`changelog`, plus its own [`exclude-paths`](#exclude-paths). A key left out of a component falls
+back to the top-level setting above. A repository without `components` is one component named `main`
+at path `.`, tag prefix `v`, branch `release-me/main`, the default shape a repository with no
+configuration at all already has. A configured component gets tag prefix `<name>/v`, branch
+`release-me/<name>`, or `release-me/main` when the release pull request is shared, changelog
+`<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A name holds ASCII letters, digits, `-`,
+`_` and `.` only, does not start with `.` or `-`, does not end with `.` or `.lock` and does not
+contain `..`; anything else is a configuration error naming the component and the character, since
+the name has to survive the tag prefix, the branch, the shared pull request title release reads
+back, the [Release-Component footer](overrides.md#release-component-footer) and the compare link.
 
 `tag-prefix` replaces the derived prefix, for a component whose existing tags follow another
 scheme, such as `api@v1.4.0`: release-me continues from its last such tag instead of starting

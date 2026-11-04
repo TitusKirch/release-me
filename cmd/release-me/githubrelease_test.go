@@ -101,3 +101,30 @@ func TestDoReleaseWithDraftLeavesTheReleaseADraftAndNeverResumesIt(t *testing.T)
 		t.Fatalf("CreatedReleases = %+v, want still one", f.CreatedReleases)
 	}
 }
+
+// mergedReleaseFake is a forge holding one merged, pending release pull
+// request for the implicit main component, number 9, at v0.1.0.
+func TestDoReleaseWithoutForceTagCreationLeavesTheTagToThePublish(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	commitEntry(t, dir, "chore: initial commit")
+	f := mergedReleaseFake()
+	cfg := config.Default()
+	cfg.ForceTagCreation = false
+	cfg.DraftUntilAssetsAttach = true
+	var stdout bytes.Buffer
+
+	if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doRelease() error = %v", err)
+	}
+	if len(f.CreatedTags) != 0 {
+		t.Fatalf("CreatedTags = %+v, want none, the publish creates the tag", f.CreatedTags)
+	}
+	if len(f.CreatedReleases) != 1 || f.CreatedReleases[0].Target != "deadbeef" || !f.CreatedReleases[0].Draft {
+		t.Fatalf("CreatedReleases = %+v, want one draft targeting the merge commit", f.CreatedReleases)
+	}
+	for _, want := range []string{"drafted v0.1.0, tagged on publish", "released-tag: v0.1.0"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, want it to contain %q", stdout.String(), want)
+		}
+	}
+}

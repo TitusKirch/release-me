@@ -112,6 +112,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				CommentMention:           config.DefaultCommentMention,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
+				ForceTagCreation:         true,
 			},
 		},
 		{
@@ -173,6 +174,7 @@ files:
 				DeleteReleaseBranch:      false,
 				AlwaysLinkLocal:          true,
 				ReleasePullRequestLayout: config.LayoutDetails,
+				ForceTagCreation:         true,
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
 					{Path: "deploy/values.yaml", Updater: "marker"},
@@ -202,6 +204,7 @@ files:
 				CommentMention:           config.DefaultCommentMention,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
+				ForceTagCreation:         true,
 			},
 		},
 		{
@@ -226,6 +229,7 @@ files:
 				CommentMention:           config.DefaultCommentMention,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
+				ForceTagCreation:         true,
 			},
 		},
 		{
@@ -250,6 +254,7 @@ files:
 				CommentMention:           config.DefaultCommentMention,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
+				ForceTagCreation:         true,
 			},
 		},
 	}
@@ -588,7 +593,7 @@ func TestResolveReturnsTheImplicitMainComponentWithoutAComponentsKey(t *testing.
 		Name: "main", Path: ".", TagPrefix: "v", Branch: "release-me/main",
 		ChangelogPath: "CHANGELOG.md", Multi: false,
 		InitialVersion: config.DefaultInitialVersion, HiddenTypes: config.DefaultHiddenTypes,
-		ChangelogSource: config.DefaultChangelogSource,
+		ChangelogSource: config.DefaultChangelogSource, ForceTagCreation: true,
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resolve() = %+v, want %+v", got, want)
@@ -629,7 +634,7 @@ components:
 			InitialVersion: "0.5.0", BumpMinorPreMajor: true, BumpPatchForMinorPreMajor: true,
 			VersioningStrategy: version.StrategyAlwaysBumpMinor,
 			HiddenTypes:        []string{"chore", "docs"},
-			ChangelogSource:    config.DefaultChangelogSource,
+			ChangelogSource:    config.DefaultChangelogSource, ForceTagCreation: true,
 		},
 		{
 			Name: "frontend", Path: "frontend", TagPrefix: "frontend/v", Branch: "release-me/frontend",
@@ -638,7 +643,7 @@ components:
 			ReleaseAs:       "v1.0.0",
 			HiddenTypes:     []string{"chore"},
 			Files:           []config.File{{Path: "frontend/package.json", Updater: "marker"}},
-			ChangelogSource: config.DefaultChangelogSource,
+			ChangelogSource: config.DefaultChangelogSource, ForceTagCreation: true,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -686,6 +691,7 @@ func TestResolveAppliesTheGitHubReleaseKeysFromTheTopLevelAndPerComponentOverrid
 	t.Parallel()
 	skip := func(c config.ResolvedComponent) bool { return c.SkipGitHubRelease }
 	draft := func(c config.ResolvedComponent) bool { return c.Draft }
+	forceTag := func(c config.ResolvedComponent) bool { return c.ForceTagCreation }
 	cases := []struct {
 		name    string
 		content string
@@ -723,6 +729,16 @@ func TestResolveAppliesTheGitHubReleaseKeysFromTheTopLevelAndPerComponentOverrid
 			name:    "draft-until-assets-attach leaves draft off",
 			content: "draft-until-assets-attach: true\n",
 			get:     draft, want: []bool{false},
+		},
+		{name: "force-tag-creation is on by default", get: forceTag, want: []bool{true}},
+		{
+			name: "force-tag-creation turns off for the implicit main component", content: "force-tag-creation: false\n",
+			get: forceTag, want: []bool{false},
+		},
+		{
+			name:    "a component turns force-tag-creation off for itself alone",
+			content: releaseKeysConfig + "    force-tag-creation: false\n",
+			get:     forceTag, want: []bool{true, false},
 		},
 	}
 	for _, tc := range cases {

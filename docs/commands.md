@@ -170,6 +170,11 @@ With `draft: true`, the release starts a draft too, reported as `tagged and draf
 it is left for a human to publish: a later run never resumes it, the way it resumes one under
 `draft-until-assets-attach`. See [configuration](configuration.md#draft).
 
+With `force-tag-creation: false`, `release` creates no tag itself: the release names the merge
+commit as its target and GitHub tags it when the release is published, so a draft reports
+`drafted <tag>, tagged on publish` and has no tag until then. See
+[configuration](configuration.md#force-tag-creation).
+
 With `major-tag: true`, every stable release additionally creates or force-moves the major
 tag, `vX` for the implicit `main` component or its tag prefix followed by `X` for a configured
 one, onto the same commit. A tag that does not exist yet is created; one that does is moved,
@@ -234,8 +239,8 @@ only the files outside the other components' paths, where release-please's root 
 counted every commit. It also carries over:
 
 - `bump-minor-pre-major`, `bump-patch-for-minor-pre-major` and `initial-version`;
-- `skip-github-release` and `draft`, each at the top level when every package carries the same
-  value, on the component otherwise;
+- `skip-github-release`, `draft` and `force-tag-creation`, each at the top level when every package
+  carries the same value, on the component otherwise;
 - `versioning` as `versioning-strategy`, by name, with a warning for `service-pack` and
   `dependency-manifest`, whose release-me form differs from release-please's Java one;
 - `release-as`, unless the manifest already records it as released or release-me refuses the

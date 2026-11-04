@@ -85,6 +85,7 @@ type releaseFlag struct {
 var releaseFlags = []releaseFlag{
 	{key: "skip-github-release", def: false},
 	{key: "draft", def: false},
+	{key: "force-tag-creation", def: true},
 }
 
 // releaseFlagKeys returns the key of every entry in releaseFlags.

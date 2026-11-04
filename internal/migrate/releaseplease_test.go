@@ -842,6 +842,7 @@ func TestFromReleasePleaseCarriesTheGitHubReleaseSettingsOver(t *testing.T) {
 	t.Parallel()
 	skip := func(c config.ResolvedComponent) bool { return c.SkipGitHubRelease }
 	draft := func(c config.ResolvedComponent) bool { return c.Draft }
+	forceTag := func(c config.ResolvedComponent) bool { return c.ForceTagCreation }
 	cases := []struct {
 		name       string
 		configJSON string
@@ -900,6 +901,25 @@ func TestFromReleasePleaseCarriesTheGitHubReleaseSettingsOver(t *testing.T) {
 			name:       "leaves out draft at release-me's default",
 			configJSON: `{"draft": false, "packages": {".": {"release-type": "go"}}}`,
 			get:        draft, want: []bool{false},
+		},
+		{
+			name:       "leaves out force-tag-creation for a published release",
+			configJSON: `{"packages": {".": {"release-type": "go"}}}`,
+			get:        forceTag, want: []bool{true},
+		},
+		{
+			name:       "carries force-tag-creation turned off explicitly",
+			configJSON: `{"force-tag-creation": false, "packages": {".": {"release-type": "go"}}}`,
+			wantYAML:   "\nforce-tag-creation: false\n",
+			get:        forceTag, want: []bool{false},
+		},
+		{
+			name: "writes force-tag-creation on the one package that turns it off",
+			configJSON: `{"packages": {
+			  "api": {"component": "api", "release-type": "go"},
+			  "web": {"component": "web", "release-type": "go", "force-tag-creation": false}}}`,
+			wantYAML: "    path: web\n    tag-prefix: web-v\n    force-tag-creation: false\n",
+			get:      forceTag, want: []bool{true, false},
 		},
 	}
 	for _, tc := range cases {
@@ -1006,6 +1026,13 @@ func TestFromReleasePleaseRejectsInvalidInput(t *testing.T) {
 		})
 	}
 }
+
+// files is a ReadFile over a fixed set of repository files.
+// load loads translated YAML the way every command does, so a test fails
+// on a translation release-me itself would refuse.
+// monorepoConfig is a release-please-config.json for a node monorepo with
+// component-prefixed "@" tags and the main package's changelog kept at the
+// repository root.
 
 // files is a ReadFile over a fixed set of repository files.
 // load loads translated YAML the way every command does, so a test fails

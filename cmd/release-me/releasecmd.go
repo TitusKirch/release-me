@@ -134,6 +134,7 @@ func releaseComponent(cfg config.Config, comp config.ResolvedComponent) tagrelea
 		Titles:            cfg.TitlePatterns(),
 		SkipGitHubRelease: comp.SkipGitHubRelease,
 		Draft:             comp.Draft,
+		TagOnPublish:      !comp.ForceTagCreation,
 	}
 }
 
