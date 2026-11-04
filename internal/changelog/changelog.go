@@ -25,6 +25,15 @@ type Entry struct {
 	// gave, the commit's git author name for one a commit's own text gave.
 	// "" credits no one.
 	Author string
+	// CommitSHA is the full hash of the commit the entry comes from, the
+	// merge commit for a pull request merge, and CommitURL its web
+	// address, rendered with Options.CommitLinks. An entry without a
+	// CommitURL links no commit.
+	CommitSHA string
+	CommitURL string
+	// Issues are the issues the entry's text closes, rendered with
+	// Options.IssueReferences.
+	Issues []Issue
 	// SubEntries renders as indented list items under this entry's line,
 	// in the nested changelog source mode: the commits of the pull
 	// request's merge, each parsed on its own. A sub entry's own
@@ -34,6 +43,12 @@ type Entry struct {
 	// its own: it always renders under its parent's line, but see
 	// Sections for the one case where it decides which section that is.
 	SubEntries []Entry
+}
+
+// Issue is one issue an entry's text closes: its number and web address.
+type Issue struct {
+	Number int
+	URL    string
 }
 
 // Section is one changelog section after Breaking Changes: the heading it
@@ -76,6 +91,14 @@ type Options struct {
 	// entry never carries one: its parent's line already credits the pull
 	// request.
 	Authors bool
+	// CommitLinks appends " ([<short hash>](<CommitURL>))" after the pull
+	// request link, the shape release-please renders.
+	CommitLinks bool
+	// IssueReferences appends ", refs [#N](<URL>)" for the issues an
+	// entry closes, release-please's shape, which writes "refs" instead of
+	// "closes" so the release pull request's own body never closes them
+	// a second time when it merges.
+	IssueReferences bool
 }
 
 // section is one rendered section: its heading and the entries it takes.
@@ -231,5 +254,30 @@ func renderLine(e Entry, opts Options) string {
 	if e.PullRequestNumber > 0 && e.URL != "" {
 		fmt.Fprintf(&b, " ([#%d](%s))", e.PullRequestNumber, e.URL)
 	}
+	if opts.CommitLinks && e.CommitURL != "" {
+		fmt.Fprintf(&b, " ([%s](%s))", shortHash(e.CommitSHA), e.CommitURL)
+	}
+	if opts.IssueReferences {
+		linked := 0
+		for _, issue := range e.Issues {
+			if issue.URL == "" {
+				continue
+			}
+			if linked == 0 {
+				b.WriteString(", refs")
+			}
+			fmt.Fprintf(&b, " [#%d](%s)", issue.Number, issue.URL)
+			linked++
+		}
+	}
 	return b.String()
+}
+
+// shortHash is the seven character abbreviation of sha git and GitHub
+// show, sha itself when it is shorter.
+func shortHash(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }

@@ -244,8 +244,11 @@ func TestAssembleAllEntriesAppliesTheOverrideBlockToTheWholeGroup(t *testing.T) 
 		{Type: "feat", Description: "the override replaces both commits"}, {Type: "fix", Description: "direct hotfix"},
 	}
 	wantEntries := []changelog.Entry{
-		{Type: "feat", Description: "the override replaces both commits", PullRequestNumber: 5, URL: "https://github.com/owner/repo/pull/5"},
-		{Type: "fix", Description: "direct hotfix"},
+		{
+			Type: "feat", Description: "the override replaces both commits", PullRequestNumber: 5, URL: "https://github.com/owner/repo/pull/5",
+			CommitSHA: "a",
+		},
+		{Type: "fix", Description: "direct hotfix", CommitSHA: "c"},
 	}
 	if !reflect.DeepEqual(changes, wantChanges) {
 		t.Fatalf("changes = %+v, want %+v", changes, wantChanges)

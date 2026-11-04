@@ -20,9 +20,11 @@ import (
 // The changelog style keys carry over as they are.
 func changelogOptions(comp config.ResolvedComponent) changelog.Options {
 	opts := changelog.Options{
-		HiddenTypes:  comp.HiddenTypes,
-		SentenceCase: comp.ChangelogStyle.SentenceCase,
-		Authors:      comp.ChangelogStyle.Authors,
+		HiddenTypes:     comp.HiddenTypes,
+		SentenceCase:    comp.ChangelogStyle.SentenceCase,
+		Authors:         comp.ChangelogStyle.Authors,
+		CommitLinks:     comp.ChangelogStyle.CommitLinks,
+		IssueReferences: comp.ChangelogStyle.IssueReferences,
 	}
 	if comp.ChangelogSections == nil {
 		return opts

@@ -213,6 +213,12 @@ type ChangelogStyle struct {
 	// Authors is "changelog-authors", default false: credit each entry's
 	// author after its description.
 	Authors bool
+	// CommitLinks is "changelog-commit-links", default false: link each
+	// entry's commit.
+	CommitLinks bool
+	// IssueReferences is "changelog-issue-references", default false:
+	// link the issues each entry closes.
+	IssueReferences bool
 }
 
 // Labels is the "labels" key: the label names release-me expects on the
@@ -668,6 +674,8 @@ type raw struct {
 	Files                     *[]rawFile             `yaml:"files"`
 	Changelog                 *string                `yaml:"changelog"`
 	ChangelogSource           *string                `yaml:"changelog-source"`
+	ChangelogCommitLinks      *bool                  `yaml:"changelog-commit-links"`
+	ChangelogIssueRefs        *bool                  `yaml:"changelog-issue-references"`
 	ChangelogAuthors          *bool                  `yaml:"changelog-authors"`
 	ChangelogSentenceCase     *bool                  `yaml:"changelog-sentence-case"`
 	ChangelogSections         *[]rawChangelogSection `yaml:"changelog-sections"`
@@ -839,6 +847,12 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.ChangelogAuthors != nil {
 		cfg.ChangelogStyle.Authors = *r.ChangelogAuthors
+	}
+	if r.ChangelogCommitLinks != nil {
+		cfg.ChangelogStyle.CommitLinks = *r.ChangelogCommitLinks
+	}
+	if r.ChangelogIssueRefs != nil {
+		cfg.ChangelogStyle.IssueReferences = *r.ChangelogIssueRefs
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {

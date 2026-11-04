@@ -202,6 +202,9 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	case slices.ContainsFunc(components, func(c component) bool { return c.includeCommitAuthors }):
 		warn("include-commit-authors: release-me credits authors for every component or none, left out")
 	}
+	// release-please's default changelog links every entry's commit and
+	// the issues it closes; release-me's does neither unless asked to.
+	st.commitLinks, st.issueReferences = true, true
 	// release-please groups every package into one release pull request
 	// unless separate-pull-requests is true; release-me's own default is one
 	// per component, so the grouped default is written out. locked always
@@ -275,7 +278,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	out, err := render(components, topLevel{
 		versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, workspaces: workspaces,
 		separateLinks: !linkLocal, sentenceCase: st.sentenceCase,
-		authors: st.authors,
+		authors: st.authors, commitLinks: st.commitLinks, issueReferences: st.issueReferences,
 	})
 	if err != nil {
 		return Result{}, err
@@ -908,8 +911,10 @@ var workspacePluginOptions = []string{"type"}
 // style is the top-level changelog style keys the translation writes,
 // carried over from release-please's plugins and settings.
 type style struct {
-	sentenceCase bool
-	authors      bool
+	sentenceCase    bool
+	authors         bool
+	commitLinks     bool
+	issueReferences bool
 }
 
 // translatePlugins maps release-please's plugins onto release-me: the
@@ -1147,6 +1152,9 @@ type topLevel struct {
 	sentenceCase bool
 	// authors writes changelog-authors: true.
 	authors bool
+	// commitLinks and issueReferences write changelog-commit-links and
+	// changelog-issue-references: true.
+	commitLinks, issueReferences bool
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1160,6 +1168,12 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 
 	add(doc, "changelog-source", scalar("all"))
+	if top.commitLinks {
+		add(doc, "changelog-commit-links", boolean(true))
+	}
+	if top.issueReferences {
+		add(doc, "changelog-issue-references", boolean(true))
+	}
 	if top.versioning != "" {
 		add(doc, "versioning", scalar(top.versioning))
 	}

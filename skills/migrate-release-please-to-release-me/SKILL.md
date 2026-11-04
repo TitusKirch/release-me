@@ -106,6 +106,11 @@ root package counted every commit, so a change inside a package no longer releas
 Its row names the packages whose changes the root stops picking up, and the human accepts that
 reach.
 
+**Changelog links** carry over silently too: the translation turns `changelog-commit-links` and
+`changelog-issue-references` on, the links release-please's default changelog carries. Name
+them to the human with the versioning mode, so a changelog without commit links can be chosen
+deliberately.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.

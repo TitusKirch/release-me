@@ -24,6 +24,7 @@ func TestLoadReadsTheChangelogStyleKeys(t *testing.T) {
 			want:    config.ChangelogStyle{SentenceCase: true},
 		},
 		{name: "changelog-authors", content: "changelog-authors: true\n", want: config.ChangelogStyle{Authors: true}},
+		{name: "changelog-commit-links", content: "changelog-commit-links: true\nchangelog-issue-references: true\n", want: config.ChangelogStyle{CommitLinks: true, IssueReferences: true}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -41,7 +42,10 @@ func TestLoadReadsTheChangelogStyleKeys(t *testing.T) {
 
 // changelogStyleKeys is every top-level changelog style key, each set to
 // a value other than its default.
-var changelogStyleKeys = []string{"changelog-sentence-case: true", "changelog-authors: true"}
+var changelogStyleKeys = []string{
+	"changelog-sentence-case: true", "changelog-authors: true", "changelog-commit-links: true",
+	"changelog-issue-references: true",
+}
 
 func TestResolveGivesEveryComponentTheTopLevelChangelogStyle(t *testing.T) {
 	t.Parallel()
