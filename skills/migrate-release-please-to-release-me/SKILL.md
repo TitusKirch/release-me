@@ -94,6 +94,12 @@ collapsed "How this release works" guide release-please never rendered: `migrate
 `release-pull-request-guide` out, add `release-pull-request-guide: false` only when the human
 wants the body without it.
 
+A **root package** beside other packages, package `.`, translates to a root component with a
+warning: it owns only the files outside the other components' paths, where release-please's
+root package counted every commit, so a change inside a package no longer releases the root.
+Its row names the packages whose changes the root stops picking up, and the human accepts that
+reach.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.
