@@ -56,11 +56,31 @@ func TestDoReleaseWithSkipGitHubReleaseTagsAndReportsTheTagWithoutARelease(t *te
 			t.Fatalf("stdout = %q, want it to contain %q", stdout.String(), want)
 		}
 	}
+}
+
+func TestDoReleaseReportsTheReleaseFieldsInTheComponentsOutput(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	commitEntry(t, dir, "chore: initial commit")
+	f := mergedReleaseFake()
+	var stdout bytes.Buffer
+
+	out := &runOutputs{}
+	if err := doRelease(withOutputs(t.Context(), out), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doRelease() error = %v", err)
+	}
+
 	got, err := out.render([]string{"main"})
 	if err != nil {
 		t.Fatalf("render() error = %v", err)
 	}
-	if !strings.Contains(got, "released=true\n") || !strings.Contains(got, `"tag":"v0.1.0"`) {
-		t.Fatalf("outputs = %q, want the tag reported as released", got)
+	for _, want := range []string{
+		"released=true\n", `"tag":"v0.1.0","major":0,"minor":1,"patch":0,"sha":"deadbeef"`,
+		`"body":"## v0.1.0 (2026-01-02)\n\n### Features\n\n- add the thing"`,
+		`"html_url":"https://github.com/owner/repo/releases/tag/v0.1.0"`,
+		`"upload_url":"https://uploads.github.com/repos/owner/repo/releases/9001/assets{?name,label}"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("outputs = %q, want it to contain %q", got, want)
+		}
 	}
 }
