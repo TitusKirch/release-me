@@ -161,3 +161,98 @@ func TestReleaseSkipsTheGitHubReleaseButStillTagsAndSwapsTheLabel(t *testing.T) 
 		})
 	}
 }
+
+// releaseOutputs is what a result reports for the action's outputs.
+type releaseOutputs struct {
+	Tag, SHA, Body, HTMLURL, UploadURL string
+}
+
+func TestReleaseReportsTheCommitNotesAndAddressesOfEveryRelease(t *testing.T) {
+	t.Parallel()
+	notes := "## v0.2.0 (2026-01-02)\n\n### Features\n\n- add the thing"
+	withBody := func(f *forgetest.Fake, body string) *forgetest.Fake {
+		f.ListResponses[0].PullRequests[0].Body = body
+		return f
+	}
+	mainBody := "Release v0.2.0\n\n<details>\n<summary>Changelog</summary>\n\n" + notes + "\n\n</details>\n"
+	sharedNotes := "<details>\n<summary>Changelog</summary>\n\n" +
+		"#### api\n\n## v1.3.0 (2026-03-14)\n\n- add the export endpoint\n\n" +
+		"#### web\n\n## v0.4.1 (2026-03-14)\n\n- keep the session on reload\n\n</details>\n"
+	created := releaseOutputs{
+		Tag: "v0.2.0", SHA: "4f2a9c1", Body: notes,
+		HTMLURL:   "https://github.com/owner/repo/releases/tag/v0.2.0",
+		UploadURL: "https://uploads.github.com/repos/owner/repo/releases/9001/assets{?name,label}",
+	}
+	cases := []struct {
+		name                   string
+		run                    releaseRun
+		fake                   *forgetest.Fake
+		comps                  []release.Component
+		draftUntilAssetsAttach bool
+		want                   []releaseOutputs
+	}{
+		{
+			name: "reports the release it created", run: runOwn,
+			fake:  withBody(mergedFake("chore(main): release v0.2.0", "release: pending"), mainBody),
+			comps: []release.Component{mainComponent},
+			want:  []releaseOutputs{created},
+		},
+		{
+			name: "reads back the release an earlier run created", run: runOwn,
+			fake: func() *forgetest.Fake {
+				f := withBody(mergedFake("chore(main): release v0.2.0", "release: pending"), mainBody)
+				f.ExistingTags = map[string]bool{"v0.2.0": true}
+				f.ExistingReleases = map[string]bool{"v0.2.0": true}
+				return f
+			}(),
+			comps: []release.Component{mainComponent},
+			want:  []releaseOutputs{created},
+		},
+		{
+			name: "reports the draft it resumes", run: runOwn,
+			fake: func() *forgetest.Fake {
+				f := withBody(mergedFake("chore(main): release v0.2.0", "release: tagged"), mainBody)
+				f.ReleaseDrafts = map[string]bool{"v0.2.0": true}
+				return f
+			}(),
+			comps: []release.Component{mainComponent}, draftUntilAssetsAttach: true,
+			want: []releaseOutputs{created},
+		},
+		{
+			name: "reports every shared component's own release", run: runShared,
+			fake: withBody(mergedFake("chore: release api v1.3.0, web v0.4.1", "release: pending"), sharedNotes),
+			comps: []release.Component{
+				{Name: "api", Branch: "release-me/main", TagPrefix: "api/v", Multi: true},
+				{Name: "web", Branch: "release-me/main", TagPrefix: "web/v", Multi: true},
+			},
+			want: []releaseOutputs{
+				{
+					Tag: "api/v1.3.0", SHA: "4f2a9c1", Body: "## v1.3.0 (2026-03-14)\n\n- add the export endpoint",
+					HTMLURL:   "https://github.com/owner/repo/releases/tag/api/v1.3.0",
+					UploadURL: "https://uploads.github.com/repos/owner/repo/releases/9001/assets{?name,label}",
+				},
+				{
+					Tag: "web/v0.4.1", SHA: "4f2a9c1", Body: "## v0.4.1 (2026-03-14)\n\n- keep the session on reload",
+					HTMLURL:   "https://github.com/owner/repo/releases/tag/web/v0.4.1",
+					UploadURL: "https://uploads.github.com/repos/owner/repo/releases/9002/assets{?name,label}",
+				},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			results, err := tc.run(tc.fake, tc.comps, tc.draftUntilAssetsAttach, false)
+			if err != nil {
+				t.Fatalf("release error = %v", err)
+			}
+			var got []releaseOutputs
+			for _, r := range results {
+				got = append(got, releaseOutputs{Tag: r.Tag, SHA: r.SHA, Body: r.Body, HTMLURL: r.HTMLURL, UploadURL: r.UploadURL})
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("results = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
