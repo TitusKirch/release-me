@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -67,6 +68,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	var componentErr error
 	if cfgErr == nil {
 		_, componentErr = resolveComponents(cfg, component)
+		warnIgnoredAuthor(cfg, logger)
 	}
 
 	missing := doCheck(ctx, cfg, cfgErr, componentErr, tokenEnv, token, owner, repoName, f)
@@ -78,6 +80,20 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintln(stdout, "ok")
 	return 0
+}
+
+// warnIgnoredAuthor logs a warning for every key of the "author" block
+// release-me.yaml sets. pr no longer applies it: the release commit is
+// created through the forge under the token's own identity, the only way
+// GitHub signs it. The key still loads, since Load rejects unknown keys
+// and an existing configuration must keep working, so this warning is
+// the one signal a repository gets that its configured identity is gone.
+// A warning, never a missing item: check still passes.
+func warnIgnoredAuthor(cfg config.Config, logger *slog.Logger) {
+	for _, key := range cfg.Author.Set {
+		logger.Warn(key+" is ignored: pr creates the release commit through the forge under the token's own identity",
+			"key", key)
+	}
 }
 
 // doCheck validates config, the --component name, the configured labels
