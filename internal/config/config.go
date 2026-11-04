@@ -1016,8 +1016,11 @@ func validateFileUpdates(path string, cfg Config) error {
 // pre-release types, configured empty, are not compared.
 func validateLabels(path string, l Labels) error {
 	roles := []struct{ key, name string }{
-		{"labels.pending", l.Pending}, {"labels.tagged", l.Tagged},
-		{"labels.alpha", l.Alpha}, {"labels.beta", l.Beta}, {"labels.rc", l.Rc},
+		{"labels.pending", l.Pending},
+		{"labels.tagged", l.Tagged},
+		{"labels.alpha", l.Alpha},
+		{"labels.beta", l.Beta},
+		{"labels.rc", l.Rc},
 	}
 	for _, t := range l.PreReleaseTypes {
 		roles = append(roles, struct{ key, name string }{"prerelease-types." + t.Type, t.Label})
