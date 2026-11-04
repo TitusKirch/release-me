@@ -150,6 +150,69 @@ func TestDetectLayoutReadsASingleComponentChangelogAsCompactWithNoComponents(t *
 	}
 }
 
+func TestDetectLayoutTakesOnlyATopLevelClosedDetailsBlockForTheDetailsLayout(t *testing.T) {
+	t.Parallel()
+	// override is a merged pull request's override block whose text opens
+	// like a component's details block, carried into an entry's text.
+	const override = "<details><summary>api v1.0.0</summary>\n\nThe export moves to its own endpoint.\n\n</details>"
+	tests := []struct {
+		name string
+		text string
+		want releasepr.Layout
+	}{
+		{
+			name: "a headings body with an override block inside an entry",
+			text: "## api\n\n### v1.3.0 (2026-03-14)\n\n#### Features\n\n- add the export endpoint\n" + override + "\n\n" +
+				"## web\n\n### v0.4.1 (2026-03-14)\n\n#### Bug Fixes\n\n- keep the session on reload",
+			want: releasepr.LayoutHeadings,
+		},
+		{
+			name: "a locked headings body with an override block inside an entry",
+			text: lockedHeading + "\n\n## api\n\n#### Features\n\n- add the export endpoint\n" + override + "\n\n" +
+				"## web\n\n- Version bump without user facing changes.",
+			want: releasepr.LayoutHeadings,
+		},
+		{
+			name: "a compact body with an override block inside an entry",
+			text: "#### api\n\n## v1.3.0 (2026-03-14)\n\n### Features\n\n- add the export endpoint\n" + override,
+			want: releasepr.LayoutCompact,
+		},
+		{
+			name: "a single component's changelog with an override block inside an entry",
+			text: "## [v1.2.3](https://github.com/owner/repo/compare/v1.2.2...v1.2.3) (2026-01-02)\n\n### Features\n\n- add the thing\n" + override,
+			want: releasepr.LayoutCompact,
+		},
+		{
+			name: "a details summary never closed",
+			text: "<details><summary>api v1.3.0</summary>\n\n## v1.3.0 (2026-03-14)\n\n### Features\n\n- add the export endpoint",
+			want: releasepr.LayoutCompact,
+		},
+		{
+			name: "a locked details body",
+			text: lockedHeading + "\n\n" + releasepr.RenderComponents(releasepr.LayoutDetails, lockedComponents),
+			want: releasepr.LayoutDetails,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := releasepr.DetectLayout(tc.text); got != tc.want {
+				t.Fatalf("DetectLayout() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAnOverrideBlockInsideAnEntryNeverChangesWhichComponentsAHeadingsBodyCarries(t *testing.T) {
+	t.Parallel()
+	text := "## api\n\n### v1.3.0 (2026-03-14)\n\n#### Features\n\n- add the export endpoint\n" +
+		"<details><summary>api v1.0.0</summary>\n\nThe export moves to its own endpoint.\n\n</details>\n\n" +
+		"## web\n\n### v0.4.1 (2026-03-14)\n\n#### Bug Fixes\n\n- keep the session on reload"
+	if got := releasepr.ComponentNames(text); !slices.Equal(got, []string{"api", "web"}) {
+		t.Fatalf("ComponentNames() = %v, want [api web]", got)
+	}
+}
+
 func TestParseComponentsNeverTakesASectionsOwnHeadingsForAComponent(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

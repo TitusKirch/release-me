@@ -87,20 +87,18 @@ var compactComponent = regexp.MustCompile(`^#### (.+)$`)
 // DetectLayout reports the layout changelogText, the combined changelog of
 // a release pull request, was rendered in, read from its shape alone, so a
 // pull request opened under one layout reads back correctly after
-// release-pull-request-layout changed: a line opening a details block with
-// a "<name> vX.Y.Z" summary is LayoutDetails, a level two heading that is
-// not a version heading is LayoutHeadings, and anything else, a body
-// carrying a single component's changelog included, is LayoutCompact. The
-// order matters: a LayoutHeadings section carries "#### Features" lines a
+// release-pull-request-layout changed: a top level details block, see
+// isDetailsLayout, is LayoutDetails, a level two heading that is not a
+// version heading is LayoutHeadings, and anything else, a body carrying a
+// single component's changelog included, is LayoutCompact. The order
+// matters: a LayoutHeadings section carries "#### Features" lines a
 // LayoutCompact reading would take for components, and a LayoutCompact
 // section carries the "## [vX.Y.Z](…)" version headings a LayoutHeadings
 // reading must skip.
 func DetectLayout(changelogText string) Layout {
 	lines := strings.Split(changelogText, "\n")
-	for _, line := range lines {
-		if detailsSummary.MatchString(line) {
-			return LayoutDetails
-		}
+	if isDetailsLayout(lines) {
+		return LayoutDetails
 	}
 	for _, line := range lines {
 		if isComponentHeading(line) {
@@ -108,6 +106,40 @@ func DetectLayout(changelogText string) Layout {
 		}
 	}
 	return LayoutCompact
+}
+
+// isDetailsLayout reports whether lines open, at the changelog's top
+// level, a details block with a "<name> vX.Y.Z" summary that a matching
+// "</details>" closes. The top level of a LayoutDetails changelog carries
+// nothing but blank lines, a locked family's combined version heading and
+// the blocks themselves, so any other line there, a component heading or a
+// section heading or entry of a single component's changelog, rules the
+// layout out before a summary line further down, the text of an override
+// block inside an entry, say, could count. A block never closed rules it
+// out too.
+func isDetailsLayout(lines []string) bool {
+	depth := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case depth == 0:
+			if detailsSummary.MatchString(line) {
+				depth = 1
+				continue
+			}
+			if _, isVersion := changelog.ParseHeading(line); trimmed != "" && !isVersion {
+				return false
+			}
+		case strings.HasPrefix(trimmed, "</details>"):
+			depth--
+			if depth == 0 {
+				return true
+			}
+		case strings.HasPrefix(trimmed, "<details"):
+			depth++
+		}
+	}
+	return false
 }
 
 // isComponentHeading reports whether line is a LayoutHeadings component
