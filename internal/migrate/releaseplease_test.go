@@ -364,7 +364,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 	}
 
 	cfg := load(t, got.YAML)
-	if cfg.Labels.Pending != "autorelease: pending" {
+	if !reflect.DeepEqual(cfg.Labels.Pending, []string{"autorelease: pending"}) {
 		t.Fatalf("Labels.Pending = %q, want the first label of the list", cfg.Labels.Pending)
 	}
 	if !reflect.DeepEqual(cfg.Resolve()[0].Files, []config.File{{Path: "manifest.json", Updater: "json", Key: "app.version"}}) {
