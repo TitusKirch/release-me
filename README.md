@@ -161,6 +161,7 @@ files:
 | `draft-until-assets-attach` | Drafts every release instead of publishing it immediately. | `false` | No |
 | `comment-mention` | Mention prefix for `release-as`/`release-notes` comment commands. | `@release-me` | No |
 | `delete-release-branch` | Deletes a release branch once `release` has tagged and released it. | `true` | No |
+| `exclude-paths` | Subpaths whose changes never count for a component. | none | No |
 | `components` | Maps a name to a path and optional per-component overrides. | none, one implicit `main` component | No |
 
 See [the configuration reference](docs/configuration.md) for every key's full behavior, the
