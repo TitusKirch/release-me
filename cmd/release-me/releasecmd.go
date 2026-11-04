@@ -133,8 +133,9 @@ func doReleasePerComponent(
 func releaseComponent(comp config.ResolvedComponent) tagrelease.Component {
 	return tagrelease.Component{
 		Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
-		TagOnPublish:      !comp.ForceTagCreation,
-		SkipGitHubRelease: comp.SkipGitHubRelease,
+		TagOnPublish:       !comp.ForceTagCreation,
+		SkipGitHubRelease:  comp.SkipGitHubRelease,
+		OmitVInReleaseName: !comp.IncludeVInReleaseName,
 	}
 }
 

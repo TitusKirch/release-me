@@ -118,3 +118,19 @@ func TestDoReleaseWithoutForceTagCreationLeavesTheTagToThePublish(t *testing.T) 
 		}
 	}
 }
+
+func TestDoReleaseWithoutIncludeVInReleaseNameNamesTheReleaseAfterTheBareVersion(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	commitEntry(t, dir, "chore: initial commit")
+	f := mergedReleaseFake()
+	cfg := config.Default()
+	cfg.IncludeVInReleaseName = false
+	var stdout bytes.Buffer
+
+	if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doRelease() error = %v", err)
+	}
+	if len(f.CreatedReleases) != 1 || f.CreatedReleases[0].Name != "0.1.0" || f.CreatedReleases[0].Tag != "v0.1.0" {
+		t.Fatalf("CreatedReleases = %+v, want release 0.1.0 at tag v0.1.0", f.CreatedReleases)
+	}
+}

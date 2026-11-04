@@ -437,16 +437,27 @@ type Component struct {
 	// true, a merged release pull request still gets its tag, major tag
 	// and label swap, but no GitHub release.
 	SkipGitHubRelease bool
+	// OmitVInReleaseName is comp's resolved "include-v-in-release-name"
+	// key turned off: the release is named "X.Y.Z", or "<name> X.Y.Z",
+	// without the "v". False, the zero value, keeps the "v".
+	OmitVInReleaseName bool
 }
 
 // releaseName returns the name of comp's release at versionStr, "X.Y.Z"
 // without the "v": the tag itself for the implicit "main" component,
-// "<name> vX.Y.Z" for a configured one.
+// "<name> vX.Y.Z" for a configured one, each without the "v" under
+// OmitVInReleaseName.
 func (comp Component) releaseName(versionStr string) string {
-	if comp.Multi {
+	switch {
+	case comp.Multi && comp.OmitVInReleaseName:
+		return fmt.Sprintf("%s %s", comp.Name, versionStr)
+	case comp.Multi:
 		return fmt.Sprintf("%s v%s", comp.Name, versionStr)
+	case comp.OmitVInReleaseName:
+		return versionStr
+	default:
+		return comp.TagPrefix + versionStr
 	}
-	return comp.TagPrefix + versionStr
 }
 
 // Labels names the labels Run reads and writes: Pending and Tagged on
