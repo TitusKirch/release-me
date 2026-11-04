@@ -19,6 +19,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"github.com/ostendorf-cloud/release-me/internal/version"
+	"github.com/ostendorf-cloud/release-me/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -177,7 +178,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			"component counts only the files outside the other components' paths")
 	}
 
-	versioning, err := translatePlugins(topValues["plugins"], components, warn)
+	versioning, workspaces, err := translatePlugins(topValues["plugins"], components, warn)
 	if err != nil {
 		return Result{}, err
 	}
@@ -205,6 +206,17 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			}
 		}
 		sharedPR = !separate
+		if separate && len(workspaces) > 0 {
+			// release-me releases a dependent together with its
+			// dependency, which only one shared release pull request does.
+			warn("separate-pull-requests: release-me releases a workspace dependent together with its dependency, " +
+				"so release-pull-request is shared")
+			sharedPR = true
+		}
+	}
+	if len(components) == 1 && len(workspaces) > 0 {
+		warn("workspaces: %s: a single package has no workspace dependency to move, left out", strings.Join(workspaces, ", "))
+		workspaces = nil
 	}
 
 	pending, err := label(topValues["label"], "autorelease: pending", "label", warn)
@@ -238,7 +250,9 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		}
 	}
 
-	out, err := render(components, versioning, sharedPR, pending, tagged)
+	out, err := render(components, topLevel{
+		versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, workspaces: workspaces,
+	})
 	if err != nil {
 		return Result{}, err
 	}
@@ -831,22 +845,54 @@ func markedExtraFile(pkgPath, rel string, plain bool, readFile ReadFile, warn fu
 	return out
 }
 
+// workspacePlugins maps each release-please workspace plugin to the
+// package manager release-me's "workspaces" names for it.
+var workspacePlugins = map[string]string{
+	"node-workspace": workspace.Node,
+}
+
+// workspacePluginOptions are the keys a workspace plugin object carries
+// that need no translation: its type, and the options release-me already
+// behaves as.
+var workspacePluginOptions = []string{"type"}
+
 // translatePlugins maps release-please's linked-versions plugin to a
-// release-me versioning mode. It releases every component of its group at
-// the group's highest version, changed or not, which is release-me's
-// locked mode when the group is every component.
-func translatePlugins(raw json.RawMessage, components []component, warn func(string, ...any)) (string, error) {
+// release-me versioning mode, and its workspace plugins to "workspaces".
+// linked-versions releases every component of its group at the group's
+// highest version, changed or not, which is release-me's locked mode when
+// the group is every component.
+func translatePlugins(raw json.RawMessage, components []component, warn func(string, ...any)) (string, []string, error) {
 	if raw == nil {
-		return "", nil
+		return "", nil, nil
 	}
 	var plugins []json.RawMessage
 	if err := json.Unmarshal(raw, &plugins); err != nil {
-		return "", fmt.Errorf("migrate: plugins: %w", err)
+		return "", nil, fmt.Errorf("migrate: plugins: %w", err)
 	}
 	versioning := ""
+	var workspaces []string
+	addWorkspace := func(plugin string, options map[string]json.RawMessage) {
+		keys := make([]string, 0, len(options))
+		for key := range options {
+			if !slices.Contains(workspacePluginOptions, key) {
+				keys = append(keys, key)
+			}
+		}
+		slices.Sort(keys)
+		for _, key := range keys {
+			warn("plugins: %s: %s: no release-me equivalent, left out", plugin, key)
+		}
+		if manager := workspacePlugins[plugin]; !slices.Contains(workspaces, manager) {
+			workspaces = append(workspaces, manager)
+		}
+	}
 	for _, p := range plugins {
 		var name string
 		if json.Unmarshal(p, &name) == nil {
+			if _, ok := workspacePlugins[name]; ok {
+				addWorkspace(name, nil)
+				continue
+			}
 			warn("plugins: %s: no release-me equivalent, left out", name)
 			continue
 		}
@@ -855,7 +901,15 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 			Components []string `json:"components"`
 		}
 		if err := json.Unmarshal(p, &plugin); err != nil {
-			return "", fmt.Errorf("migrate: plugins: %w", err)
+			return "", nil, fmt.Errorf("migrate: plugins: %w", err)
+		}
+		if _, ok := workspacePlugins[plugin.Type]; ok {
+			var options map[string]json.RawMessage
+			if err := json.Unmarshal(p, &options); err != nil {
+				return "", nil, fmt.Errorf("migrate: plugins: %w", err)
+			}
+			addWorkspace(plugin.Type, options)
+			continue
 		}
 		if plugin.Type != "linked-versions" {
 			warn("plugins: %s: no release-me equivalent, left out", plugin.Type)
@@ -870,7 +924,7 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 		}
 		versioning = "locked"
 	}
-	return versioning, nil
+	return versioning, workspaces, nil
 }
 
 // label reads a release-please label key, a comma separated list. release-me
@@ -1010,26 +1064,41 @@ func repoPath(pkgPath, file string) string {
 	return stdpath.Join(pkgPath, file)
 }
 
+// topLevel is the translation's top-level settings render writes.
+type topLevel struct {
+	versioning      string
+	sharedPR        bool
+	pending, tagged string
+	workspaces      []string
+}
+
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
 // the implicit main component and needs no components key; everything else
 // is a components mapping in release-please's package order, carrying only
 // the keys whose value differs from what release-me would derive.
-func render(components []component, versioning string, sharedPR bool, pending, tagged string) ([]byte, error) {
+func render(components []component, top topLevel) ([]byte, error) {
 	doc := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(m *yaml.Node, key string, value *yaml.Node) {
 		m.Content = append(m.Content, scalar(key), value)
 	}
 
 	add(doc, "changelog-source", scalar("all"))
-	if versioning != "" {
-		add(doc, "versioning", scalar(versioning))
+	if top.versioning != "" {
+		add(doc, "versioning", scalar(top.versioning))
 	}
-	if sharedPR {
+	if top.sharedPR {
 		add(doc, "release-pull-request", scalar("shared"))
 	}
+	if len(top.workspaces) > 0 {
+		list := &yaml.Node{Kind: yaml.SequenceNode, Style: yaml.FlowStyle}
+		for _, w := range top.workspaces {
+			list.Content = append(list.Content, scalar(w))
+		}
+		add(doc, "workspaces", list)
+	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
-	add(labels, "pending", scalar(pending))
-	add(labels, "tagged", scalar(tagged))
+	add(labels, "pending", scalar(top.pending))
+	add(labels, "tagged", scalar(top.tagged))
 	// alpha, beta and rc stay off unless a package's prerelease-type
 	// names one; any other type becomes a prerelease-types entry, in the
 	// order the packages first name it.

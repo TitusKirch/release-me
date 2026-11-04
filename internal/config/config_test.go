@@ -393,6 +393,19 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			name:    "rejects top-level excluded paths beside components",
 			content: "exclude-paths: [web/docs]\ncomponents:\n  web:\n    path: web\n",
 		},
+		{
+			name:    "rejects an unknown workspace package manager",
+			content: "release-pull-request: shared\nworkspaces: [gradle]\ncomponents:\n  web:\n    path: web\n",
+		},
+		{
+			name:    "rejects a workspace package manager listed twice",
+			content: "release-pull-request: shared\nworkspaces: [node, node]\ncomponents:\n  web:\n    path: web\n",
+		},
+		{name: "rejects workspaces without components", content: "workspaces: [node]\n"},
+		{
+			name:    "rejects workspaces with one release pull request per component",
+			content: "workspaces: [node]\ncomponents:\n  core:\n    path: packages/core\n  web:\n    path: packages/web\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -496,6 +509,40 @@ func TestLoadAcceptsARootComponentBesideOthers(t *testing.T) {
 	}
 	if got[1].OtherPaths != nil || got[2].OtherPaths != nil {
 		t.Fatalf("OtherPaths = %q, %q, want none for a component below the root", got[1].OtherPaths, got[2].OtherPaths)
+	}
+}
+
+func TestLoadReadsWorkspacesWithASharedReleasePullRequest(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{
+			name:    "a shared release pull request",
+			content: "release-pull-request: shared\nworkspaces: [node]\ncomponents:\n  core:\n    path: packages/core\n",
+			want:    []string{"node"},
+		},
+		{
+			name:    "locked versioning",
+			content: "versioning: locked\nworkspaces: [node]\ncomponents:\n  core:\n    path: packages/core\n",
+			want:    []string{"node"},
+		},
+		{name: "left out", content: "components:\n  core:\n    path: packages/core\n", want: nil},
+		{name: "an empty list", content: "workspaces: []\n", want: []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := config.Load(writeFile(t, tc.content))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if !reflect.DeepEqual(cfg.Workspaces, tc.want) {
+				t.Fatalf("Workspaces = %q, want %q", cfg.Workspaces, tc.want)
+			}
+		})
 	}
 }
 
