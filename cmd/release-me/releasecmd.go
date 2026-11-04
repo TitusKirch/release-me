@@ -268,7 +268,7 @@ func (b releasedBranches) add(branch string, results []tagrelease.Result) {
 	}
 }
 
-// deleteReleaseBranches deletes every branch in released through the forge,
+// deleteReleaseBranches deletes every branch in released through Git transport,
 // "delete-release-branch"'s job, once release has tagged and released what
 // was merged from it. A branch is kept when it is already gone, when its
 // tip is no longer the head commit a released pull request merged with,
@@ -314,7 +314,7 @@ func deleteReleaseBranches(
 			fmt.Fprintf(stdout, "would delete release branch %s\n", branch)
 			continue
 		}
-		if err := f.DeleteBranch(ctx, owner, repoName, branch); err != nil {
+		if err := gitRun(ctx, dir, "push", "--force-with-lease=refs/heads/"+branch+":"+tip, "origin", ":refs/heads/"+branch); err != nil {
 			logger.Warn("release branch kept: delete it, the release itself succeeded", "head", branch, "number", number, "error", err)
 			continue
 		}

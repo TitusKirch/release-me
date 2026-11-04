@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -101,10 +102,11 @@ func TestReleaseDeletesTheReleaseBranchOnceItsPullRequestIsReleased(t *testing.T
 			if !reflect.DeepEqual(tags, tc.wantTags) {
 				t.Fatalf("CreatedTags = %q, want %q", tags, tc.wantTags)
 			}
-			want := []forgetest.DeleteBranchCall{{Owner: "owner", Repo: "repo", Branch: tc.branch}}
-			if !reflect.DeepEqual(f.DeletedBranches, want) {
-				t.Fatalf("DeletedBranches = %+v, want %+v", f.DeletedBranches, want)
+			remote := cleanupGitOutput(t, dir, "remote", "get-url", "--push", "origin")
+			if bareRefExists(t, remote, "refs/heads/"+tc.branch) {
+				t.Fatal("released branch was not deleted")
 			}
+
 			out := stdout.String()
 			if !strings.Contains(out, "deleted release branch "+tc.branch) {
 				t.Fatalf("stdout = %q, want the deleted branch reported", out)
@@ -183,9 +185,7 @@ func TestReleaseKeepsTheReleaseBranchWhenDeletingIsNotSafe(t *testing.T) {
 			if len(f.CreatedTags) != tc.wantTags {
 				t.Fatalf("CreatedTags = %+v, want %d", f.CreatedTags, tc.wantTags)
 			}
-			if len(f.DeletedBranches) != 0 {
-				t.Fatalf("DeletedBranches = %+v, want none", f.DeletedBranches)
-			}
+
 			if tc.wantStdout != "" && !strings.Contains(stdout.String(), tc.wantStdout) {
 				t.Fatalf("stdout = %q, want it to contain %q", stdout.String(), tc.wantStdout)
 			}
@@ -200,7 +200,10 @@ func TestReleaseWarnsAndSucceedsWhenDeletingTheReleaseBranchFails(t *testing.T) 
 	const branch = "release-me/main"
 	dir, cfg, head := mergedReleaseRepo(t, "", branch)
 	f := mergedReleaseFake(branch, "chore(main): release v1.3.0", head)
-	f.DeleteBranchErr = errors.New("github: delete branch release-me/main: 422 Cannot delete this protected branch")
+	remote := cleanupGitOutput(t, dir, "remote", "get-url", "--push", "origin")
+	if err := os.WriteFile(filepath.Join(remote, "hooks", "pre-receive"), []byte("#!/bin/sh\necho protected branch >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	var stdout, logs bytes.Buffer
 	if err := doRelease(t.Context(), dir, cfg, "", f, newLogger(&logs, false), false, &stdout); err != nil {
@@ -228,8 +231,9 @@ func TestReleaseKeepsTheBranchOfAPullRequestWhoseReleaseFailed(t *testing.T) {
 	if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err == nil {
 		t.Fatal("doRelease() error = nil, want the failed release reported")
 	}
-	if len(f.DeletedBranches) != 0 {
-		t.Fatalf("DeletedBranches = %+v, want the branch kept for the rerun", f.DeletedBranches)
+	remote := cleanupGitOutput(t, dir, "remote", "get-url", "--push", "origin")
+	if !bareRefExists(t, remote, "refs/heads/"+branch) {
+		t.Fatal("failed release lost its branch")
 	}
 }
 
@@ -255,9 +259,9 @@ func TestReleaseDeletesTheBranchOfAComponentReleasedBeforeALaterOneFailed(t *tes
 	if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err == nil {
 		t.Fatal("doRelease() error = nil, want web's unreadable title reported")
 	}
-	want := []forgetest.DeleteBranchCall{{Owner: "owner", Repo: "repo", Branch: "release-me/api"}}
-	if !reflect.DeepEqual(f.DeletedBranches, want) {
-		t.Fatalf("DeletedBranches = %+v, want only api's released branch deleted", f.DeletedBranches)
+	remote := cleanupGitOutput(t, dir, "remote", "get-url", "--push", "origin")
+	if bareRefExists(t, remote, "refs/heads/release-me/api") || !bareRefExists(t, remote, "refs/heads/release-me/web") {
+		t.Fatal("want only api's successfully released branch deleted")
 	}
 }
 
@@ -270,13 +274,13 @@ func TestSharedReleaseSweepDeletesALeftoverBranchOnlyOnceItsPullRequestIsTagged(
 		name         string
 		drafts       bool
 		releaseErr   bool
-		wantDeleted  []forgetest.DeleteBranchCall
+		wantDeleted  bool
 		wantErr      bool
 		wantTagCount int
 	}{
 		{
 			name:         "deletes the leftover branch once its pull request is tagged",
-			wantDeleted:  []forgetest.DeleteBranchCall{{Owner: "owner", Repo: "repo", Branch: "release-me/api"}},
+			wantDeleted:  true,
 			wantTagCount: 1,
 		},
 		{
@@ -306,11 +310,8 @@ func TestSharedReleaseSweepDeletesALeftoverBranchOnlyOnceItsPullRequestIsTagged(
 			if len(f.CreatedTags) != tc.wantTagCount {
 				t.Fatalf("CreatedTags = %+v, want %d", f.CreatedTags, tc.wantTagCount)
 			}
-			if !reflect.DeepEqual(f.DeletedBranches, tc.wantDeleted) {
-				t.Fatalf("DeletedBranches = %+v, want %+v", f.DeletedBranches, tc.wantDeleted)
-			}
-			if !bareRefExists(t, origin, "refs/heads/release-me/api") {
-				t.Fatal("release-me/api is gone from the remote, want only the forge asked to delete it")
+			if exists := bareRefExists(t, origin, "refs/heads/release-me/api"); exists == tc.wantDeleted {
+				t.Fatalf("branch exists = %v, want deleted %v", exists, tc.wantDeleted)
 			}
 		})
 	}
@@ -351,13 +352,12 @@ func TestReleaseResumesADraftAfterItsReleaseBranchWasDeleted(t *testing.T) {
 			if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 				t.Fatalf("doRelease() first run error = %v", err)
 			}
-			want := []forgetest.DeleteBranchCall{{Owner: "owner", Repo: "repo", Branch: branch}}
-			if !reflect.DeepEqual(f.DeletedBranches, want) {
-				t.Fatalf("DeletedBranches = %+v, want %+v", f.DeletedBranches, want)
+			remote := cleanupGitOutput(t, dir, "remote", "get-url", "--push", "origin")
+			if bareRefExists(t, remote, "refs/heads/"+branch) {
+				t.Fatal("released branch was not deleted")
 			}
 			tags, releases := len(f.CreatedTags), len(f.CreatedReleases)
 
-			runGit(t, dir, "push", "-q", "origin", "--delete", branch)
 			f.ListResponses[0].PullRequests[0].Labels = []string{"release: tagged"}
 			stdout.Reset()
 
