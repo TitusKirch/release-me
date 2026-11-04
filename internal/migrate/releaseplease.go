@@ -76,6 +76,7 @@ var packageKeys = []string{
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "separate-pull-requests", "$schema",
 	"bootstrap-sha", "last-release-sha", "always-link-local", "pull-request-header", "pull-request-footer",
+	"pull-request-title-pattern", "group-pull-request-title-pattern",
 }
 
 // unsupportedReasons explains a release-please key the translation leaves
@@ -306,6 +307,24 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	}{{"pull-request-header", &opts.header}, {"pull-request-footer", &opts.footer}} {
 		if *text.dst, err = frameText(topValues[text.key], text.key, warn); err != nil {
 			return Result{}, err
+		}
+	}
+
+	if opts.title, err = titlePattern(topValues["pull-request-title-pattern"], "pull-request-title-pattern",
+		releasepr.TitlePerComponent, warn); err != nil {
+		return Result{}, err
+	}
+	if raw, ok := topValues["group-pull-request-title-pattern"]; ok {
+		if !sharedPR && versioning != "locked" {
+			warn("group-pull-request-title-pattern: release-me opens one release pull request per component here, left out")
+		} else {
+			kind := releasepr.TitleShared
+			if versioning == "locked" {
+				kind = releasepr.TitleLocked
+			}
+			if opts.sharedTitle, err = titlePattern(raw, "group-pull-request-title-pattern", kind, warn); err != nil {
+				return Result{}, err
+			}
 		}
 	}
 
@@ -1095,6 +1114,28 @@ func frameText(raw json.RawMessage, key string, warn func(string, ...any)) (stri
 	return text, nil
 }
 
+// titlePattern translates a release-please title pattern into release-me's:
+// release-please's ${scope} renders the branch in parentheses and its
+// ${component} the name after a space, both "" where it has none, and
+// release-me names the branch and the component without either. A pattern
+// release-me refuses, one without every value release reads back, is warned
+// about and left out. "" when raw is nil.
+func titlePattern(raw json.RawMessage, key string, kind releasepr.TitleKind, warn func(string, ...any)) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	var pattern string
+	if err := json.Unmarshal(raw, &pattern); err != nil {
+		return "", fmt.Errorf("migrate: %s: %w", key, err)
+	}
+	translated := strings.NewReplacer("${scope}", "(${branch})", "${component}", " ${component}").Replace(pattern)
+	if err := config.CheckTitlePattern(translated, kind); err != nil {
+		warn("%s: %q %v; release-me reads every component and its version back from the title, left out", key, translated, err)
+		return "", nil
+	}
+	return translated, nil
+}
+
 // label reads a release-please label key, a comma separated list. release-me
 // carries one label per role, so the first one is kept.
 func label(raw json.RawMessage, fallback, key string, warn func(string, ...any)) (string, error) {
@@ -1252,6 +1293,9 @@ type topLevel struct {
 	// header and footer write release-pull-request-header and
 	// release-pull-request-footer.
 	header, footer string
+	// title and sharedTitle write release-pull-request-title and
+	// release-pull-request-shared-title.
+	title, sharedTitle string
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1292,6 +1336,12 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.footer != "" {
 		add(doc, "release-pull-request-footer", scalar(top.footer))
+	}
+	if top.title != "" {
+		add(doc, "release-pull-request-title", scalar(top.title))
+	}
+	if top.sharedTitle != "" {
+		add(doc, "release-pull-request-shared-title", scalar(top.sharedTitle))
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
 	add(labels, "pending", scalar(top.pending))

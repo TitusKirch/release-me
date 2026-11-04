@@ -169,6 +169,8 @@ files:
 | `release-pull-request-guide` | Whether every release pull request body opens with the collapsed "How this release works" guide. | `true` | No |
 | `release-pull-request-header` | Free text above every release pull request body. | none | No |
 | `release-pull-request-footer` | Free text below every release pull request body. | none | No |
+| `release-pull-request-title` | Title pattern of a component's own release pull request. | `chore(${component}): release v${version}` | No |
+| `release-pull-request-shared-title` | Title pattern of the release pull request every component shares. | `chore: release ${releases}`, locked `chore: release v${version} (${components})` | No |
 | `draft-until-assets-attach` | Drafts every release instead of publishing it immediately. | `false` | No |
 | `comment-mention` | Mention prefix for `release-as`/`release-notes` comment commands. | `@release-me` | No |
 | `delete-release-branch` | Deletes a release branch once `release` has tagged and released it. | `true` | No |

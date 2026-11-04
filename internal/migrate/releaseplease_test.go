@@ -842,7 +842,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 	t.Parallel()
 	configJSON := `{
 	  "label": "autorelease: pending,release",
-	  "pull-request-title-pattern": "chore: release ${version}",
+	  "sequential-calls": true,
 	  "plugins": ["group-priority", {"type": "linked-versions", "groupName": "half", "components": ["a"]}],
 	  "packages": {
 	    "a": {"component": "a", "release-type": "java", "draft": true, "extra-files": [
@@ -868,7 +868,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"pull-request-title-pattern: no release-me equivalent, left out",
+		"sequential-calls: no release-me equivalent, left out",
 		"package a: draft: no release-me equivalent, left out",
 		"package a: release-type java: the files it bumps are not carried over, add them under files",
 		"package a: extra-files: a/src/version.py does not exist, left out of files",

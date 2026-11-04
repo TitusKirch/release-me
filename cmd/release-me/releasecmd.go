@@ -101,7 +101,10 @@ func doReleasePerComponent(
 	for _, comp := range components {
 		results, err := tagrelease.Run(
 			ctx, f, owner, repoName,
-			tagrelease.Component{Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag},
+			tagrelease.Component{
+				Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
+				Titles: cfg.TitlePatterns(),
+			},
 			labels, cfg.DraftUntilAssetsAttach, dryRun, logger,
 		)
 		if err != nil {
@@ -139,11 +142,14 @@ func doReleaseLocked(
 	resolved := cfg.Resolve()
 	comps := make([]tagrelease.Component, 0, len(resolved))
 	for _, comp := range resolved {
-		comps = append(comps, tagrelease.Component{Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag})
+		comps = append(comps, tagrelease.Component{
+			Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
+			Titles: cfg.TitlePatterns(),
+		})
 	}
 	branch := resolved[0].Branch
 
-	results, err := tagrelease.RunLocked(ctx, f, owner, repoName, branch, comps, labels, cfg.DraftUntilAssetsAttach, dryRun, logger)
+	results, err := tagrelease.RunLocked(ctx, f, owner, repoName, branch, comps, cfg.SharedTitlePatterns(), labels, cfg.DraftUntilAssetsAttach, dryRun, logger)
 	if err != nil {
 		return fmt.Errorf("release-me: %w", err)
 	}
@@ -195,10 +201,13 @@ func doReleaseShared(
 	branch := resolved[0].Branch
 	comps := make([]tagrelease.Component, 0, len(resolved))
 	for _, comp := range resolved {
-		comps = append(comps, tagrelease.Component{Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag})
+		comps = append(comps, tagrelease.Component{
+			Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
+			Titles: cfg.TitlePatterns(),
+		})
 	}
 
-	results, err := tagrelease.RunShared(ctx, f, owner, repoName, branch, comps, labels, cfg.DraftUntilAssetsAttach, dryRun, logger)
+	results, err := tagrelease.RunShared(ctx, f, owner, repoName, branch, comps, cfg.SharedTitlePatterns(), labels, cfg.DraftUntilAssetsAttach, dryRun, logger)
 	if err != nil {
 		return fmt.Errorf("release-me: %w", err)
 	}

@@ -18,7 +18,6 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/history"
-	tagrelease "github.com/ostendorf-cloud/release-me/internal/release"
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 	"github.com/ostendorf-cloud/release-me/internal/version"
 )
@@ -148,11 +147,17 @@ func doPRShared(
 		return err
 	}
 
-	titled := make([]tagrelease.TitleRelease, 0, len(members))
+	titled := make([]releasepr.TitleRelease, 0, len(members))
+	titledNames := make([]string, 0, len(members))
 	for _, m := range members {
-		titled = append(titled, tagrelease.TitleRelease{Name: m.comp.Name, Version: m.versionStr})
+		titled = append(titled, releasepr.TitleRelease{Name: m.comp.Name, Version: m.versionStr})
+		titledNames = append(titledNames, m.comp.Name)
 	}
-	title := tagrelease.SharedTitle(titled)
+	patterns := cfg.SharedTitlePatterns()
+	title, err := patterns[0].Render(releasepr.TitleValues{Releases: titled, Components: titledNames, Branch: base})
+	if err != nil {
+		return fmt.Errorf("release-me: %s: %w", sharedWho, err)
+	}
 	if err := checkSharedTitleLength(title, members); err != nil {
 		return err
 	}
@@ -208,6 +213,7 @@ func doPRShared(
 	section := releasepr.RenderComponents(releasepr.Layout(cfg.ReleasePullRequestLayout), parts) + "\n"
 
 	body := cfg.Frame().Wrap(releasepr.SharedBody(releases, bodyGuide(cfg), perComponentVersion, notes, versionOverride, section)) +
+		releasepr.TitlePatternMarker(patterns[0], cfg.SharedTitleKind()) +
 		releasepr.DateMarker(date, cfg.ChangelogStyle.DateFormat)
 	names := make([]string, 0, len(members))
 	for _, m := range members {

@@ -117,6 +117,11 @@ translates to release-me's, GitHub's generated release notes in place of the ent
 Its `pull-request-header` and `pull-request-footer` carry over as
 `release-pull-request-header` and `release-pull-request-footer`.
 
+`migrate` carries `pull-request-title-pattern` and
+`group-pull-request-title-pattern` over as `release-pull-request-title` and
+`release-pull-request-shared-title`; one it left out lacked a placeholder release-me reads the
+title back with, and the row offers the default title or a pattern carrying them.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.

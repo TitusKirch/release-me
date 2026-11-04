@@ -8,6 +8,7 @@
 // changelog-type, the changelog style keys ChangelogStyle lists, labels,
 // prerelease-types, author, major-tag, versioning,
 // release-pull-request-header, release-pull-request-footer,
+// release-pull-request-title, release-pull-request-shared-title,
 // draft-until-assets-attach, comment-mention, delete-release-branch,
 // exclude-paths, workspaces, always-link-local and components.
 package config
@@ -395,6 +396,18 @@ type Config struct {
 	// key: free text below the changelog of every release pull request
 	// body, "" for none. Nothing reads it back.
 	ReleasePullRequestFooter string
+	// ReleasePullRequestTitle is the top-level "release-pull-request-title"
+	// key: the title pattern of every component's own release pull
+	// request, "" for releasepr.DefaultTitlePattern. Load checks it with
+	// releasepr.NewTitlePattern, so it always carries ${version}.
+	ReleasePullRequestTitle string
+	// ReleasePullRequestSharedTitle is the top-level
+	// "release-pull-request-shared-title" key: the title pattern of the
+	// release pull request every component shares, "" for
+	// releasepr.DefaultLockedTitlePattern in VersioningLocked and
+	// releasepr.DefaultSharedTitlePattern otherwise. Load checks it for the
+	// configured versioning mode.
+	ReleasePullRequestSharedTitle string
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
 	// key, default false: when true, release creates every release as a
 	// draft instead of publishing it immediately, and resumes publishing
@@ -748,16 +761,19 @@ type raw struct {
 	SkipChangelog             *bool                  `yaml:"skip-changelog"`
 	Versioning                *string                `yaml:"versioning"`
 	ReleasePullRequest        *string                `yaml:"release-pull-request"`
-	ReleasePullRequestLayout  *string                `yaml:"release-pull-request-layout"`
-	ReleasePullRequestHeader  *string                `yaml:"release-pull-request-header"`
-	ReleasePullRequestFooter  *string                `yaml:"release-pull-request-footer"`
-	ReleasePullRequestGuide   *bool                  `yaml:"release-pull-request-guide"`
-	DraftUntilAssetsAttach    *bool                  `yaml:"draft-until-assets-attach"`
-	CommentMention            *string                `yaml:"comment-mention"`
-	Workspaces                *[]string              `yaml:"workspaces"`
-	AlwaysLinkLocal           *bool                  `yaml:"always-link-local"`
-	ExcludePaths              *[]string              `yaml:"exclude-paths"`
-	DeleteReleaseBranch       *bool                  `yaml:"delete-release-branch"`
+	ReleasePullRequestTitle   *string                `yaml:"release-pull-request-title"`
+	// ReleasePullRequestSharedTitle is "release-pull-request-shared-title".
+	ReleasePullRequestSharedTitle *string   `yaml:"release-pull-request-shared-title"`
+	ReleasePullRequestLayout      *string   `yaml:"release-pull-request-layout"`
+	ReleasePullRequestHeader      *string   `yaml:"release-pull-request-header"`
+	ReleasePullRequestFooter      *string   `yaml:"release-pull-request-footer"`
+	ReleasePullRequestGuide       *bool     `yaml:"release-pull-request-guide"`
+	DraftUntilAssetsAttach        *bool     `yaml:"draft-until-assets-attach"`
+	CommentMention                *string   `yaml:"comment-mention"`
+	Workspaces                    *[]string `yaml:"workspaces"`
+	AlwaysLinkLocal               *bool     `yaml:"always-link-local"`
+	ExcludePaths                  *[]string `yaml:"exclude-paths"`
+	DeleteReleaseBranch           *bool     `yaml:"delete-release-branch"`
 	// PreReleaseTypes is decoded as a node, like Components, so its
 	// entries keep release-me.yaml's order.
 	PreReleaseTypes yaml.Node `yaml:"prerelease-types"`
@@ -828,6 +844,64 @@ func (cfg Config) SharedPullRequest() bool {
 // carries.
 func (cfg Config) Frame() releasepr.Frame {
 	return releasepr.Frame{Header: cfg.ReleasePullRequestHeader, Footer: cfg.ReleasePullRequestFooter}
+}
+
+// CheckTitlePattern refuses a title pattern release cannot read back, see
+// releasepr.NewTitlePattern, and one whose title reads as a conventional
+// commit that bumps the version: the title is the release commit's subject
+// and the merged pull request's entry, so a component whose history picks
+// up another component's release commit, through a file outside that
+// component's path, would release again for it.
+func CheckTitlePattern(pattern string, kind releasepr.TitleKind) error {
+	p, err := releasepr.NewTitlePattern(pattern, kind)
+	if err != nil {
+		return err
+	}
+	sample, err := p.Render(releasepr.TitleValues{
+		Version: "1.2.3", Component: "api", Components: []string{"api", "web"},
+		Releases: []releasepr.TitleRelease{{Name: "api", Version: "1.2.3"}}, Branch: "main",
+	})
+	if err != nil {
+		return err
+	}
+	if msg := conventional.Parse(sample, DefaultFallbackType); bumpingTypes[msg.Type] || msg.Breaking {
+		return fmt.Errorf("renders %q, a conventional %s that bumps the version, keep the release commit a type that does not", sample, msg.Type)
+	}
+	return nil
+}
+
+// SharedTitleKind returns the kind of title the release pull request every
+// component shares carries: one version for the whole family in
+// VersioningLocked, one version per component otherwise.
+func (cfg Config) SharedTitleKind() releasepr.TitleKind {
+	if cfg.Versioning == VersioningLocked {
+		return releasepr.TitleLocked
+	}
+	return releasepr.TitleShared
+}
+
+// TitlePatterns returns the patterns every component's own release pull
+// request title renders with, the first, and is read back with, in order:
+// the configured "release-pull-request-title", then the default.
+func (cfg Config) TitlePatterns() []releasepr.TitlePattern {
+	patterns, err := releasepr.TitlePatterns(cfg.ReleasePullRequestTitle, releasepr.TitlePerComponent)
+	if err != nil {
+		// Load already refused a pattern that does not compile.
+		return []releasepr.TitlePattern{releasepr.DefaultTitle(releasepr.TitlePerComponent)}
+	}
+	return patterns
+}
+
+// SharedTitlePatterns returns the patterns the release pull request every
+// component shares renders its title with, the first, and reads it back
+// with, in order: the configured "release-pull-request-shared-title", then
+// the default for SharedTitleKind.
+func (cfg Config) SharedTitlePatterns() []releasepr.TitlePattern {
+	patterns, err := releasepr.TitlePatterns(cfg.ReleasePullRequestSharedTitle, cfg.SharedTitleKind())
+	if err != nil {
+		return []releasepr.TitlePattern{releasepr.DefaultTitle(cfg.SharedTitleKind())}
+	}
+	return patterns
 }
 
 // PerComponentBranch returns the release branch a component named name
@@ -1061,6 +1135,18 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: %s %w", path, text.key, err)
 		}
 		*text.dst = *text.value
+	}
+	if r.ReleasePullRequestTitle != nil {
+		if err := CheckTitlePattern(*r.ReleasePullRequestTitle, releasepr.TitlePerComponent); err != nil {
+			return Config{}, fmt.Errorf("config: parse %s: release-pull-request-title %q %w", path, *r.ReleasePullRequestTitle, err)
+		}
+		cfg.ReleasePullRequestTitle = *r.ReleasePullRequestTitle
+	}
+	if r.ReleasePullRequestSharedTitle != nil {
+		if err := CheckTitlePattern(*r.ReleasePullRequestSharedTitle, cfg.SharedTitleKind()); err != nil {
+			return Config{}, fmt.Errorf("config: parse %s: release-pull-request-shared-title %q %w", path, *r.ReleasePullRequestSharedTitle, err)
+		}
+		cfg.ReleasePullRequestSharedTitle = *r.ReleasePullRequestSharedTitle
 	}
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach
