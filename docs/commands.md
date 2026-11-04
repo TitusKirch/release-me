@@ -269,8 +269,8 @@ counted every commit. It also carries over:
   `versioning: prerelease`, which have no always-on counterpart;
 - a `linked-versions` plugin over every component as `versioning: locked`: both release every
   component at the family's version, changed or not;
-- a `node-workspace` or `cargo-workspace` plugin as
-  [`workspaces`](configuration.md#workspaces) `node` or `cargo`, warning
+- a `node-workspace`, `cargo-workspace` or `maven-workspace` plugin as
+  [`workspaces`](configuration.md#workspaces) `node`, `cargo` or `maven`, warning
   about each plugin option, and turning `separate-pull-requests: true` into a shared release
   pull request with a warning, since a dependent releases together with its dependency;
 - `always-link-local: false` beside a `node-workspace` plugin as

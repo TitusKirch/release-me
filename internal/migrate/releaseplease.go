@@ -864,6 +864,7 @@ func markedExtraFile(pkgPath, rel string, plain bool, readFile ReadFile, warn fu
 var workspacePlugins = map[string]string{
 	"node-workspace":  workspace.Node,
 	"cargo-workspace": workspace.Cargo,
+	"maven-workspace": workspace.Maven,
 }
 
 // workspacePluginOptions are the keys a workspace plugin object carries
