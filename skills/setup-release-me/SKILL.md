@@ -87,7 +87,7 @@ Everything else is derived:
   `version`, `Chart.yaml` with `helm`, `Cargo.toml` with `toml` and key `package.version`,
   `pyproject.toml` with `toml` and key `project.version`, or `tool.poetry.version` where the
   version sits under `[tool.poetry]` instead, a Go constant with `go` and the constant's name
-  as key.
+  as key, a `version.txt` or `VERSION` file holding only the version with `plain`.
 
 Done when every key the plan writes is either answered by the human or derived above.
 

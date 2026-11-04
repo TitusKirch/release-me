@@ -228,9 +228,10 @@ counted every commit. It also carries over:
   value, a pre-release for one;
 - `exclude-paths`, per package or as a top-level default, keeping each path that lies inside
   the package it is set on and warning about every other one, which excludes nothing there;
-- the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package where that
-  file exists, `node` being release-please's default type, and every `extra-files` entry of
-  type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
+- the version file of a `node` (`package.json`), `simple` (its `version-file`, default
+  `version.txt`, through `plain`) or `helm` (`Chart.yaml`) package where that file exists,
+  `node` being release-please's default type, and every `extra-files` entry of type `json`,
+  `yaml` or `toml` with a plain `$.a.b` jsonpath;
 - `label` and `release-label` as the `pending` and `tagged` labels;
 - `prerelease-type` as a pre-release type selected by the label `release: <type>`: `alpha`,
   `beta` or `rc` stays on, any other name but `sp`, which `versioning-strategy: service-pack`
