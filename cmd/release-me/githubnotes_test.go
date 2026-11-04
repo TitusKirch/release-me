@@ -52,6 +52,7 @@ func TestDoPRRendersGitHubsGeneratedNotesWithChangelogTypeGitHub(t *testing.T) {
 	}
 	f := withGeneratedPullRequests(forge.PullRequest{Number: 12, Title: "feat: add the widget", URL: "https://github.com/owner/repo/pull/12"})
 	f.ReleaseNotes = map[string]string{"v0.2.0": generatedNotes}
+	f.GitDir = origin
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, io.Discard); err != nil {
 		t.Fatalf("doPR() error = %v", err)
 	}
@@ -88,7 +89,7 @@ func TestDoPRRendersGitHubsGeneratedNotesWithChangelogTypeGitHub(t *testing.T) {
 }
 
 func TestDoPRUsesGitHubsNotesForOnlyTheComponentThatAsksForThem(t *testing.T) {
-	dir, _ := newPRRepo(t)
+	dir, origin := newPRRepo(t)
 	writeConfig(t, dir, "release-pull-request: shared\ncomponents:\n"+
 		"  api:\n    path: api\n    changelog-type: github\n  web:\n    path: web\n")
 	writeFiles(t, dir, "chore: scaffold", map[string]string{"api/main.go": "package api\n", "web/index.html": "<html></html>\n"})
@@ -99,7 +100,7 @@ func TestDoPRUsesGitHubsNotesForOnlyTheComponentThatAsksForThem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.Load() error = %v", err)
 	}
-	f := newFake()
+	f := newPRFake(origin)
 	f.ReleaseNotes = map[string]string{"api/v0.1.0": "## What's Changed\n* feat: add the endpoint by @octocat"}
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, io.Discard); err != nil {
 		t.Fatalf("doPR() error = %v", err)

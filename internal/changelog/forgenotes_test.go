@@ -43,7 +43,7 @@ func TestForgeNotesFitsGitHubsNotesUnderAVersionHeading(t *testing.T) {
 func TestForgeNotesReadBackAsTheTopSection(t *testing.T) {
 	t.Parallel()
 	body := changelog.ForgeNotes(gitHubNotes)
-	section := changelog.RenderHeading("1.2.0", fixtureDate, "https://github.com/owner/repo/compare/v1.1.0...v1.2.0") +
+	section := changelog.RenderHeading("1.2.0", fixtureDate, "https://github.com/owner/repo/compare/v1.1.0...v1.2.0", "") +
 		"\n\n" + body + "\n"
 	content := changelog.Prepend("# Changelog\n\n## v1.1.0 (2026-10-01)\n\n### Bug Fixes\n\n- fix the parser\n", section)
 
