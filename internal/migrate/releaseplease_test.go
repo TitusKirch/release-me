@@ -431,7 +431,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 		"package a: draft: no release-me equivalent, left out",
 		"package a: release-type python: the files it bumps are not carried over, add them under files",
 		"package a: extra-files: a/src/version.py does not exist, left out of files",
-		`package a: extra-files: pom.xml: type "xml" at "" has no typed updater, add it under files`,
+		`package a: extra-files: pom.xml: type "xml" at "//version" has no typed updater, add it under files`,
 		".release-please-manifest.json: c: no package configured at this path, left out",
 		"plugins: node-workspace: no release-me equivalent, left out",
 		"plugins: linked-versions: release-me links every component or none, left out",
