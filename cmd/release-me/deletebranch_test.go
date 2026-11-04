@@ -315,3 +315,61 @@ func TestSharedReleaseSweepDeletesALeftoverBranchOnlyOnceItsPullRequestIsTagged(
 		})
 	}
 }
+
+// TestReleaseResumesADraftAfterItsReleaseBranchWasDeleted covers
+// "draft-until-assets-attach" with "delete-release-branch": the first run
+// drafts the release and deletes the branch, the publish step after it
+// fails, and the rerun must still find the tagged pull request to resume.
+// GitHub's head filter still lists a merged pull request whose branch is
+// deleted, confirmed live against this repository, so the fake keeps
+// listing it while the branch is gone from the remote.
+func TestReleaseResumesADraftAfterItsReleaseBranchWasDeleted(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		title   string
+		wantTag string
+	}{
+		{
+			name: "independent", title: "chore(main): release v1.3.0",
+			wantTag: "released-tag: v1.3.0",
+		},
+		{
+			name:   "locked",
+			config: "versioning: locked\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n",
+			title:  "chore: release v1.3.0 (api, web)", wantTag: "released-tag: web/v1.3.0",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			const branch = "release-me/main"
+			dir, cfg, head := mergedReleaseRepo(t, tc.config, branch)
+			cfg.DraftUntilAssetsAttach = true
+			f := mergedReleaseFake(branch, tc.title, head)
+
+			var stdout bytes.Buffer
+			if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+				t.Fatalf("doRelease() first run error = %v", err)
+			}
+			want := []forgetest.DeleteBranchCall{{Owner: "owner", Repo: "repo", Branch: branch}}
+			if !reflect.DeepEqual(f.DeletedBranches, want) {
+				t.Fatalf("DeletedBranches = %+v, want %+v", f.DeletedBranches, want)
+			}
+			tags, releases := len(f.CreatedTags), len(f.CreatedReleases)
+
+			runGit(t, dir, "push", "-q", "origin", "--delete", branch)
+			f.ListResponses[0].PullRequests[0].Labels = []string{"release: tagged"}
+			stdout.Reset()
+
+			if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+				t.Fatalf("doRelease() rerun error = %v", err)
+			}
+			if len(f.CreatedTags) != tags || len(f.CreatedReleases) != releases {
+				t.Fatalf("rerun recreated a tag or a release: tags=%+v releases=%+v", f.CreatedTags, f.CreatedReleases)
+			}
+			if !strings.Contains(stdout.String(), tc.wantTag) {
+				t.Fatalf("stdout = %q, want the rerun to resume the still-draft release", stdout.String())
+			}
+		})
+	}
+}
