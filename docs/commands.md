@@ -232,9 +232,9 @@ counted every commit. It also carries over:
   each where it exists. A file release-please bumps only where it holds a version is left out
   silently otherwise; a missing main version file is warned about:
   - `node`: `package.json`, and `package-lock.json` and `npm-shrinkwrap.json` through
-    `npm-lock`; `expo`: `package.json` plus `app.json`'s `expo.version` and
-    `expo.ios.buildNumber`, with a warning for `expo.android.versionCode`, which release-please
-    computes from the Expo SDK version;
+    `npm-lock`; `expo`: the same plus `app.json`'s `expo.version` and `expo.ios.buildNumber`,
+    with a warning for `expo.android.versionCode`, which release-please computes from the Expo
+    SDK version;
   - `rust`: `Cargo.toml`, and the crate's entry in `Cargo.lock` through `cargo-lock`;
   - `simple`: its `version-file`, default `version.txt`, through `plain`;
   - `maven`: `pom.xml`, its project version or else its parent's, with a warning for a
@@ -242,7 +242,8 @@ counted every commit. It also carries over:
   - `python`: `setup.cfg`, `setup.py`, `pyproject.toml`, and the `__init__.py` and
     `version.py` of the project `pyproject.toml` names, at the package root or under `src/`;
   - `ruby`: its `version-file`, default `lib/<name>/version.rb`, a `-` in the name nesting a
-    directory; `elixir`: `mix.exs`; `r`: `DESCRIPTION`, the changelog defaulting to `NEWS.md`;
+    directory, and the gem's entry in `Gemfile.lock` through `gemfile-lock`; `elixir`:
+    `mix.exs`; `r`: `DESCRIPTION`, the changelog defaulting to `NEWS.md`;
   - `ocaml`: the `.opam` and `.opam.locked` file named after the package, `dune-project` and
     `esy.json`, with a warning that any other `.opam` file is not searched for;
   - `bazel`: its `version-file`, default `MODULE.bazel`; `php`: `composer.json`, with a

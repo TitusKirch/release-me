@@ -225,16 +225,15 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 			},
 		},
 		{
-			name:     "ruby bumps the gem's Gemfile.lock entry",
+			name:     "ruby bumps the gem's version.rb and its Gemfile.lock entry",
 			settings: `"release-type": "ruby", "component": "release-notes"`,
 			repo: map[string]string{
-				"web/Gemfile.lock": gemfileLockFile,
+				"web/lib/release/notes/version.rb": "module ReleaseNotes\n  VERSION = \"1.4.0\"\nend\n",
+				"web/Gemfile.lock":                 gemfileLockFile,
 			},
 			wantFiles: []config.File{
+				{Path: "web/lib/release/notes/version.rb", Updater: "ruby"},
 				{Path: "web/Gemfile.lock", Updater: "gemfile-lock", Key: "release-notes"},
-			},
-			wantWarnings: []string{
-				"package web: release-type ruby: its version.rb is not carried over, add it under files",
 			},
 		},
 		{
@@ -350,6 +349,20 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 			settings:  `"release-type": "dart"`,
 			repo:      map[string]string{"web/pubspec.yaml": "name: notes\nversion: 1.4.0+3\n"},
 			wantFiles: []config.File{{Path: "web/pubspec.yaml", Updater: "dart"}},
+		},
+		{
+			name:     "expo bumps package.json, its npm lockfiles and app.json",
+			settings: `"release-type": "expo"`,
+			repo: map[string]string{
+				"web/package.json":      packageJSON,
+				"web/package-lock.json": packageLockJSON,
+				"web/app.json":          "{\n  \"expo\": {\n    \"version\": \"2.0.0\"\n  }\n}\n",
+			},
+			wantFiles: []config.File{
+				{Path: "web/package.json", Updater: "json", Key: "version"},
+				{Path: "web/package-lock.json", Updater: "npm-lock"},
+				{Path: "web/app.json", Updater: "json", Key: "expo.version"},
+			},
 		},
 		{
 			name:     "expo bumps package.json and app.json, and warns about versionCode",

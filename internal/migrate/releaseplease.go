@@ -434,6 +434,10 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 			warn("package %s: release-type ruby: no component or package-name to find its version.rb by, "+
 				"add it under files", p.path)
 		}
+		// release-please bumps the gem's own Gemfile.lock entry beside it.
+		if componentName != "" {
+			versionFile("Gemfile.lock", updater.GemfileLock, componentName, true)
+		}
 	case "python":
 		// release-please bumps each of these only where it exists and
 		// holds a version, finding the package's __init__.py and
@@ -503,9 +507,8 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		versionFile("pubspec.yaml", updater.Dart, "", false)
 	case "expo":
 		versionFile("package.json", updater.JSON, "version", false)
-		if _, err := readFile(stdpath.Join(p.path, "package-lock.json")); err == nil {
-			warn("package %s: package-lock.json: release-please bumped it, release-me does not", p.path)
-		}
+		versionFile("package-lock.json", updater.NpmLock, "", true)
+		versionFile("npm-shrinkwrap.json", updater.NpmLock, "", true)
 		versionFile("app.json", updater.JSON, "expo.version", false)
 		versionFile("app.json", updater.JSON, "expo.ios.buildNumber", true)
 		if data, err := readFile(stdpath.Join(p.path, "app.json")); err == nil && strings.Contains(string(data), `"versionCode"`) {
