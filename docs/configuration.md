@@ -206,8 +206,9 @@ The mention prefix a comment on the release pull request names to issue a `relea
 ## `components`
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
-`hidden-types`, `files`, `major-tag`, `changelog-source`, `skip-changelog` and `changelog`. A key left
-out of a component falls back to the top-level setting above. A repository without `components`
+`hidden-types`, `files`, `major-tag`, `changelog-source`, `skip-changelog` and `changelog`.
+A key left out of a component falls back to the top-level setting above.
+A repository without `components`
 is one component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the default
 shape a repository with no configuration at all already has. A configured component gets tag
 prefix `<name>/v`, branch `release-me/<name>`, or `release-me/main` when the release pull
