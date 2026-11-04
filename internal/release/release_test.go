@@ -390,14 +390,14 @@ func TestEveryResultCarriesTheHeadCommitOfThePullRequestItTagged(t *testing.T) {
 		{
 			name: "locked family", title: "chore: release v1.4.0 (api, web)", labels: []string{"release: pending"},
 			run: func(f *forgetest.Fake, dryRun bool) ([]release.Result, error) {
-				return release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, dryRun, discardLogger())
+				return release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, false, dryRun, discardLogger())
 			},
 			want: []string{head, head},
 		},
 		{
 			name: "shared release pull request", title: "chore: release api v1.4.0, web v0.3.1", labels: []string{"release: pending"},
 			run: func(f *forgetest.Fake, dryRun bool) ([]release.Result, error) {
-				return release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, dryRun, discardLogger())
+				return release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, false, dryRun, discardLogger())
 			},
 			want: []string{head, head},
 		},

@@ -157,7 +157,7 @@ func TestReadPatternsReadsThePatternTheBodyRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTitlePattern() error = %v", err)
 	}
-	body := releasepr.Body("1.3.0", "api/v1.3.0", releasepr.GuideLabels{Tagged: "release: tagged"}, "", "", "## v1.3.0 (2026-03-14)\n") +
+	body := releasepr.Body("1.3.0", "api/v1.3.0", releasepr.Guide{Show: true, Labels: releasepr.GuideLabels{Tagged: "release: tagged"}}, "", "", "## v1.3.0 (2026-03-14)\n") +
 		releasepr.TitlePatternMarker(previous, releasepr.TitlePerComponent)
 	if got := releasepr.ExtractChangelog(body); got != "## v1.3.0 (2026-03-14)" {
 		t.Fatalf("ExtractChangelog() = %q, want the marker kept out of the changelog", got)

@@ -55,9 +55,9 @@ var titleFamilies = []struct {
 func TestTitlePatternRoundTripsThroughPRAndRelease(t *testing.T) {
 	for _, family := range titleFamilies {
 		t.Run(family.name, func(t *testing.T) {
-			dir, _, cfg := family.repo(t)
+			dir, origin, cfg := family.repo(t)
 			setTitlePattern(&cfg, family.pattern, family.sharedTitle)
-			f := newFake()
+			f := newPRFake(origin)
 			var stdout bytes.Buffer
 			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 				t.Fatalf("doPR() error = %v", err)
@@ -78,8 +78,8 @@ func TestTitlePatternRoundTripsThroughPRAndRelease(t *testing.T) {
 func TestTitlePatternStillReleasesAPullRequestOpenedBeforeIt(t *testing.T) {
 	for _, family := range titleFamilies {
 		t.Run(family.name, func(t *testing.T) {
-			dir, _, cfg := family.repo(t)
-			f := newFake()
+			dir, origin, cfg := family.repo(t)
+			f := newPRFake(origin)
 			var stdout bytes.Buffer
 			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 				t.Fatalf("doPR() error = %v", err)
@@ -103,7 +103,7 @@ func TestRerunRetitlesAnOpenPullRequestWhenThePatternChanges(t *testing.T) {
 	for _, family := range titleFamilies {
 		t.Run(family.name, func(t *testing.T) {
 			dir, origin, cfg := family.repo(t)
-			f := newFake()
+			f := newPRFake(origin)
 			var first bytes.Buffer
 			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &first); err != nil {
 				t.Fatalf("doPR() first run error = %v", err)
@@ -138,9 +138,9 @@ func TestRerunRetitlesAnOpenPullRequestWhenThePatternChanges(t *testing.T) {
 func TestTitlePatternStillReleasesAPullRequestTitledWithAPreviousPattern(t *testing.T) {
 	for _, family := range titleFamilies {
 		t.Run(family.name, func(t *testing.T) {
-			dir, _, cfg := family.repo(t)
+			dir, origin, cfg := family.repo(t)
 			setTitlePattern(&cfg, family.pattern, family.sharedTitle)
-			f := newFake()
+			f := newPRFake(origin)
 			var stdout bytes.Buffer
 			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 				t.Fatalf("doPR() error = %v", err)
@@ -157,12 +157,12 @@ func TestTitlePatternStillReleasesAPullRequestTitledWithAPreviousPattern(t *test
 }
 
 func TestDoPRRefusesATitleThatDoesNotReadBack(t *testing.T) {
-	dir, _, cfg := newSingleComponentRepo(t)
+	dir, origin, cfg := newSingleComponentRepo(t)
 	// The branch "release-2026" right after the version reads back as
 	// version 0.1.0-release, branch 2026, so release would tag a version
 	// pr never computed.
 	cfg.ReleasePullRequestTitle = "chore(${component}): release v${version}-${branch}"
-	f := newFake()
+	f := newPRFake(origin)
 	f.DefaultBranchName = "release-2026"
 	var stdout bytes.Buffer
 	err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout)
@@ -175,9 +175,9 @@ func TestDoPRRefusesATitleThatDoesNotReadBack(t *testing.T) {
 }
 
 func TestDoPRRefusesATitlePastTheForgeLimit(t *testing.T) {
-	dir, _, cfg := newSingleComponentRepo(t)
+	dir, origin, cfg := newSingleComponentRepo(t)
 	cfg.ReleasePullRequestTitle = "chore(${component}): release v${version} " + strings.Repeat("x", 250)
-	f := newFake()
+	f := newPRFake(origin)
 	var stdout bytes.Buffer
 	err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout)
 	if err == nil || !strings.Contains(err.Error(), "past the forge's limit") {
@@ -211,10 +211,10 @@ func TestRecordedOverlappingTitlesReleaseTheirOriginalVersions(t *testing.T) {
 	for _, tc := range cases {
 		for _, layout := range []config.ReleasePullRequestLayout{config.LayoutHeadings, config.LayoutDetails, config.LayoutCompact} {
 			t.Run(tc.family.name+"/"+string(layout), func(t *testing.T) {
-				dir, _, cfg := tc.family.repo(t)
+				dir, origin, cfg := tc.family.repo(t)
 				cfg.ReleasePullRequestLayout = layout
 				setTitlePattern(&cfg, tc.old, tc.shared)
-				f := newFake()
+				f := newPRFake(origin)
 				var out bytes.Buffer
 				if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
 					t.Fatal(err)
