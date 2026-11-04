@@ -94,6 +94,9 @@ collapsed "How this release works" guide release-please never rendered: `migrate
 `release-pull-request-guide` out, add `release-pull-request-guide: false` only when the human
 wants the body without it.
 
+Its `pull-request-header` and `pull-request-footer` carry over as
+`release-pull-request-header` and `release-pull-request-footer`.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.
