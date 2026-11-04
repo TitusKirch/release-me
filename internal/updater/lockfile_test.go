@@ -4,6 +4,7 @@
 package updater_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/updater"
@@ -133,7 +134,8 @@ name = "release-cli"
 version = "0.4.2"
 dependencies = [
  "anyhow",
- "release-core",
+ "release-core 0.4.2",
+ "release-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -167,7 +169,8 @@ name = "release-cli"
 version = "0.4.2"
 dependencies = [
  "anyhow",
- "release-core",
+ "release-core 0.5.0",
+ "release-core 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -247,5 +250,23 @@ func TestUpdateGemfileLockRejectsAGemWithNoSpecsEntry(t *testing.T) {
 	t.Parallel()
 	if _, err := updater.UpdateGemfileLock(gemfileLock, "rails", "8.0.0"); err == nil {
 		t.Fatal("UpdateGemfileLock() error = nil, want an error")
+	}
+}
+
+func TestCargoLockKeepsQualifiedDependencyIDsConsistent(t *testing.T) {
+	t.Parallel()
+	for _, version := range []string{"0.5.0", "1.0.0-rc.1"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			got, err := updater.UpdateCargoLock(cargoLock, "release-core", version)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := strings.Replace(cargoLock, `"release-core 0.4.2"`, `"release-core `+version+`"`, 1)
+			want = strings.Replace(want, "name = \"release-core\"\nversion = \"0.4.2\"", "name = \"release-core\"\nversion = \""+version+"\"", 1)
+			if got != want {
+				t.Fatalf("lockfile =\n%s\nwant\n%s", got, want)
+			}
+		})
 	}
 }
