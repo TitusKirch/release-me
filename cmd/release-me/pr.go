@@ -258,7 +258,7 @@ func doPRComponent(
 		Beta:   cfg.Labels.Beta,
 		Rc:     cfg.Labels.Rc,
 	}
-	body := releasepr.Body(versionStr, tag, guideLabels, notes, versionOverride, section)
+	body := cfg.Frame().Wrap(releasepr.Body(versionStr, tag, guideLabels, notes, versionOverride, section))
 
 	switch {
 	case existing != nil && !plan.changed && body == existing.Body:
@@ -458,7 +458,7 @@ func doPRLocked(
 		Beta:   cfg.Labels.Beta,
 		Rc:     cfg.Labels.Rc,
 	}
-	body := releasepr.Body(versionStr, strings.Join(tags, ", "), guideLabels, notes, versionOverride, section)
+	body := cfg.Frame().Wrap(releasepr.Body(versionStr, strings.Join(tags, ", "), guideLabels, notes, versionOverride, section))
 
 	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, "locked family", names, existing, plan, date, title, body, dryRun, stdout)
 }
