@@ -14,6 +14,7 @@ import (
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/migrate"
+	"github.com/ostendorf-cloud/release-me/internal/version"
 )
 
 // files is a ReadFile over a fixed set of repository files.
@@ -249,6 +250,93 @@ func TestFromReleasePleaseCarriesOverBumpPatchForMinorPreMajor(t *testing.T) {
 	}
 }
 
+func TestFromReleasePleaseCarriesOverTheAlwaysBumpStrategies(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		configJSON string
+		wantTop    version.Strategy
+		wantComps  []version.Strategy
+	}{
+		{
+			name: "a top-level strategy every package inherits is written once at the top level",
+			configJSON: `{"versioning": "always-bump-minor", "release-type": "go",
+			  "packages": {"web": {"component": "web"}, "api": {"component": "api"}}}`,
+			wantTop:   version.StrategyAlwaysBumpMinor,
+			wantComps: []version.Strategy{version.StrategyAlwaysBumpMinor, version.StrategyAlwaysBumpMinor},
+		},
+		{
+			name: "a package's own strategy stays on its component",
+			configJSON: `{"release-type": "go", "packages": {
+			  "web": {"component": "web", "versioning": "always-bump-patch"}, "api": {"component": "api"}}}`,
+			wantComps: []version.Strategy{version.StrategyAlwaysBumpPatch, ""},
+		},
+		{
+			name: "two packages with different strategies keep their own",
+			configJSON: `{"release-type": "go", "packages": {
+			  "web": {"component": "web", "versioning": "always-bump-patch"},
+			  "api": {"component": "api", "versioning": "always-bump-major"}}}`,
+			wantComps: []version.Strategy{version.StrategyAlwaysBumpPatch, version.StrategyAlwaysBumpMajor},
+		},
+		{
+			name:       "the default strategy writes nothing",
+			configJSON: `{"versioning": "default", "packages": {".": {"release-type": "go"}}}`,
+			wantComps:  []version.Strategy{""},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := migrate.FromReleasePlease([]byte(tc.configJSON), nil, files(nil))
+			if err != nil {
+				t.Fatalf("FromReleasePlease() error = %v", err)
+			}
+			cfg := load(t, got.YAML)
+			if cfg.VersioningStrategy != tc.wantTop {
+				t.Fatalf("VersioningStrategy = %q, want %q\n%s", cfg.VersioningStrategy, tc.wantTop, got.YAML)
+			}
+			var comps []version.Strategy
+			for _, c := range cfg.Resolve() {
+				comps = append(comps, c.VersioningStrategy)
+			}
+			if !reflect.DeepEqual(comps, tc.wantComps) {
+				t.Fatalf("components = %q, want %q\n%s", comps, tc.wantComps, got.YAML)
+			}
+			if len(got.Warnings) != 0 {
+				t.Fatalf("Warnings = %q, want none, the strategy carries over", got.Warnings)
+			}
+		})
+	}
+}
+
+func TestFromReleasePleaseWarnsAboutAJavaVersioningStrategy(t *testing.T) {
+	t.Parallel()
+	configJSON := `{"release-type": "simple", "packages": {
+	  "core": {"component": "core", "versioning": "service-pack"},
+	  "bom": {"component": "bom", "versioning": "dependency-manifest"}}}`
+
+	got, err := migrate.FromReleasePlease([]byte(configJSON), nil, files(nil))
+	if err != nil {
+		t.Fatalf("FromReleasePlease() error = %v", err)
+	}
+
+	for _, c := range load(t, got.YAML).Resolve() {
+		if c.VersioningStrategy != "" {
+			t.Fatalf("%s VersioningStrategy = %q, want the default", c.Name, c.VersioningStrategy)
+		}
+	}
+	for _, want := range []string{
+		"package core: versioning service-pack: release-me has no Maven service pack versions, " +
+			"X.Y.Z-sp.N would read as a pre-release, left out",
+		"package bom: versioning dependency-manifest: release-me bumps by the changes alone, " +
+			"not by a Java dependency manifest, left out",
+	} {
+		if !slices.Contains(got.Warnings, want) {
+			t.Errorf("Warnings = %q, want it to contain %q", got.Warnings, want)
+		}
+	}
+}
+
 func TestFromReleasePleaseCarriesOverThePreReleaseTypeAsALabel(t *testing.T) {
 	t.Parallel()
 	configJSON := `{"prerelease": true, "release-type": "go", "separate-pull-requests": true, "packages": {
@@ -294,7 +382,7 @@ func TestFromReleasePleaseWarnsAboutAPreReleaseItCannotCarryOver(t *testing.T) {
 	for _, w := range []string{
 		"package web: prerelease: release-me cuts a pre-release only while the release pull request " +
 			"carries a pre-release type label, left out",
-		"package api: versioning: no release-me equivalent, left out",
+		"package api: versioning prerelease: no release-me equivalent, left out",
 		"package cli: prerelease-type pre.view: not a pre-release type release-me can carry, left out",
 	} {
 		if !slices.Contains(got.Warnings, w) {
@@ -376,7 +464,6 @@ func TestFromReleasePleaseCarriesOverReleaseAs(t *testing.T) {
 		})
 	}
 }
-
 func TestFromReleasePleaseKeepsARootPackageWithPlainTagsImplicit(t *testing.T) {
 	t.Parallel()
 	configJSON := `{"packages": {".": {"release-type": "node", "include-component-in-tag": false}}}`
@@ -917,7 +1004,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 
 	for _, want := range []string{
 		"sequential-calls: no release-me equivalent, left out",
-		"package a: versioning: no release-me equivalent, left out",
+		"package a: versioning prerelease: no release-me equivalent, left out",
 		"package a: release-type java: the files it bumps are not carried over, add them under files",
 		"package a: extra-files: a/src/version.py does not exist, left out of files",
 		`package a: extra-files: pom.xml: type "xml" at "//version" has no typed updater, add it under files`,

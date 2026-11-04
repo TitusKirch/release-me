@@ -69,7 +69,7 @@ var packageKeys = append([]string{
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
 	"initial-version", "extra-files", "skip-changelog", "version-file", "exclude-paths",
 	"changelog-type", "release-as", "include-commit-authors", "changelog-host", "prerelease-type",
-	"prerelease", "changelog-sections",
+	"prerelease", "changelog-sections", "versioning",
 }, releaseFlagKeys()...)
 
 // releaseFlag is a boolean release-please package setting release-me reads
@@ -418,6 +418,9 @@ type component struct {
 	// releaseAs is release-please's release-as, release-me's too, ""
 	// when it is left out or cannot carry over.
 	releaseAs string
+	// strategy is release-me's versioning-strategy, "" for release-please's
+	// default.
+	strategy string
 	// changelogSections is release-please's changelog-sections, nil when
 	// the package leaves the default sections.
 	changelogSections *[]config.ChangelogSection
@@ -437,7 +440,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	var (
 		releaseType, packageName, componentName, separator, changelogPath string
 		initialVersion, changelogType, changelogHost, preReleaseType      string
-		versionFileName, releaseAs                                        string
+		versionFileName, releaseAs, versioning                            string
 		preRelease, skipChangelog                                         bool
 		includeComponent, includeV                                        = true, true
 		bumpMinor, bumpPatchForMinor, includeAuthors                      bool
@@ -454,6 +457,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"changelog-host":  &changelogHost,
 		"prerelease-type": &preReleaseType, "prerelease": &preRelease,
 		"skip-changelog": &skipChangelog, "release-as": &releaseAs,
+		"versioning": &versioning,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -467,6 +471,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		releaseType = "node"
 	}
 	preReleaseType = translatePreReleaseType(p.path, preReleaseType, preRelease, warn)
+	strategy := translateVersioning(p.path, versioning, warn)
 
 	// release-please names a package after its component, else its package
 	// name, a node package's scope stripped, else the name package.json
@@ -523,6 +528,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		bumpPatchForMinorPreMajor: bumpPatchForMinor,
 		preReleaseType:            preReleaseType,
 		releaseAs:                 translateReleaseAs(p.path, releaseAs, warn),
+		strategy:                  strategy,
 		initialVersion:            initialVersion,
 		changelogType:             changelogType,
 		includeCommitAuthors:      includeAuthors,
@@ -909,6 +915,28 @@ func dropShippedReleaseAs(packages []rpPackage, components []component, versions
 			components[i].releaseAs = ""
 		}
 	}
+}
+
+// translateVersioning maps release-please's "versioning" strategy to
+// release-me's versioning-strategy, "" for the default one. The
+// always-bump strategies carry over by name; the others have no
+// release-me equivalent and are warned about.
+func translateVersioning(pkgPath, versioning string, warn func(string, ...any)) string {
+	switch versioning {
+	case "", "default":
+		return ""
+	case "always-bump-patch", "always-bump-minor", "always-bump-major":
+		return versioning
+	case "service-pack":
+		warn("package %s: versioning service-pack: release-me has no Maven service pack versions, "+
+			"X.Y.Z-sp.N would read as a pre-release, left out", pkgPath)
+	case "dependency-manifest":
+		warn("package %s: versioning dependency-manifest: release-me bumps by the changes alone, "+
+			"not by a Java dependency manifest, left out", pkgPath)
+	default:
+		warn("package %s: versioning %s: no release-me equivalent, left out", pkgPath, versioning)
+	}
+	return ""
 }
 
 // translateExtraFiles carries over the extra-files entries an updater can
@@ -1444,8 +1472,8 @@ func render(components []component, top topLevel) ([]byte, error) {
 	// bump-minor-pre-major and bump-patch-for-minor-pre-major carried by
 	// every component are written once, at the top level, instead of
 	// repeated per component. So are a changelog-type, skip-changelog, a
-	// release-as value and a changelog-sections list every component
-	// carries alike.
+	// release-as value, a versioning-strategy and a changelog-sections
+	// list every component carries alike.
 	shared := sharedRules{
 		bumpMinorPreMajor: slices.IndexFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }) == -1,
 		bumpPatchForMinorPreMajor: slices.IndexFunc(components, func(c component) bool {
@@ -1463,6 +1491,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	if !slices.ContainsFunc(components, func(c component) bool { return c.releaseAs != components[0].releaseAs }) {
 		shared.releaseAs = components[0].releaseAs
 	}
+	if !slices.ContainsFunc(components, func(c component) bool { return c.strategy != components[0].strategy }) {
+		shared.strategy = components[0].strategy
+	}
 	if shared.bumpMinorPreMajor {
 		add(doc, "bump-minor-pre-major", boolean(true))
 	}
@@ -1477,6 +1508,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if shared.releaseAs != "" {
 		add(doc, "release-as", scalar(shared.releaseAs))
+	}
+	if shared.strategy != "" {
+		add(doc, "versioning-strategy", scalar(shared.strategy))
 	}
 	if shared.changelogSections {
 		add(doc, "changelog-sections", sectionsNode(*components[0].changelogSections, add))
@@ -1534,14 +1568,16 @@ func render(components []component, top topLevel) ([]byte, error) {
 // sharedRules names the per-component settings every component carries
 // alike, which render writes once at the top level instead of repeating
 // per component: the pre-major rules, changelog-type, skip-changelog,
-// release-as and changelog-sections.
+// release-as, the versioning strategy and changelog-sections.
 type sharedRules struct {
 	bumpMinorPreMajor         bool
 	bumpPatchForMinorPreMajor bool
 	changelogType             bool
 	skipChangelog             bool
 	// releaseAs is "" when the components differ or none carries one.
-	releaseAs         string
+	releaseAs string
+	// strategy is "" when the components differ or all carry the default.
+	strategy          string
 	changelogSections bool
 }
 
@@ -1565,9 +1601,10 @@ func sectionsNode(sections []config.ChangelogSection, add func(*yaml.Node, strin
 // addSettings writes the settings release-me reads per component or at the
 // top level alike: initial-version, bump-minor-pre-major,
 // bump-patch-for-minor-pre-major, changelog-type, skip-changelog,
-// release-as, changelog-sections, the release flags and files. A setting
-// shared names is left out, the top level already carries it; a release
-// flag is also left out where it is release-me's default.
+// release-as, versioning-strategy, changelog-sections, the release flags
+// and files. A setting shared names is left out, the top level already
+// carries it; a release flag is also left out where it is release-me's
+// default.
 func addSettings(
 	m *yaml.Node, c component, shared sharedRules, topFlags map[string]bool, add func(*yaml.Node, string, *yaml.Node),
 ) {
@@ -1588,6 +1625,9 @@ func addSettings(
 	}
 	if c.releaseAs != "" && shared.releaseAs == "" {
 		add(m, "release-as", scalar(c.releaseAs))
+	}
+	if c.strategy != "" && shared.strategy == "" {
+		add(m, "versioning-strategy", scalar(c.strategy))
 	}
 	if c.changelogSections != nil && !shared.changelogSections {
 		add(m, "changelog-sections", sectionsNode(*c.changelogSections, add))
