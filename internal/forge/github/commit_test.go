@@ -270,3 +270,58 @@ func TestCommitBranch(t *testing.T) {
 		})
 	}
 }
+
+func TestCommitSignature(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		status     int
+		body       string
+		want       forge.Signature
+		wantErrHas string
+	}{
+		{
+			name:   "reports a commit GitHub signed for an app installation token as verified",
+			status: http.StatusOK,
+			body:   `{"sha": %q, "commit": {"verification": {"verified": true, "reason": "valid"}}}`,
+			want:   forge.Signature{Verified: true, Reason: "valid"},
+		},
+		{
+			name:   "reports a commit a personal access token created as unsigned",
+			status: http.StatusOK,
+			body:   `{"sha": %q, "commit": {"verification": {"verified": false, "reason": "unsigned", "signature": null, "payload": null}}}`,
+			want:   forge.Signature{Verified: false, Reason: "unsigned"},
+		},
+		{
+			name:       "names the commit when its signature cannot be read",
+			status:     http.StatusNotFound,
+			body:       `{"message": "No commit found for SHA: %s"}`,
+			wantErrHas: "read signature of commit " + newCommit,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /api/v3/repos/owner/repo/commits/"+newCommit, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				fmt.Fprintf(w, tc.body, newCommit)
+			})
+			f := newTestForge(t, mux)
+
+			got, err := f.CommitSignature(context.Background(), "owner", "repo", newCommit)
+			if tc.wantErrHas != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErrHas) {
+					t.Fatalf("CommitSignature() error = %v, want it to contain %q", err, tc.wantErrHas)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CommitSignature() error = %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("CommitSignature() = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}

@@ -187,6 +187,21 @@ type Fake struct {
 	// recording the call, writing nothing.
 	CommitBranchErr error
 
+	// CommitSignatureCalls records the SHA of every call to
+	// CommitSignature.
+	CommitSignatureCalls []string
+
+	// Unsigned makes CommitSignature report every commit unsigned, the
+	// outcome GitHub gives a commit a personal access token creates. Left
+	// false, every commit is reported verified, the outcome of a GitHub
+	// App installation token, the only one FakeAuthor and FakeCommitter
+	// model.
+	Unsigned bool
+
+	// CommitSignatureErr, when set, is returned by CommitSignature after
+	// recording the call.
+	CommitSignatureErr error
+
 	// CreateCommentErr, when set, is returned by CreateComment instead of
 	// recording a call.
 	CreateCommentErr error
@@ -375,6 +390,19 @@ func (f *Fake) CommitBranch(ctx context.Context, owner, repo string, c forge.Bra
 		return fmt.Sprintf("%040x", len(f.CommitBranchCalls)), nil
 	}
 	return commitInto(ctx, f.GitDir, c)
+}
+
+// CommitSignature implements forge.Forge: verified, reason "valid",
+// unless Unsigned is set, then unverified with reason "unsigned".
+func (f *Fake) CommitSignature(_ context.Context, _, _, sha string) (forge.Signature, error) {
+	f.CommitSignatureCalls = append(f.CommitSignatureCalls, sha)
+	if f.CommitSignatureErr != nil {
+		return forge.Signature{}, f.CommitSignatureErr
+	}
+	if f.Unsigned {
+		return forge.Signature{Verified: false, Reason: "unsigned"}, nil
+	}
+	return forge.Signature{Verified: true, Reason: "valid"}, nil
 }
 
 // CompareURL implements forge.Forge, in the shape GitHub's compare view
