@@ -228,14 +228,28 @@ counted every commit. It also carries over:
   value, a pre-release for one;
 - `exclude-paths`, per package or as a top-level default, keeping each path that lies inside
   the package it is set on and warning about every other one, which excludes nothing there;
-- the version file of a `node` (`package.json`), `rust` (`Cargo.toml`), `simple` (its
-  `version-file`, default `version.txt`, through `plain`), `maven` (`pom.xml`, its project
-  version or else its parent's) or `helm` (`Chart.yaml`) package where that file exists, `node`
-  being release-please's default type. A multi-module `pom.xml` is warned about, since
-  release-please bumped every `pom.xml` below the package;
-- the lockfile release-please bumps beside it where it exists and holds the package:
-  `package-lock.json` and `npm-shrinkwrap.json` for `node`, `Cargo.lock` for `rust`, and
-  `Gemfile.lock` for `ruby`, keyed by the crate or gem name;
+- the version files of the package's `release-type`, `node` being release-please's default,
+  each where it exists. A file release-please bumps only where it holds a version is left out
+  silently otherwise; a missing main version file is warned about:
+  - `node`: `package.json`, and `package-lock.json` and `npm-shrinkwrap.json` through
+    `npm-lock`; `expo`: `package.json` plus `app.json`'s `expo.version` and
+    `expo.ios.buildNumber`, with a warning for `expo.android.versionCode`, which release-please
+    computes from the Expo SDK version;
+  - `rust`: `Cargo.toml`, and the crate's entry in `Cargo.lock` through `cargo-lock`;
+  - `simple`: its `version-file`, default `version.txt`, through `plain`;
+  - `maven`: `pom.xml`, its project version or else its parent's, with a warning for a
+    multi-module `pom.xml`, since release-please bumped every `pom.xml` below the package;
+  - `python`: `setup.cfg`, `setup.py`, `pyproject.toml`, and the `__init__.py` and
+    `version.py` of the project `pyproject.toml` names, at the package root or under `src/`;
+  - `ruby`: its `version-file`, default `lib/<name>/version.rb`, a `-` in the name nesting a
+    directory; `elixir`: `mix.exs`; `r`: `DESCRIPTION`, the changelog defaulting to `NEWS.md`;
+  - `ocaml`: the `.opam` and `.opam.locked` file named after the package, `dune-project` and
+    `esy.json`, with a warning that any other `.opam` file is not searched for;
+  - `bazel`: its `version-file`, default `MODULE.bazel`; `php`: `composer.json`, with a
+    warning for a `VERSION` file;
+  - `dart`: `pubspec.yaml`; `sfdx`: `sfdx-project.json`; `helm`: `Chart.yaml`;
+  - `terraform-module` and `krm-blueprint` searched the package for their files, which a
+    warning asks to mark with `release-me: version` and list instead;
 - every `extra-files` entry of type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath, of
   type `xml` with a plain absolute xpath such as `/project/version`, and of type `pom`;
 - `label` and `release-label` as the `pending` and `tagged` labels;

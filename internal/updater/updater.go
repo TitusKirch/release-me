@@ -27,6 +27,15 @@ const (
 	NpmLock     = "npm-lock"
 	CargoLock   = "cargo-lock"
 	GemfileLock = "gemfile-lock"
+
+	Python = "python"
+	Ruby   = "ruby"
+	Elixir = "elixir"
+	OCaml  = "ocaml"
+	R      = "r"
+	Bazel  = "bazel"
+	Dart   = "dart"
+	Sfdx   = "sfdx"
 )
 
 // Func is the shape every registered updater implements: given a file's
@@ -58,6 +67,15 @@ var Updaters = map[string]Entry{
 	NpmLock:     {Update: ignoreKey(UpdateNpmLock)},
 	CargoLock:   {Update: UpdateCargoLock, NeedsKey: true},
 	GemfileLock: {Update: UpdateGemfileLock, NeedsKey: true},
+
+	Python: {Update: ignoreKey(UpdatePython)},
+	Ruby:   {Update: ignoreKey(UpdateRuby)},
+	Elixir: {Update: ignoreKey(UpdateElixir)},
+	OCaml:  {Update: ignoreKey(UpdateOCaml)},
+	R:      {Update: ignoreKey(UpdateR)},
+	Bazel:  {Update: ignoreKey(UpdateBazel)},
+	Dart:   {Update: ignoreKey(UpdateDart)},
+	Sfdx:   {Update: ignoreKey(UpdateSfdx)},
 }
 
 // ignoreKey adapts an updater that takes no key to the Func shape every

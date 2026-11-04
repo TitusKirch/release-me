@@ -91,7 +91,11 @@ Everything else is derived:
   with `xml` and key `project.version`, a `.csproj` with `xml` and key
   `Project.PropertyGroup.Version`. A lockfile next to it is listed too: `package-lock.json` or
   `npm-shrinkwrap.json` with `npm-lock`, `Cargo.lock` with `cargo-lock` and the crate name as
-  key, `Gemfile.lock` with `gemfile-lock` and the gem name as key.
+  key, `Gemfile.lock` with `gemfile-lock` and the gem name as key. A language version file takes the updater named after it, no key: `python` for
+  `setup.py`, `setup.cfg` or an `__init__.py` holding `__version__`, `ruby` for a
+  `version.rb`, `elixir` for `mix.exs`, `ocaml` for an `.opam` file or `dune-project`, `r` for
+  `DESCRIPTION`, `bazel` for `MODULE.bazel`, `dart` for `pubspec.yaml`, `sfdx` for
+  `sfdx-project.json`.
 
 Done when every key the plan writes is either answered by the human or derived above.
 
