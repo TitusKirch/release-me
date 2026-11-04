@@ -188,6 +188,15 @@ type File struct {
 	Key     string
 }
 
+// ChangelogSection is one entry of the "changelog-sections" key: the entry
+// type it is about, the section heading that type renders under, and
+// whether it is hidden instead. Section is "" only for a hidden type.
+type ChangelogSection struct {
+	Type    string
+	Section string
+	Hidden  bool
+}
+
 // Labels is the "labels" key: the label names release-me expects on the
 // repository. Alpha, Beta and Rc select a pre-release type on the release
 // pull request; Pending and Tagged apply to every release, stable or not.
@@ -226,8 +235,12 @@ type Config struct {
 	// constants. A component overrides it through its own
 	// "changelog-source" key.
 	ChangelogSource string
-	Labels          Labels
-	Author          Author
+	// ChangelogSections is the top-level "changelog-sections" key, nil
+	// when it was left out and the default sections apply. A component
+	// overrides it through its own "changelog-sections" key.
+	ChangelogSections []ChangelogSection
+	Labels            Labels
+	Author            Author
 	// MajorTag is the top-level "major-tag" key: when true, a stable
 	// release moves the major tag "vX" to the release commit. A component
 	// overrides it through its own "major-tag" key.
@@ -285,6 +298,7 @@ type Component struct {
 	Files             *[]File
 	MajorTag          *bool
 	ChangelogSource   *string
+	ChangelogSections *[]ChangelogSection
 	// TagPrefix is the component's "tag-prefix" key, nil when it was left
 	// out and the component keeps the derived "<name>/v".
 	TagPrefix *string
@@ -318,6 +332,9 @@ type ResolvedComponent struct {
 	// ChangelogSource is one of the ChangelogSource* constants: which
 	// commits become this component's changelog entries.
 	ChangelogSource string
+	// ChangelogSections is the "changelog-sections" this component's
+	// changelog renders with, nil for the default sections.
+	ChangelogSections []ChangelogSection
 }
 
 // Resolve returns the components a command should loop over, in
@@ -339,6 +356,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
 			ChangelogSource:   cfg.ChangelogSource,
+			ChangelogSections: cfg.ChangelogSections,
 		}}
 	}
 
@@ -367,6 +385,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
 			ChangelogSource:   cfg.ChangelogSource,
+			ChangelogSections: cfg.ChangelogSections,
 		}
 		if c.InitialVersion != nil {
 			rc.InitialVersion = *c.InitialVersion
@@ -386,6 +405,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		if c.ChangelogSource != nil {
 			rc.ChangelogSource = *c.ChangelogSource
 		}
+		if c.ChangelogSections != nil {
+			rc.ChangelogSections = *c.ChangelogSections
+		}
 		out = append(out, rc)
 	}
 	return out
@@ -396,6 +418,14 @@ type rawFile struct {
 	Path    string  `yaml:"path"`
 	Updater *string `yaml:"updater"`
 	Key     *string `yaml:"key"`
+}
+
+// rawChangelogSection mirrors ChangelogSection, the yaml shape of one
+// "changelog-sections" entry, release-please's own shape.
+type rawChangelogSection struct {
+	Type    *string `yaml:"type"`
+	Section *string `yaml:"section"`
+	Hidden  *bool   `yaml:"hidden"`
 }
 
 // rawLabels mirrors Labels with pointer fields, so Load can tell a key left
@@ -445,22 +475,23 @@ type rawAuthor struct {
 // raw mirrors Config with pointer fields, so Load can tell a key left out of
 // the file apart from one set to its zero value.
 type raw struct {
-	InitialVersion           *string    `yaml:"initial-version"`
-	BumpMinorPreMajor        *bool      `yaml:"bump-minor-pre-major"`
-	HiddenTypes              *[]string  `yaml:"hidden-types"`
-	FallbackType             *string    `yaml:"fallback-type"`
-	TokenEnv                 *string    `yaml:"token-env"`
-	Files                    *[]rawFile `yaml:"files"`
-	Changelog                *string    `yaml:"changelog"`
-	ChangelogSource          *string    `yaml:"changelog-source"`
-	Labels                   *rawLabels `yaml:"labels"`
-	Author                   *rawAuthor `yaml:"author"`
-	MajorTag                 *bool      `yaml:"major-tag"`
-	Versioning               *string    `yaml:"versioning"`
-	ReleasePullRequest       *string    `yaml:"release-pull-request"`
-	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
-	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
-	CommentMention           *string    `yaml:"comment-mention"`
+	InitialVersion           *string                `yaml:"initial-version"`
+	BumpMinorPreMajor        *bool                  `yaml:"bump-minor-pre-major"`
+	HiddenTypes              *[]string              `yaml:"hidden-types"`
+	FallbackType             *string                `yaml:"fallback-type"`
+	TokenEnv                 *string                `yaml:"token-env"`
+	Files                    *[]rawFile             `yaml:"files"`
+	Changelog                *string                `yaml:"changelog"`
+	ChangelogSource          *string                `yaml:"changelog-source"`
+	ChangelogSections        *[]rawChangelogSection `yaml:"changelog-sections"`
+	Labels                   *rawLabels             `yaml:"labels"`
+	Author                   *rawAuthor             `yaml:"author"`
+	MajorTag                 *bool                  `yaml:"major-tag"`
+	Versioning               *string                `yaml:"versioning"`
+	ReleasePullRequest       *string                `yaml:"release-pull-request"`
+	DraftUntilAssetsAttach   *bool                  `yaml:"draft-until-assets-attach"`
+	CommentMention           *string                `yaml:"comment-mention"`
+	ReleasePullRequestLayout *string                `yaml:"release-pull-request-layout"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -472,15 +503,16 @@ type raw struct {
 // rawComponent mirrors Component with pointer fields, the yaml shape of one
 // "components" entry.
 type rawComponent struct {
-	Path              *string    `yaml:"path"`
-	InitialVersion    *string    `yaml:"initial-version"`
-	BumpMinorPreMajor *bool      `yaml:"bump-minor-pre-major"`
-	HiddenTypes       *[]string  `yaml:"hidden-types"`
-	Files             *[]rawFile `yaml:"files"`
-	MajorTag          *bool      `yaml:"major-tag"`
-	ChangelogSource   *string    `yaml:"changelog-source"`
-	TagPrefix         *string    `yaml:"tag-prefix"`
-	Changelog         *string    `yaml:"changelog"`
+	Path              *string                `yaml:"path"`
+	InitialVersion    *string                `yaml:"initial-version"`
+	BumpMinorPreMajor *bool                  `yaml:"bump-minor-pre-major"`
+	HiddenTypes       *[]string              `yaml:"hidden-types"`
+	Files             *[]rawFile             `yaml:"files"`
+	MajorTag          *bool                  `yaml:"major-tag"`
+	ChangelogSource   *string                `yaml:"changelog-source"`
+	ChangelogSections *[]rawChangelogSection `yaml:"changelog-sections"`
+	TagPrefix         *string                `yaml:"tag-prefix"`
+	Changelog         *string                `yaml:"changelog"`
 }
 
 // Default is the configuration applied when release-me.yaml is absent.
@@ -576,6 +608,13 @@ func Load(path string) (cfg Config, err error) {
 			)
 		}
 		cfg.ChangelogSource = *r.ChangelogSource
+	}
+	if r.ChangelogSections != nil {
+		sections, err := decodeChangelogSections(*r.ChangelogSections)
+		if err != nil {
+			return Config{}, fmt.Errorf("config: parse %s: changelog-sections: %w", path, err)
+		}
+		cfg.ChangelogSections = sections
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {
@@ -715,6 +754,40 @@ func decodeFiles(path string, raw []rawFile) ([]File, error) {
 	return files, nil
 }
 
+// decodeChangelogSections converts the yaml shape of a "changelog-sections"
+// key into []ChangelogSection, never nil, so a key given as an empty list
+// still replaces the default sections. It rejects an entry without a type,
+// a type listed twice, a visible entry without a section, and a section
+// that is not one line of text: the section renders as a "### <section>"
+// heading, and a line break inside it would start a line of its own.
+func decodeChangelogSections(raw []rawChangelogSection) ([]ChangelogSection, error) {
+	sections := make([]ChangelogSection, 0, len(raw))
+	for i, rs := range raw {
+		s := ChangelogSection{}
+		if rs.Type != nil {
+			s.Type = strings.TrimSpace(*rs.Type)
+		}
+		if rs.Section != nil {
+			s.Section = strings.TrimSpace(*rs.Section)
+		}
+		if rs.Hidden != nil {
+			s.Hidden = *rs.Hidden
+		}
+		switch {
+		case s.Type == "":
+			return nil, fmt.Errorf("entry %d: type is required", i+1)
+		case slices.ContainsFunc(sections, func(o ChangelogSection) bool { return o.Type == s.Type }):
+			return nil, fmt.Errorf("type %q is listed twice", s.Type)
+		case s.Section == "" && !s.Hidden:
+			return nil, fmt.Errorf("type %q: section is required unless hidden is true", s.Type)
+		case strings.ContainsAny(s.Section, "\r\n"):
+			return nil, fmt.Errorf("type %q: section %q spans more than one line", s.Type, s.Section)
+		}
+		sections = append(sections, s)
+	}
+	return sections, nil
+}
+
 // decodeComponents converts the "components" mapping node into []Component,
 // in the order its keys appear in release-me.yaml. Each entry's value is
 // decoded with the same strict, unknown-key-rejecting rules as the rest of
@@ -773,6 +846,13 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 				return nil, err
 			}
 			c.Files = &files
+		}
+		if rc.ChangelogSections != nil {
+			sections, err := decodeChangelogSections(*rc.ChangelogSections)
+			if err != nil {
+				return nil, fmt.Errorf("config: parse %s: component %s: changelog-sections: %w", path, name, err)
+			}
+			c.ChangelogSections = &sections
 		}
 		components = append(components, c)
 	}
