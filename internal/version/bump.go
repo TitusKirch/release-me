@@ -154,9 +154,15 @@ func Next(last Semver, lastOK bool, changes []Change, rules Rules) (result Resul
 		return Result{Version: bumped(last, fixed).String(), Bump: fixed, Reason: reason + ", " + string(rules.Strategy)}, true, refused
 	}
 
-	if bump == BumpMajor && rules.BumpMinorPreMajor && last.Major < 1 {
+	switch {
+	case bump == BumpMajor && rules.BumpMinorPreMajor && last.Major < 1:
+		// A breaking change lowered to a minor stays minor: the patch rule
+		// below applies to a genuine minor bump only.
 		bump = BumpMinor
 		reason += ", minor below 1.0.0"
+	case bump == BumpMinor && rules.BumpPatchForMinorPreMajor && last.Major < 1:
+		bump = BumpPatch
+		reason += ", patch below 1.0.0"
 	}
 	return Result{Version: bumped(last, bump).String(), Bump: bump, Reason: reason}, true, refused
 }

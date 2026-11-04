@@ -228,6 +228,32 @@ func TestNextComputesTheReleasedVersion(t *testing.T) {
 			},
 		},
 		{
+			name:    "bumps patch for a feature below one with patch for minor pre major and dependency manifest",
+			last:    version.Semver{Major: 0, Minor: 4, Patch: 1},
+			lastOK:  true,
+			changes: []version.Change{{Type: "feat"}},
+			rules:   version.Rules{Strategy: version.StrategyDependencyManifest, BumpPatchForMinorPreMajor: true},
+			want:    version.Result{Version: "0.4.2", Bump: version.BumpPatch, Reason: "feat, patch below 1.0.0"},
+		},
+		{
+			name:    "keeps a breaking change a minor below one with both pre major rules and dependency manifest",
+			last:    version.Semver{Major: 0, Minor: 4, Patch: 1},
+			lastOK:  true,
+			changes: []version.Change{{Type: "feat", Breaking: true}},
+			rules: version.Rules{
+				Strategy: version.StrategyDependencyManifest, BumpMinorPreMajor: true, BumpPatchForMinorPreMajor: true,
+			},
+			want: version.Result{Version: "0.5.0", Bump: version.BumpMinor, Reason: "breaking change, minor below 1.0.0"},
+		},
+		{
+			name:    "ignores patch for minor pre major with always bump minor",
+			last:    version.Semver{Major: 0, Minor: 4, Patch: 1},
+			lastOK:  true,
+			changes: []version.Change{{Type: "feat"}},
+			rules:   version.Rules{Strategy: version.StrategyAlwaysBumpMinor, BumpPatchForMinorPreMajor: true},
+			want:    version.Result{Version: "0.5.0", Bump: version.BumpMinor, Reason: "feat, always-bump-minor"},
+		},
+		{
 			name:    "bumps by the changes with the default strategy",
 			last:    version.Semver{Major: 1, Minor: 2, Patch: 3},
 			lastOK:  true,

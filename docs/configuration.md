@@ -36,16 +36,16 @@ How a release bumps the version, default `default`:
 | `service-pack` | A service pack of the last version, `X.Y.Z-sp.N`. |
 | `dependency-manifest` | Bumped as `default`, and at least as far as a dependency update among its changes. |
 
-The changes still decide whether there is a release at all: a range of only hidden types, a
-`chore` alone for one, releases nothing under any strategy but `dependency-manifest`, where a
-dependency update counts. A [Release-As footer](overrides.md#release-as-footer), a
-[comment command](overrides.md#comment-commands) and `initial-version` for a first release win
-over the strategy, the same as over the default bump. `bump-minor-pre-major` applies to
-`default` and `dependency-manifest` only: an always-bump strategy bumps the part it names below
-`1.0.0` too, as in release-please. `next` names the strategy in its reason,
-`1.3.0 (fix, always-bump-minor)`. Any other value is a configuration error. A component
-overrides it through its own `versioning-strategy` key; a `locked` or `linked` family computes
-its one shared version with the top-level value.
+The changes still decide whether there is a release at all: a range of only hidden types, a `chore`
+alone for one, releases nothing under any strategy but `dependency-manifest`, where a dependency
+update counts. A [Release-As footer](overrides.md#release-as-footer), a [comment
+command](overrides.md#comment-commands) and `initial-version` for a first release win over the
+strategy, the same as over the default bump. `bump-minor-pre-major` and
+`bump-patch-for-minor-pre-major` apply to `default` and `dependency-manifest` only: an always-bump
+strategy bumps the part it names below `1.0.0` too, as in release-please. `next` names the strategy
+in its reason, `1.3.0 (fix, always-bump-minor)`. Any other value is a configuration error. A
+component overrides it through its own `versioning-strategy` key; a `locked` or `linked` family
+computes its one shared version with the top-level value.
 
 The key is release-please's `versioning`, renamed because release-me's own
 [`versioning`](#versioning) already names how a family's versions relate. release-please's
