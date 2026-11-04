@@ -108,7 +108,8 @@ func releaseFlagKeys() []string {
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "extra-label", "separate-pull-requests", "$schema",
 	"bootstrap-sha", "last-release-sha", "draft-pull-request", "pull-request-title-pattern",
-	"group-pull-request-title-pattern", "always-link-local", "signoff",
+	"group-pull-request-title-pattern", "always-link-local", "signoff", "pull-request-header",
+	"pull-request-footer",
 }
 
 // unsupportedReasons explains a release-please key the translation leaves
@@ -360,6 +361,14 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	if raw, ok := topValues["draft-pull-request"]; ok {
 		if err := json.Unmarshal(raw, &opts.draft); err != nil {
 			return Result{}, fmt.Errorf("migrate: draft-pull-request: %w", err)
+		}
+	}
+	for _, text := range []struct {
+		key string
+		dst *string
+	}{{"pull-request-header", &opts.header}, {"pull-request-footer", &opts.footer}} {
+		if *text.dst, err = frameText(topValues[text.key], text.key, warn); err != nil {
+			return Result{}, err
 		}
 	}
 
@@ -1179,6 +1188,25 @@ func titlePattern(raw json.RawMessage, key string, kind releasepr.TitleKind, war
 	return translated, nil
 }
 
+// frameText reads release-please's pull-request-header or
+// pull-request-footer, carried over as release-pull-request-header or
+// release-pull-request-footer. A text release-me refuses, one carrying what
+// a body is read back by, is warned about and left out. "" when raw is nil.
+func frameText(raw json.RawMessage, key string, warn func(string, ...any)) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return "", fmt.Errorf("migrate: %s: %w", key, err)
+	}
+	if err := releasepr.CheckFrameText(text); err != nil {
+		warn("%s: %v, left out", key, err)
+		return "", nil
+	}
+	return text, nil
+}
+
 // sanitizeName turns a release-please component name into one
 // config.ValidateComponentName accepts: every character it refuses becomes
 // "-", a leading "." or "-" and a trailing "." or ".lock" are dropped and
@@ -1315,6 +1343,8 @@ type topLevel struct {
 	separateLinks bool
 	signoff       string
 	draft         bool
+	header        string
+	footer        string
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1345,6 +1375,12 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.sharedTitle != "" {
 		add(doc, "release-pull-request-shared-title", scalar(top.sharedTitle))
+	}
+	if top.header != "" {
+		add(doc, "release-pull-request-header", scalar(top.header))
+	}
+	if top.footer != "" {
+		add(doc, "release-pull-request-footer", scalar(top.footer))
 	}
 	if len(top.workspaces) > 0 {
 		list := &yaml.Node{Kind: yaml.SequenceNode, Style: yaml.FlowStyle}
