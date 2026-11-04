@@ -70,7 +70,7 @@ func newNodeWorkspaceRepo(t *testing.T, head string) (dir, origin string, cfg co
 func TestNodeWorkspaceReleasesEveryDependentWithTheNewDependencyVersion(t *testing.T) {
 	dir, origin, cfg := newNodeWorkspaceRepo(t, "release-pull-request: shared\nworkspaces: [node]\n")
 
-	f := newFake()
+	f := newPRFake(origin)
 	var stdout bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
@@ -142,7 +142,7 @@ func TestNodeWorkspaceReleasesADependentWithAPatchWhateverTheVersioningRules(t *
 func TestNodeWorkspaceMovesDependenciesInALockedFamily(t *testing.T) {
 	dir, origin, cfg := newNodeWorkspaceRepo(t, "versioning: locked\nworkspaces: [node]\n")
 
-	f := newFake()
+	f := newPRFake(origin)
 	var stdout bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
@@ -165,7 +165,7 @@ func TestNodeWorkspaceMovesDependenciesInALockedFamily(t *testing.T) {
 func TestNodeWorkspaceReleasesADependentAtTheLinkedFamilysVersion(t *testing.T) {
 	dir, origin, cfg := newNodeWorkspaceRepo(t, "versioning: linked\nrelease-pull-request: shared\nworkspaces: [node]\n")
 
-	f := newFake()
+	f := newPRFake(origin)
 	var stdout bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
@@ -182,7 +182,7 @@ func TestNodeWorkspaceReleasesADependentAtTheLinkedFamilysVersion(t *testing.T) 
 func TestNodeWorkspaceLeftOutReleasesNoDependent(t *testing.T) {
 	dir, origin, cfg := newNodeWorkspaceRepo(t, "release-pull-request: shared\n")
 
-	f := newFake()
+	f := newPRFake(origin)
 	var stdout bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
