@@ -105,6 +105,7 @@ func doRelease(ctx context.Context, dir string, cfg config.Config, component str
 func releaseComponent(comp config.ResolvedComponent) tagrelease.Component {
 	return tagrelease.Component{
 		Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
+		OmitVInReleaseName: !comp.IncludeVInReleaseName,
 	}
 }
 
