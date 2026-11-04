@@ -29,6 +29,15 @@ Hides entries of these types from the changelog, default `chore`, `docs`, `ci`, 
 `refactor`, `test`, `build`, `other`. Only `feat`, `fix`, `perf`, `revert` and a breaking
 change ever render a section; a type outside those five never renders, hidden or not.
 
+## `changelog-sentence-case`
+
+Upper cases the first letter of every entry's description, default `false`, the counterpart of
+release-please's `sentence-case` plugin: `feat(cli): add the widget` renders as
+`**cli:** Add the widget`. Only a lower case ASCII letter at the very start changes. A first
+word that already holds an upper case letter, such as `iOS` or `gRPC`, stays as written, and so
+do `npm` and a description starting with a backtick or a digit. The pull request title or
+commit stays as it is; only the rendered line changes. There is no per-component override.
+
 ## `fallback-type`
 
 The type assigned to text that does not parse as a conventional commit, default `other`.
