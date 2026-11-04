@@ -91,6 +91,11 @@ release-please collapsed each package into a `<details>` block: `migrate` leaves
 `release-pull-request-layout` out, add `release-pull-request-layout: details` only when the
 human wants the collapsed look kept.
 
+**Changelog links** carry over silently too: the translation turns `changelog-commit-links` and
+`changelog-issue-references` on, the links release-please's default changelog carries. Name
+them to the human with the versioning mode, so a changelog without commit links can be chosen
+deliberately.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.
