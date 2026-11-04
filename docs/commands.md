@@ -206,11 +206,26 @@ counted every commit. It also carries over:
   the package it is set on and warning about every other one, which excludes nothing there;
 - `release-as`, unless the manifest already records it as released or release-me refuses the
   value, a pre-release for one;
-- the version file of a `node` (`package.json`), `rust` (`Cargo.toml`), `maven` (`pom.xml`, its
-  project version or else its parent's), `simple` (its `version-file`, default `version.txt`,
-  through `plain`) or `helm` (`Chart.yaml`) package where that file exists, `node` being
-  release-please's default type. A multi-module `pom.xml` is warned about, since release-please
-  bumped every `pom.xml` below the package;
+- the version files of the package's `release-type`, `node` being release-please's default,
+  each where it exists. A file release-please bumps only where it holds a version is left out
+  silently otherwise; a missing main version file is warned about:
+  - `node`: `package.json`; `expo`: the same plus `app.json`'s `expo.version` and
+    `expo.ios.buildNumber`, with a warning for `expo.android.versionCode`, which release-please
+    computes from the Expo SDK version;
+  - `rust`: `Cargo.toml`; `maven`: `pom.xml`, its project version or else its parent's, a
+    multi-module `pom.xml` warned about, since release-please bumped every `pom.xml` below the
+    package; `simple`: its `version-file`, default `version.txt`, through `plain`;
+  - `python`: `setup.cfg`, `setup.py`, `pyproject.toml`, and the `__init__.py` and
+    `version.py` of the project `pyproject.toml` names, at the package root or under `src/`;
+  - `ruby`: its `version-file`, default `lib/<name>/version.rb`, a `-` in the name nesting a
+    directory; `elixir`: `mix.exs`; `r`: `DESCRIPTION`, the changelog defaulting to `NEWS.md`;
+  - `ocaml`: the `.opam` and `.opam.locked` file named after the package, `dune-project` and
+    `esy.json`, with a warning that any other `.opam` file is not searched for;
+  - `bazel`: its `version-file`, default `MODULE.bazel`; `php`: `composer.json`, with a
+    warning for a `VERSION` file;
+  - `dart`: `pubspec.yaml`; `sfdx`: `sfdx-project.json`; `helm`: `Chart.yaml`;
+  - `terraform-module` and `krm-blueprint` searched the package for their files, which a
+    warning asks to mark with `release-me: version` and list instead;
 - the lockfile release-please bumps beside it where it exists and holds the package:
   `package-lock.json` and `npm-shrinkwrap.json` for `node`, `Cargo.lock` for `rust`, and
   `Gemfile.lock` for `ruby`, keyed by the crate or gem name;

@@ -789,7 +789,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 	  "sequential-calls": true,
 	  "plugins": ["group-priority", {"type": "linked-versions", "groupName": "half", "components": ["a"]}],
 	  "packages": {
-	    "a": {"component": "a", "release-type": "python", "draft": true, "extra-files": [
+	    "a": {"component": "a", "release-type": "java", "draft": true, "extra-files": [
 	      "src/version.py",
 	      {"type": "json", "path": "/manifest.json", "jsonpath": "$.app.version"},
 	      {"type": "xml", "path": "pom.xml", "xpath": "//version"}
@@ -814,7 +814,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 	for _, want := range []string{
 		"sequential-calls: no release-me equivalent, left out",
 		"package a: draft: no release-me equivalent, left out",
-		"package a: release-type python: the files it bumps are not carried over, add them under files",
+		"package a: release-type java: the files it bumps are not carried over, add them under files",
 		"package a: extra-files: a/src/version.py does not exist, left out of files",
 		`package a: extra-files: pom.xml: type "xml" at "//version" has no typed updater, add it under files`,
 		".release-please-manifest.json: c: no package configured at this path, left out",

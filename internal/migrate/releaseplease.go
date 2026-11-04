@@ -511,9 +511,9 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 
 	// A version file the release type implies is carried over only where it
 	// exists: release-type falls back to node, and an entry for a file that
-	// is not there would fail the first release pull request. A lockfile is
-	// optional: release-please bumps it only where it exists and holds the
-	// package, so one that does not is left out without a warning.
+	// is not there would fail the first release pull request. An optional
+	// file is one release-please bumps only where it exists and holds a
+	// version, so one that does not is left out without a warning.
 	versionFile := func(name, updaterName, key string, optional bool) {
 		path := stdpath.Join(p.path, name)
 		data, err := readFile(path)
@@ -546,7 +546,17 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		versionFile("Cargo.toml", updater.TOML, "package.version", false)
 		versionFile("Cargo.lock", updater.CargoLock, crate, true)
 	case "ruby":
-		warn("package %s: release-type ruby: its version.rb is not carried over, add it under files", p.path)
+		// release-please looks for the version.rb under the gem's name, a
+		// "-" nesting a directory, unless version-file names it.
+		switch {
+		case versionFileName != "":
+			versionFile(versionFileName, updater.Ruby, "", false)
+		case componentName != "":
+			versionFile("lib/"+strings.ReplaceAll(componentName, "-", "/")+"/version.rb", updater.Ruby, "", false)
+		default:
+			warn("package %s: release-type ruby: no component or package-name to find its version.rb by, "+
+				"add it under files", p.path)
+		}
 		if componentName != "" {
 			versionFile("Gemfile.lock", updater.GemfileLock, componentName, true)
 		} else {
@@ -563,6 +573,90 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 			versionFileName = "version.txt"
 		}
 		versionFile(versionFileName, updater.Plain, "", false)
+	case "python":
+		// release-please bumps each of these only where it exists and
+		// holds a version, finding the package's __init__.py and
+		// version.py by the project name pyproject.toml declares, else by
+		// the component.
+		before := len(c.files)
+		versionFile("setup.cfg", updater.Python, "", true)
+		versionFile("setup.py", updater.Python, "", true)
+		pyproject, _ := readFile(stdpath.Join(p.path, "pyproject.toml"))
+		project := componentName
+		for _, table := range []string{"project", "tool.poetry"} {
+			if name := tomlString(string(pyproject), table, "name"); name != "" {
+				project = name
+				versionFile("pyproject.toml", updater.TOML, table+".version", true)
+				break
+			}
+		}
+		if project != "" {
+			for _, dir := range slices.Compact([]string{project, strings.ReplaceAll(project, "-", "_")}) {
+				for _, f := range []string{"__init__.py", "version.py"} {
+					versionFile(stdpath.Join(dir, f), updater.Python, "", true)
+					versionFile(stdpath.Join("src", dir, f), updater.Python, "", true)
+				}
+			}
+		}
+		if len(c.files) == before {
+			warn("package %s: release-type python: no setup.cfg, setup.py, pyproject.toml, __init__.py or version.py "+
+				"with a version found, add the version file under files", p.path)
+		}
+	case "elixir":
+		versionFile("mix.exs", updater.Elixir, "", false)
+	case "ocaml":
+		before := len(c.files)
+		if componentName != "" {
+			versionFile(componentName+".opam", updater.OCaml, "", true)
+			versionFile(componentName+".opam.locked", updater.OCaml, "", true)
+		}
+		versionFile("dune-project", updater.OCaml, "", true)
+		versionFile("esy.json", updater.JSON, "version", true)
+		versionFile("package.json", updater.JSON, "version", true)
+		if len(c.files) == before {
+			warn("package %s: release-type ocaml: no %s.opam, dune-project or esy.json with a version found, "+
+				"add the version files under files", p.path, componentName)
+			break
+		}
+		warn("package %s: release-type ocaml: release-please bumped every .opam and esy JSON file of the package, "+
+			"only those named after the package are carried over, add any other under files", p.path)
+	case "r":
+		versionFile("DESCRIPTION", updater.R, "", false)
+		// release-please's r type writes its changelog into NEWS.md.
+		if _, ok := p.settings["changelog-path"]; !ok {
+			c.changelog = repoPath(p.path, "NEWS.md")
+		}
+	case "bazel":
+		if versionFileName == "" {
+			versionFileName = "MODULE.bazel"
+		}
+		versionFile(versionFileName, updater.Bazel, "", false)
+	case "php":
+		// release-please bumps composer.json's version only where it has
+		// one, and a VERSION file only where it exists.
+		versionFile("composer.json", updater.JSON, "version", true)
+		if _, err := readFile(stdpath.Join(p.path, "VERSION")); err == nil {
+			warn("package %s: VERSION: release-please bumped it, release-me does not", p.path)
+		}
+	case "dart":
+		versionFile("pubspec.yaml", updater.Dart, "", false)
+	case "expo":
+		versionFile("package.json", updater.JSON, "version", false)
+		if _, err := readFile(stdpath.Join(p.path, "package-lock.json")); err == nil {
+			warn("package %s: package-lock.json: release-please bumped it, release-me does not", p.path)
+		}
+		versionFile("app.json", updater.JSON, "expo.version", false)
+		versionFile("app.json", updater.JSON, "expo.ios.buildNumber", true)
+		if data, err := readFile(stdpath.Join(p.path, "app.json")); err == nil && strings.Contains(string(data), `"versionCode"`) {
+			warn("package %s: release-type expo: app.json's expo.android.versionCode is computed from the Expo SDK "+
+				"and the version, release-me does not bump it", p.path)
+		}
+	case "sfdx":
+		versionFile("sfdx-project.json", updater.Sfdx, "", false)
+	case "terraform-module", "krm-blueprint":
+		warn("package %s: release-type %s: release-please searched the package for the files it bumps, "+
+			"release-me lists them: mark each version line with \"release-me: version\" and add it under files",
+			p.path, releaseType)
 	case "helm":
 		versionFile("Chart.yaml", updater.Helm, "", false)
 	case "go":
@@ -1128,6 +1222,29 @@ var (
 	cargoName    = regexp.MustCompile(`^name\s*=\s*"([^"]+)"`)
 	cargoVersion = regexp.MustCompile(`^version\s*=\s*"`)
 )
+
+// tomlString reads the string a TOML file assigns to key under the
+// [table] header, "" when the table, the key or a string value is missing.
+// It reads the plain "key = \"value\"" lines a Cargo.toml or a
+// pyproject.toml carries, not every shape TOML allows.
+func tomlString(content, table, key string) string {
+	pattern := regexp.MustCompile(`^` + regexp.QuoteMeta(key) + `\s*=\s*"([^"]*)"`)
+	inTable := false
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			inTable = line == "["+table+"]"
+			continue
+		}
+		if !inTable {
+			continue
+		}
+		if m := pattern.FindStringSubmatch(line); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
 
 // cleanPackagePath turns a release-please package path, "." or a path
 // that may carry a trailing slash, into release-me's form.
