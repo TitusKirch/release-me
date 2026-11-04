@@ -18,6 +18,9 @@ const (
 	// Node reads a component's package.json: an npm, pnpm or yarn
 	// workspace package.
 	Node = "node"
+	// Maven reads a component's pom.xml: a module of a Maven
+	// multi-module build.
+	Maven = "maven"
 )
 
 // manager is one package manager's manifest file name, reader and
@@ -31,12 +34,13 @@ type manager struct {
 // managers maps every package manager "workspaces" accepts to its
 // manifest.
 var managers = map[string]manager{
-	Node: {file: "package.json", parse: parseNode, set: setNodeDependency},
+	Node:  {file: "package.json", parse: parseNode, set: setNodeDependency},
+	Maven: {file: "pom.xml", parse: parseMaven, set: setMavenDependency},
 }
 
 // Managers lists every package manager "workspaces" accepts, in the order
 // errors report them.
-var Managers = []string{Node}
+var Managers = []string{Node, Maven}
 
 // ManifestFile returns the file name a component's manifest carries for
 // manager, relative to the component's path, "" for an unknown manager.
