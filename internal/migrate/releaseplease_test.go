@@ -894,7 +894,7 @@ func TestFromReleasePleaseCarriesTheGitHubReleaseSettingsOver(t *testing.T) {
 			name: "writes draft once at the top level when every package carries it",
 			configJSON: `{"draft": true, "packages": {
 			  "api": {"component": "api", "release-type": "go"}, "web": {"component": "web", "release-type": "go"}}}`,
-			wantYAML: "\ndraft: true\ncomponents:\n",
+			wantYAML: "\ndraft: true\nforce-tag-creation: false\ncomponents:\n",
 			get:      draft, want: []bool{true, true},
 		},
 		{
@@ -920,6 +920,24 @@ func TestFromReleasePleaseCarriesTheGitHubReleaseSettingsOver(t *testing.T) {
 			  "web": {"component": "web", "release-type": "go", "force-tag-creation": false}}}`,
 			wantYAML: "    path: web\n    tag-prefix: web-v\n    force-tag-creation: false\n",
 			get:      forceTag, want: []bool{true, false},
+		},
+		{
+			name:       "turns force-tag-creation off for a draft package that leaves it out",
+			configJSON: `{"draft": true, "packages": {".": {"release-type": "go"}}}`,
+			wantYAML:   "\ndraft: true\nforce-tag-creation: false\n",
+			get:        forceTag, want: []bool{false},
+		},
+		{
+			name:       "keeps an explicit force-tag-creation on a draft package",
+			configJSON: `{"draft": true, "force-tag-creation": true, "packages": {".": {"release-type": "go"}}}`,
+			get:        forceTag, want: []bool{true},
+		},
+		{
+			name: "turns force-tag-creation off only on the draft package of two",
+			configJSON: `{"packages": {
+			  "api": {"component": "api", "release-type": "go", "draft": true},
+			  "web": {"component": "web", "release-type": "go"}}}`,
+			get: forceTag, want: []bool{false, true},
 		},
 	}
 	for _, tc := range cases {

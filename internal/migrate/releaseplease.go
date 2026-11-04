@@ -549,6 +549,13 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		}
 		c.flags[flag.key] = value
 	}
+	// release-please leaves a draft's tag to its publish unless
+	// force-tag-creation says otherwise, and release-me's own default
+	// creates it first: a draft package with no explicit
+	// force-tag-creation keeps release-please's behavior.
+	if _, explicit := p.settings["force-tag-creation"]; c.flags["draft"] && !explicit {
+		c.flags["force-tag-creation"] = false
+	}
 
 	// A version file the release type implies is carried over only where it
 	// exists: release-type falls back to node, and an entry for a file that

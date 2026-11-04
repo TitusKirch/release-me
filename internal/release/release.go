@@ -772,11 +772,12 @@ func dryRunMessage(comp Component, tag string, draft bool) string {
 // or being interrupted, and the caller carries on, so the release exists
 // and the label still swaps instead of the pull request staying pending
 // forever. The returned error names the step, for the caller to wrap with
-// the component and the pull request.
+// the component and the pull request. A component that skips its GitHub
+// release always gets its tag here: no release publish would create it.
 func createTag(
 	ctx context.Context, f forge.Forge, owner, repoName string, comp Component, tag, sha string,
 ) (target string, alreadyTagged bool, err error) {
-	if comp.TagOnPublish {
+	if comp.TagOnPublish && !comp.SkipGitHubRelease {
 		return sha, false, nil
 	}
 	if err := f.CreateTag(ctx, owner, repoName, tag, sha); err != nil {

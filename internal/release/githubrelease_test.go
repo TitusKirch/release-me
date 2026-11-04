@@ -421,3 +421,22 @@ func TestReleaseLeavesTheTagToThePublishWithoutForceTagCreation(t *testing.T) {
 		})
 	}
 }
+
+func TestSkipGitHubReleaseTagsEvenWithoutForceTagCreation(t *testing.T) {
+	t.Parallel()
+	comp := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", SkipGitHubRelease: true, TagOnPublish: true}
+	f := mergedFake("chore(main): release v1.4.0", "release: pending")
+	results, err := runOwn(f, []release.Component{comp}, true, false)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(f.CreatedTags) != 1 || f.CreatedTags[0].Tag != "v1.4.0" {
+		t.Fatalf("CreatedTags = %+v, want v1.4.0: no release publish would create it", f.CreatedTags)
+	}
+	if len(f.CreatedReleases) != 0 {
+		t.Fatalf("CreatedReleases = %+v, want none", f.CreatedReleases)
+	}
+	if len(results) != 1 || results[0].Message != "tagged v1.4.0, GitHub release skipped" {
+		t.Fatalf("Run() = %+v, want the skipped release reported", results)
+	}
+}
