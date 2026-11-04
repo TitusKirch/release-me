@@ -146,6 +146,7 @@ files:
 | `fallback-type` | Type assigned to text that does not parse as a conventional commit. | `other` | No |
 | `token-env` | Environment variable holding the GitHub token. | `GITHUB_TOKEN` | No |
 | `changelog` | Changelog file path. | `CHANGELOG.md` | No |
+| `skip-changelog` | Leaves the changelog file alone; the release pull request still carries the section. | `false` | No |
 | `changelog-source` | Which commits become changelog entries. | `first-parent` | No |
 | `labels.pending` / `labels.tagged` | Label names `pr`, `release` and `check` use. | `release: pending` / `release: tagged` | No |
 | `labels.alpha` / `labels.beta` / `labels.rc` | Pre-release type labels. | `release: alpha` / `release: beta` / `release: rc` | No |
