@@ -322,7 +322,7 @@ func releaseShared(
 			tag := comp.TagPrefix + versionStr
 			result := Result{
 				PullRequestNumber: pr.Number, Name: comp.Name, Version: versionStr, Tag: tag,
-				Message: fmt.Sprintf("would tag and release %s", tag),
+				Message: dryRunMessage(comp, tag),
 			}
 			mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, versionStr, "", comp.MajorTag, dryRun)
 			if err != nil {
@@ -360,14 +360,11 @@ func releaseShared(
 		}
 
 		body := lockedReleaseBody(pr.Body, comp.Name)
-		if err := createRelease(ctx, f, owner, repoName, tag, name, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
+		if err := createRelease(ctx, f, owner, repoName, tag, name, body, ver.IsPreRelease(), comp.draft(draftUntilAssetsAttach)); err != nil {
 			return nil, fmt.Errorf("release: %s: component %s: pull request #%d: %w", who, comp.Name, pr.Number, err)
 		}
 
-		message := fmt.Sprintf("tagged and released %s", tag)
-		if alreadyTagged {
-			message = fmt.Sprintf("already tagged %s", tag)
-		}
+		message := releasedMessage(comp, tag, alreadyTagged)
 
 		mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, versionStr, sha, comp.MajorTag, dryRun)
 		if err != nil {
@@ -404,6 +401,17 @@ type Component struct {
 	// release moves the major tag, TagPrefix plus the released major
 	// number, to the release commit. A pre-release never moves it.
 	MajorTag bool
+	// Draft is comp's resolved "draft" key: when true, the GitHub release
+	// is created as a draft, for a human to publish. Unlike
+	// draft-until-assets-attach it never resumes one: a draft left on
+	// purpose is no interrupted run.
+	Draft bool
+}
+
+// draft reports whether comp's release is created as a draft: comp's own
+// "draft" key, or draftUntilAssetsAttach for the whole repository.
+func (comp Component) draft(draftUntilAssetsAttach bool) bool {
+	return comp.Draft || draftUntilAssetsAttach
 }
 
 // releaseName returns the name of comp's release at versionStr, "X.Y.Z"
@@ -629,7 +637,7 @@ func releaseOne(
 	if dryRun {
 		result := Result{
 			PullRequestNumber: pr.Number, Name: componentName, Version: versionStr, Tag: tag,
-			Message: fmt.Sprintf("would tag and release %s", tag),
+			Message: dryRunMessage(comp, tag),
 		}
 		mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, componentName, tagPrefix, versionStr, "", majorTagEnabled, dryRun)
 		if err != nil {
@@ -657,7 +665,7 @@ func releaseOne(
 	}
 
 	body := releasepr.ReleaseBody(pr.Body)
-	if err := createRelease(ctx, f, owner, repoName, tag, releaseName, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
+	if err := createRelease(ctx, f, owner, repoName, tag, releaseName, body, ver.IsPreRelease(), comp.draft(draftUntilAssetsAttach)); err != nil {
 		return Result{}, fmt.Errorf("release: component %s: pull request #%d: %w", componentName, pr.Number, err)
 	}
 
@@ -675,10 +683,7 @@ func releaseOne(
 		return Result{}, fmt.Errorf("release: component %s: pull request #%d: set labels: %w", componentName, pr.Number, err)
 	}
 
-	message := fmt.Sprintf("tagged and released %s", tag)
-	if alreadyTagged {
-		message = fmt.Sprintf("already tagged %s", tag)
-	}
+	message := releasedMessage(comp, tag, alreadyTagged)
 
 	mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, componentName, tagPrefix, versionStr, sha, majorTagEnabled, dryRun)
 	if err != nil {
@@ -689,6 +694,28 @@ func releaseOne(
 		PullRequestNumber: pr.Number, Name: componentName, Version: versionStr, Tag: tag, Skipped: alreadyTagged,
 		Message: message, MajorTag: mtag, MajorTagMessage: mmsg,
 	}, nil
+}
+
+// releasedMessage reports what release did for comp at tag: already
+// tagged by an earlier run, tagged with a release left a draft on purpose,
+// or tagged and released.
+func releasedMessage(comp Component, tag string, alreadyTagged bool) string {
+	switch {
+	case alreadyTagged:
+		return fmt.Sprintf("already tagged %s", tag)
+	case comp.Draft:
+		return fmt.Sprintf("tagged and drafted %s", tag)
+	default:
+		return fmt.Sprintf("tagged and released %s", tag)
+	}
+}
+
+// dryRunMessage reports what release would do for comp at tag.
+func dryRunMessage(comp Component, tag string) string {
+	if comp.Draft {
+		return fmt.Sprintf("would tag and draft %s", tag)
+	}
+	return fmt.Sprintf("would tag and release %s", tag)
 }
 
 // createRelease creates the release for tag, named name with body, a
