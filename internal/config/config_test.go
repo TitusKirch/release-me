@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -105,8 +106,9 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				Author:                   config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
-				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
+				IncludeVInReleaseName:    true,
+				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 			},
 		},
 		{
@@ -155,9 +157,10 @@ files:
 				MajorTag:                 true,
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestShared,
-				ReleasePullRequestLayout: config.LayoutDetails,
 				DraftUntilAssetsAttach:   true,
 				CommentMention:           config.DefaultCommentMention,
+				IncludeVInReleaseName:    true,
+				ReleasePullRequestLayout: config.LayoutDetails,
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
 					{Path: "deploy/values.yaml", Updater: "marker"},
@@ -182,8 +185,9 @@ files:
 				Author:                   config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
-				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
+				IncludeVInReleaseName:    true,
+				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 			},
 		},
 		{
@@ -203,8 +207,9 @@ files:
 				Author:                   config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
-				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
+				IncludeVInReleaseName:    true,
+				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 			},
 		},
 		{
@@ -224,8 +229,9 @@ files:
 				Author:                   config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
-				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
+				IncludeVInReleaseName:    true,
+				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 			},
 		},
 	}
@@ -385,7 +391,7 @@ func TestResolveReturnsTheImplicitMainComponentWithoutAComponentsKey(t *testing.
 		Name: "main", Path: ".", TagPrefix: "v", Branch: "release-me/main",
 		ChangelogPath: "CHANGELOG.md", Multi: false,
 		InitialVersion: config.DefaultInitialVersion, HiddenTypes: config.DefaultHiddenTypes,
-		ChangelogSource: config.DefaultChangelogSource,
+		ChangelogSource: config.DefaultChangelogSource, IncludeVInReleaseName: true,
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resolve() = %+v, want %+v", got, want)
@@ -419,14 +425,14 @@ components:
 			Name: "backend", Path: "backend", TagPrefix: "backend/v", Branch: "release-me/backend",
 			ChangelogPath: "backend/CHANGELOG.md", Multi: true,
 			InitialVersion: "0.5.0", BumpMinorPreMajor: true, HiddenTypes: []string{"chore", "docs"},
-			ChangelogSource: config.DefaultChangelogSource,
+			ChangelogSource: config.DefaultChangelogSource, IncludeVInReleaseName: true,
 		},
 		{
 			Name: "frontend", Path: "frontend", TagPrefix: "frontend/v", Branch: "release-me/frontend",
 			ChangelogPath: "frontend/CHANGELOG.md", Multi: true,
 			InitialVersion: "0.2.0", BumpMinorPreMajor: false, HiddenTypes: []string{"chore"},
 			Files:           []config.File{{Path: "frontend/package.json", Updater: "marker"}},
-			ChangelogSource: config.DefaultChangelogSource,
+			ChangelogSource: config.DefaultChangelogSource, IncludeVInReleaseName: true,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -458,6 +464,54 @@ components:
 	}
 	if got[1].MajorTag {
 		t.Fatalf("frontend MajorTag = %v, want false from its own override", got[1].MajorTag)
+	}
+}
+
+// releaseKeysConfig carries two components, the second one overriding
+// every GitHub release key the top level sets.
+const releaseKeysConfig = `components:
+  api:
+    path: services/api
+  web:
+    path: web
+`
+
+func TestResolveAppliesTheGitHubReleaseKeysFromTheTopLevelAndPerComponentOverride(t *testing.T) {
+	t.Parallel()
+	includeV := func(c config.ResolvedComponent) bool { return c.IncludeVInReleaseName }
+	cases := []struct {
+		name    string
+		content string
+		get     func(config.ResolvedComponent) bool
+		want    []bool
+	}{
+		{name: "include-v-in-release-name is on by default", get: includeV, want: []bool{true}},
+		{
+			name: "include-v-in-release-name turns off for the implicit main component", content: "include-v-in-release-name: false\n",
+			get: includeV, want: []bool{false},
+		},
+		{
+			name:    "a component keeps the v the top level drops",
+			content: "include-v-in-release-name: false\n" + releaseKeysConfig + "    include-v-in-release-name: true\n",
+			get:     includeV, want: []bool{false, true},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := config.Load(writeFile(t, tc.content))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			resolved := cfg.Resolve()
+			got := make([]bool, 0, len(resolved))
+			for _, c := range resolved {
+				got = append(got, tc.get(c))
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("resolved per component = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
