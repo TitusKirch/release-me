@@ -322,7 +322,7 @@ func releaseShared(
 			tag := comp.TagPrefix + versionStr
 			result := Result{
 				PullRequestNumber: pr.Number, Name: comp.Name, Version: versionStr, Tag: tag,
-				Message: fmt.Sprintf("would tag and release %s", tag),
+				Message: dryRunMessage(comp, tag, draftUntilAssetsAttach),
 			}
 			mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, versionStr, "", comp.MajorTag, dryRun)
 			if err != nil {
@@ -351,23 +351,17 @@ func releaseShared(
 		tag := comp.TagPrefix + versionStr
 		name := comp.releaseName(versionStr)
 
-		alreadyTagged := false
-		if err := f.CreateTag(ctx, owner, repoName, tag, sha); err != nil {
-			if !errors.Is(err, forge.ErrTagExists) {
-				return nil, fmt.Errorf("release: %s: component %s: pull request #%d: create tag %s: %w", who, comp.Name, pr.Number, tag, err)
-			}
-			alreadyTagged = true
-		}
-
-		body := lockedReleaseBody(pr.Body, comp.Name)
-		if err := createRelease(ctx, f, owner, repoName, tag, name, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
+		target, alreadyTagged, err := createTag(ctx, f, owner, repoName, comp, tag, sha)
+		if err != nil {
 			return nil, fmt.Errorf("release: %s: component %s: pull request #%d: %w", who, comp.Name, pr.Number, err)
 		}
 
-		message := fmt.Sprintf("tagged and released %s", tag)
-		if alreadyTagged {
-			message = fmt.Sprintf("already tagged %s", tag)
+		body := lockedReleaseBody(pr.Body, comp.Name)
+		if err := createRelease(ctx, f, owner, repoName, tag, target, name, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
+			return nil, fmt.Errorf("release: %s: component %s: pull request #%d: %w", who, comp.Name, pr.Number, err)
 		}
+
+		message := releasedMessage(comp, tag, alreadyTagged, draftUntilAssetsAttach)
 
 		mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, versionStr, sha, comp.MajorTag, dryRun)
 		if err != nil {
@@ -404,6 +398,13 @@ type Component struct {
 	// release moves the major tag, TagPrefix plus the released major
 	// number, to the release commit. A pre-release never moves it.
 	MajorTag bool
+	// TagOnPublish is comp's resolved "force-tag-creation" key turned
+	// off: release creates no tag itself but hands the release the merge
+	// commit, and the forge creates the tag on it once the release is
+	// published, right away for a published release, on publish for a
+	// draft. False, the zero value, keeps release-me's own tag before the
+	// release.
+	TagOnPublish bool
 }
 
 // releaseName returns the name of comp's release at versionStr, "X.Y.Z"
@@ -629,7 +630,7 @@ func releaseOne(
 	if dryRun {
 		result := Result{
 			PullRequestNumber: pr.Number, Name: componentName, Version: versionStr, Tag: tag,
-			Message: fmt.Sprintf("would tag and release %s", tag),
+			Message: dryRunMessage(comp, tag, draftUntilAssetsAttach),
 		}
 		mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, componentName, tagPrefix, versionStr, "", majorTagEnabled, dryRun)
 		if err != nil {
@@ -644,20 +645,13 @@ func releaseOne(
 		return Result{}, fmt.Errorf("release: component %s: pull request #%d: merge commit: %w", componentName, pr.Number, err)
 	}
 
-	alreadyTagged := false
-	if err := f.CreateTag(ctx, owner, repoName, tag, sha); err != nil {
-		if !errors.Is(err, forge.ErrTagExists) {
-			return Result{}, fmt.Errorf("release: component %s: pull request #%d: create tag %s: %w", componentName, pr.Number, tag, err)
-		}
-		// The tag exists, so an earlier run got this far before failing or
-		// being interrupted. Carry on: make sure the release exists and
-		// the label still swaps, so the pull request does not stay
-		// pending forever.
-		alreadyTagged = true
+	target, alreadyTagged, err := createTag(ctx, f, owner, repoName, comp, tag, sha)
+	if err != nil {
+		return Result{}, fmt.Errorf("release: component %s: pull request #%d: %w", componentName, pr.Number, err)
 	}
 
 	body := releasepr.ReleaseBody(pr.Body)
-	if err := createRelease(ctx, f, owner, repoName, tag, releaseName, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
+	if err := createRelease(ctx, f, owner, repoName, tag, target, releaseName, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
 		return Result{}, fmt.Errorf("release: component %s: pull request #%d: %w", componentName, pr.Number, err)
 	}
 
@@ -675,10 +669,7 @@ func releaseOne(
 		return Result{}, fmt.Errorf("release: component %s: pull request #%d: set labels: %w", componentName, pr.Number, err)
 	}
 
-	message := fmt.Sprintf("tagged and released %s", tag)
-	if alreadyTagged {
-		message = fmt.Sprintf("already tagged %s", tag)
-	}
+	message := releasedMessage(comp, tag, alreadyTagged, draftUntilAssetsAttach)
 
 	mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, componentName, tagPrefix, versionStr, sha, majorTagEnabled, dryRun)
 	if err != nil {
@@ -691,8 +682,55 @@ func releaseOne(
 	}, nil
 }
 
+// releasedMessage reports what release did for comp at tag, its release a
+// draft when draft is true: already tagged by an earlier run, drafted with
+// the tag left to its publish, or tagged and released.
+func releasedMessage(comp Component, tag string, alreadyTagged, draft bool) string {
+	switch {
+	case alreadyTagged:
+		return fmt.Sprintf("already tagged %s", tag)
+	case comp.TagOnPublish && draft:
+		return fmt.Sprintf("drafted %s, tagged on publish", tag)
+	default:
+		return fmt.Sprintf("tagged and released %s", tag)
+	}
+}
+
+// dryRunMessage reports what release would do for comp at tag, its release
+// a draft when draft is true.
+func dryRunMessage(comp Component, tag string, draft bool) string {
+	if comp.TagOnPublish && draft {
+		return fmt.Sprintf("would draft %s, tagged on publish", tag)
+	}
+	return fmt.Sprintf("would tag and release %s", tag)
+}
+
+// createTag creates tag on sha for comp, unless comp leaves its tag to the
+// release: then target is sha, for createRelease to hand the forge, which
+// creates the tag once the release is published. alreadyTagged is true
+// when the tag exists already: an earlier run got this far before failing
+// or being interrupted, and the caller carries on, so the release exists
+// and the label still swaps instead of the pull request staying pending
+// forever. The returned error names the step, for the caller to wrap with
+// the component and the pull request.
+func createTag(
+	ctx context.Context, f forge.Forge, owner, repoName string, comp Component, tag, sha string,
+) (target string, alreadyTagged bool, err error) {
+	if comp.TagOnPublish {
+		return sha, false, nil
+	}
+	if err := f.CreateTag(ctx, owner, repoName, tag, sha); err != nil {
+		if !errors.Is(err, forge.ErrTagExists) {
+			return "", false, fmt.Errorf("create tag %s: %w", tag, err)
+		}
+		return "", true, nil
+	}
+	return "", false, nil
+}
+
 // createRelease creates the release for tag, named name with body, a
-// pre-release when prerelease is true, a draft when draft is true. A
+// pre-release when prerelease is true, a draft when draft is true, the
+// tag created on target once published when createTag left it. A
 // release that already exists is not an error: an earlier, interrupted run
 // created it. The returned error names the step, for the caller to wrap
 // with the component and the pull request.
@@ -709,7 +747,7 @@ func releaseOne(
 // the label swap: find the draft that already exists and skip straight
 // past it, instead of creating another one.
 func createRelease(
-	ctx context.Context, f forge.Forge, owner, repoName, tag, name, body string, prerelease, draft bool,
+	ctx context.Context, f forge.Forge, owner, repoName, tag, target, name, body string, prerelease, draft bool,
 ) error {
 	if draft {
 		isDraft, err := f.IsReleaseDraft(ctx, owner, repoName, tag)
@@ -723,7 +761,7 @@ func createRelease(
 			return fmt.Errorf("check draft %s: %w", tag, err)
 		}
 	}
-	if err := f.CreateRelease(ctx, owner, repoName, tag, name, body, prerelease, draft); err != nil &&
+	if err := f.CreateRelease(ctx, owner, repoName, tag, target, name, body, prerelease, draft); err != nil &&
 		!errors.Is(err, forge.ErrReleaseExists) {
 		return fmt.Errorf("create release %s: %w", tag, err)
 	}
