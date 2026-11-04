@@ -66,7 +66,9 @@ Updating an existing pull request never replaces its labels: a label added by ha
 the `pending` label is added back if it is ever missing, never set by replacing the full list.
 
 The pull request title is `chore(<name>): release vX.Y.Z`, `chore(main): release vX.Y.Z` for
-the implicit `main` component. Its body starts with `Release vX.Y.Z`, then a collapsed
+the implicit `main` component, or what
+[`release-pull-request-title`](configuration.md#release-pull-request-title) renders. Its body
+starts with `Release vX.Y.Z`, then a collapsed
 `<details><summary>How this release works</summary>` guide naming the tag merging creates and
 the configured labels for pre-releases and tagging, then the [notes block](overrides.md#notes-block)
 when one is present, then the full changelog for the version inside a collapsed `<details>`
@@ -174,7 +176,14 @@ release-me continues from the existing tags and changelogs. A single root packag
   component at the family's version, changed or not;
 - `separate-pull-requests`, default `false` in release-please: more than one package without it,
   or with `false`, becomes `release-pull-request: shared`, one release pull request for every
-  package as release-please opened; `true` keeps release-me's default of one per component.
+  package as release-please opened; `true` keeps release-me's default of one per component;
+- `pull-request-title-pattern` as
+  [`release-pull-request-title`](configuration.md#release-pull-request-title) and
+  `group-pull-request-title-pattern` as
+  [`release-pull-request-shared-title`](configuration.md#release-pull-request-shared-title),
+  release-please's `${scope}` becoming `(${branch})` and its `${component}` the name after a
+  space. A pattern lacking a placeholder release-me reads the title back with, such
+  as release-please's default group pattern without any version, is left out with a warning.
 
 `changelog-source` is set to `all`, because release-please reads every commit since the last
 release, not the first parent history.
