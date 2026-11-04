@@ -4,6 +4,7 @@
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
 // changelog, changelog-source, labels, author, major-tag, versioning,
+// release-pull-request-draft,
 // draft-until-assets-attach, comment-mention and components.
 package config
 
@@ -250,6 +251,10 @@ type Config struct {
 	// changes: every CHANGELOG.md and every release body read back from it
 	// stays the same whichever layout is set.
 	ReleasePullRequestLayout ReleasePullRequestLayout
+	// ReleasePullRequestDraft is the top-level "release-pull-request-draft"
+	// key, default false: when true, pr opens every release pull request as
+	// a draft. It never touches one already open.
+	ReleasePullRequestDraft bool
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
 	// key, default false: when true, release creates every release as a
 	// draft instead of publishing it immediately, and resumes publishing
@@ -458,9 +463,10 @@ type raw struct {
 	MajorTag                 *bool      `yaml:"major-tag"`
 	Versioning               *string    `yaml:"versioning"`
 	ReleasePullRequest       *string    `yaml:"release-pull-request"`
-	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
+	ReleasePullRequestDraft  *bool      `yaml:"release-pull-request-draft"`
 	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
 	CommentMention           *string    `yaml:"comment-mention"`
+	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -653,6 +659,9 @@ func Load(path string) (cfg Config, err error) {
 				path, *r.ReleasePullRequestLayout,
 			)
 		}
+	}
+	if r.ReleasePullRequestDraft != nil {
+		cfg.ReleasePullRequestDraft = *r.ReleasePullRequestDraft
 	}
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach
