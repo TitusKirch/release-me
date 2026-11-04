@@ -204,6 +204,8 @@ counted every commit. It also carries over:
   any external tagging step the old workflow needed;
 - `exclude-paths`, per package or as a top-level default, keeping each path that lies inside
   the package it is set on and warning about every other one, which excludes nothing there;
+- `release-as`, unless the manifest already records it as released or release-me refuses the
+  value, a pre-release for one;
 - the version file of a `node` (`package.json`), `rust` (`Cargo.toml`), `maven` (`pom.xml`, its
   project version or else its parent's), `simple` (its `version-file`, default `version.txt`,
   through `plain`) or `helm` (`Chart.yaml`) package where that file exists, `node` being
