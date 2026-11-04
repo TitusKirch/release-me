@@ -28,11 +28,11 @@ func TestHeaderAndFooterFrameEveryBodyAndChangeNoRelease(t *testing.T) {
 		t.Run(family.name, func(t *testing.T) {
 			releases := map[bool][]forgetest.CreateReleaseCall{}
 			for _, framed := range []bool{false, true} {
-				dir, _, cfg := family.repo(t)
+				dir, origin, cfg := family.repo(t)
 				if framed {
 					cfg.ReleasePullRequestHeader, cfg.ReleasePullRequestFooter = testHeader, testFooter
 				}
-				f := newFake()
+				f := newPRFake(origin)
 				var stdout bytes.Buffer
 				if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 					t.Fatalf("doPR() error = %v", err)
@@ -63,7 +63,7 @@ func TestHeaderAndFooterFrameEveryBodyAndChangeNoRelease(t *testing.T) {
 // body up to date.
 func TestRerunAddsTheHeaderWithoutAPushAndThenStaysUpToDate(t *testing.T) {
 	dir, origin, cfg := newSingleComponentRepo(t)
-	f := newFake()
+	f := newPRFake(origin)
 	var first bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &first); err != nil {
 		t.Fatalf("doPR() first run error = %v", err)
