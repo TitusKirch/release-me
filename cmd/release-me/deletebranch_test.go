@@ -41,9 +41,9 @@ func mergedReleaseRepo(t *testing.T, configYAML, branch string) (dir string, cfg
 	return dir, cfg, headSHA(t, dir)
 }
 
-// mergedReleaseFake returns a fake forge listing one merged pull request
+// mergedReleaseBranchFake returns a fake forge listing one merged pull request
 // titled title on branch, still pending and merged with head.
-func mergedReleaseFake(branch, title, head string) *forgetest.Fake {
+func mergedReleaseBranchFake(branch, title, head string) *forgetest.Fake {
 	f := newFake()
 	f.ListResponses = []forgetest.ListResponse{
 		{Head: branch, State: "closed", PullRequests: []forge.PullRequest{{
@@ -89,7 +89,7 @@ func TestReleaseDeletesTheReleaseBranchOnceItsPullRequestIsReleased(t *testing.T
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, cfg, head := mergedReleaseRepo(t, tc.config, tc.branch)
-			f := mergedReleaseFake(tc.branch, tc.title, head)
+			f := mergedReleaseBranchFake(tc.branch, tc.title, head)
 
 			var stdout bytes.Buffer
 			if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
@@ -173,7 +173,7 @@ func TestReleaseKeepsTheReleaseBranchWhenDeletingIsNotSafe(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, cfg, head := mergedReleaseRepo(t, "", branch)
-			f := mergedReleaseFake(branch, title, head)
+			f := mergedReleaseBranchFake(branch, title, head)
 			if tc.arrange != nil {
 				tc.arrange(t, dir, &cfg, f)
 			}
@@ -199,7 +199,7 @@ func TestReleaseKeepsTheReleaseBranchWhenDeletingIsNotSafe(t *testing.T) {
 func TestReleaseWarnsAndSucceedsWhenDeletingTheReleaseBranchFails(t *testing.T) {
 	const branch = "release-me/main"
 	dir, cfg, head := mergedReleaseRepo(t, "", branch)
-	f := mergedReleaseFake(branch, "chore(main): release v1.3.0", head)
+	f := mergedReleaseBranchFake(branch, "chore(main): release v1.3.0", head)
 	remote := cleanupGitOutput(t, dir, "remote", "get-url", "--push", "origin")
 	if err := os.WriteFile(filepath.Join(remote, "hooks", "pre-receive"), []byte("#!/bin/sh\necho protected branch >&2\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestReleaseWarnsAndSucceedsWhenDeletingTheReleaseBranchFails(t *testing.T) 
 func TestReleaseKeepsTheBranchOfAPullRequestWhoseReleaseFailed(t *testing.T) {
 	const branch = "release-me/main"
 	dir, cfg, head := mergedReleaseRepo(t, "", branch)
-	f := mergedReleaseFake(branch, "chore(main): release v1.3.0", head)
+	f := mergedReleaseBranchFake(branch, "chore(main): release v1.3.0", head)
 	f.CreateReleaseErrs = map[string]error{"v1.3.0": errors.New("github: create release v1.3.0: 422 tag_name was used by an immutable release")}
 
 	var stdout bytes.Buffer
@@ -248,7 +248,7 @@ func TestReleaseDeletesTheBranchOfAComponentReleasedBeforeALaterOneFailed(t *tes
 		t.Fatalf("config.Load() error = %v", err)
 	}
 	head := headSHA(t, dir)
-	f := mergedReleaseFake("release-me/api", "chore(api): release v1.3.0", head)
+	f := mergedReleaseBranchFake("release-me/api", "chore(api): release v1.3.0", head)
 	f.ListResponses = append(f.ListResponses, forgetest.ListResponse{
 		Head: "release-me/web", State: "closed", PullRequests: []forge.PullRequest{{
 			Number: 33, Title: "chore(web): release next", Labels: []string{"release: pending"}, Merged: true, HeadSHA: head,
@@ -297,7 +297,7 @@ func TestSharedReleaseSweepDeletesALeftoverBranchOnlyOnceItsPullRequestIsTagged(
 			dir, origin, cfg := newSharedRepo(t)
 			cfg.DraftUntilAssetsAttach = tc.drafts
 			runGit(t, dir, "push", "-q", "origin", "HEAD:refs/heads/release-me/api")
-			f := mergedReleaseFake("release-me/api", "chore(api): release v1.3.0", headSHA(t, dir))
+			f := mergedReleaseBranchFake("release-me/api", "chore(api): release v1.3.0", headSHA(t, dir))
 			if tc.releaseErr {
 				f.CreateReleaseErrs = map[string]error{"api/v1.3.0": errors.New("github: create release api/v1.3.0: 502 Bad Gateway")}
 			}
@@ -346,7 +346,7 @@ func TestReleaseResumesADraftAfterItsReleaseBranchWasDeleted(t *testing.T) {
 			const branch = "release-me/main"
 			dir, cfg, head := mergedReleaseRepo(t, tc.config, branch)
 			cfg.DraftUntilAssetsAttach = true
-			f := mergedReleaseFake(branch, tc.title, head)
+			f := mergedReleaseBranchFake(branch, tc.title, head)
 
 			var stdout bytes.Buffer
 			if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
