@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
+	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"gopkg.in/yaml.v3"
 )
 
@@ -59,7 +60,7 @@ type rpPackage struct {
 var packageKeys = []string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
-	"initial-version", "extra-files",
+	"initial-version", "extra-files", "version-file",
 }
 
 // topLevelKeys are the release-please settings that only exist at the top
@@ -243,6 +244,7 @@ type file struct {
 func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any)) (component, error) {
 	var (
 		releaseType, packageName, componentName, separator, changelogPath, initialVersion string
+		versionFileName                                                                   string
 		includeComponent, includeV                                                        = true, true
 		bumpMinor, bumpPatchForMinor                                                      bool
 	)
@@ -251,6 +253,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	for key, target := range map[string]any{
 		"release-type": &releaseType, "package-name": &packageName, "component": &componentName,
 		"tag-separator": &separator, "changelog-path": &changelogPath, "initial-version": &initialVersion,
+		"version-file":             &versionFileName,
 		"include-component-in-tag": &includeComponent, "include-v-in-tag": &includeV,
 		"bump-minor-pre-major": &bumpMinor, "bump-patch-for-minor-pre-major": &bumpPatchForMinor,
 	} {
@@ -342,6 +345,11 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		if _, err := readFile(stdpath.Join(p.path, "package-lock.json")); err == nil {
 			warn("package %s: package-lock.json: release-please bumped it, release-me does not", p.path)
 		}
+	case "simple":
+		if versionFileName == "" {
+			versionFileName = "version.txt"
+		}
+		versionFile(versionFileName, updater.Plain, "")
 	case "helm":
 		versionFile("Chart.yaml", "helm", "")
 	case "go":
