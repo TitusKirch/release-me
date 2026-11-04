@@ -197,3 +197,32 @@ func setTitlePattern(cfg *config.Config, pattern string, shared bool) {
 	}
 	cfg.ReleasePullRequestTitle = pattern
 }
+
+func TestRecordedOverlappingTitlesReleaseTheirOriginalVersions(t *testing.T) {
+	cases := []struct {
+		family       prFamily
+		old, current string
+		shared       bool
+	}{
+		{family: prFamilies[0], old: "chore(${component}): release v${version}-2.0.0", current: "chore(${component}): release v0.1.0-${version}"},
+		{family: prFamilies[1], old: "build: ${releases}, api v2.0.0", current: "build: api v1.3.0, web v0.3.1, ${releases}", shared: true},
+		{family: prFamilies[2], old: "build: ${version}-2.0.0 (${components})", current: "build: 0.1.0-${version} (${components})", shared: true},
+	}
+	for _, tc := range cases {
+		for _, layout := range []config.ReleasePullRequestLayout{config.LayoutHeadings, config.LayoutDetails, config.LayoutCompact} {
+			t.Run(tc.family.name+"/"+string(layout), func(t *testing.T) {
+				dir, _, cfg := tc.family.repo(t)
+				cfg.ReleasePullRequestLayout = layout
+				setTitlePattern(&cfg, tc.old, tc.shared)
+				f := newFake()
+				var out bytes.Buffer
+				if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
+					t.Fatal(err)
+				}
+				created := f.CreatedPullRequests[0]
+				setTitlePattern(&cfg, tc.current, tc.shared)
+				releaseMerged(t, dir, cfg, f, created.Title, created.Body, tc.family.wantTags)
+			})
+		}
+	}
+}
