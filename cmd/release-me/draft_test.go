@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/forge"
@@ -61,4 +62,29 @@ func TestDraftReleasePullRequestUpdatesAndReleasesLikeAnyOther(t *testing.T) {
 		t.Fatalf("created %+v, updated %+v, want the draft updated in place", f.CreatedPullRequests, f.UpdatedPullRequests)
 	}
 	releaseMerged(t, dir, cfg, f, f.UpdatedPullRequests[0].Title, f.UpdatedPullRequests[0].Body, []string{"v0.1.0"})
+}
+
+// TestDoPROpensADraftWithEveryOpenedLabel opens every kind of release pull
+// request as a draft with two pending labels and an extra one: the one
+// create call carries the draft state and every label it opens with.
+func TestDoPROpensADraftWithEveryOpenedLabel(t *testing.T) {
+	for _, family := range prFamilies {
+		t.Run(family.name, func(t *testing.T) {
+			dir, origin, cfg := family.repo(t)
+			cfg.ReleasePullRequestDraft = true
+			cfg.Labels.Pending = []string{"autorelease: pending", "release: pending"}
+			cfg.Labels.Extra = []string{"team: platform"}
+			f := newPRFake(origin)
+			f.RepoLabels = append(f.RepoLabels, "autorelease: pending", "team: platform")
+			var stdout bytes.Buffer
+			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+				t.Fatalf("doPR() error = %v", err)
+			}
+			want := []string{"autorelease: pending", "release: pending", "team: platform"}
+			if len(f.CreatedPullRequests) != 1 || !f.CreatedPullRequests[0].Draft ||
+				!slices.Equal(f.CreatedPullRequests[0].Labels, want) {
+				t.Fatalf("CreatedPullRequests = %+v, want one draft labelled %v", f.CreatedPullRequests, want)
+			}
+		})
+	}
 }
