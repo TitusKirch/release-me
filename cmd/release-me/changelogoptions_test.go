@@ -148,6 +148,11 @@ func TestDoPRRendersTheConfiguredChangelogSections(t *testing.T) {
 func prChangelog(t *testing.T, f *forgetest.Fake, configYAML string, build func(t *testing.T, dir string)) (section, body string) {
 	t.Helper()
 	dir, origin := newPRRepo(t)
+	if f.GitDir == "" {
+		// pr writes the release commit through the forge; origin is
+		// where a test reads the branch back from.
+		f.GitDir = origin
+	}
 	writeConfig(t, dir, configYAML)
 	commitEntry(t, dir, "chore: initial commit")
 	tagRepo(t, dir)
