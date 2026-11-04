@@ -90,6 +90,10 @@ versioning mode. A shared body gives each component a `## <name>` heading by def
 release-please collapsed each package into a `<details>` block: `migrate` leaves
 `release-pull-request-layout` out, add `release-pull-request-layout: details` only when the
 human wants the collapsed look kept.
+`migrate` carries `pull-request-title-pattern` and
+`group-pull-request-title-pattern` over as `release-pull-request-title` and
+`release-pull-request-shared-title`; one it left out lacked a placeholder release-me reads the
+title back with, and the row offers the default title or a pattern carrying them.
 
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull

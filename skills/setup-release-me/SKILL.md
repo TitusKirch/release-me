@@ -69,6 +69,9 @@ Four choices belong to the human; ask each once, recommendation first:
   `pr` refuses a longer one, so recommend `per-component` for a larger family. A body with
   several components, `shared` or `locked`, gives each a `## <name>` heading by default; leave
   `release-pull-request-layout` out unless the human asks for `details` or `compact`.
+  Leave
+  `release-pull-request-title` and `release-pull-request-shared-title` out unless the human
+  asks for another title.
 - **Pre-releases:** wanted, or turned off with `alpha`, `beta` and `rc` set to `false` under
   `labels`, so the repository needs only the pending and tagged labels.
 - **Token:** a GitHub App (recommended: its release pull requests trigger checks and the
