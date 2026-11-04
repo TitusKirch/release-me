@@ -247,6 +247,10 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		warn("include-commit-authors: release-me credits authors for every component or none, left out")
 	}
 	st.host = translateChangelogHost(components, warn)
+	// release-please's default changelog links every entry's commit and
+	// the issues it closes; release-me's does neither unless asked to.
+	st.commitLinks = true
+	st.issueReferences = true
 	// release-please groups every package into one release pull request
 	// unless separate-pull-requests is true; release-me's own default is one
 	// per component, so the grouped default is written out. locked always
@@ -1028,7 +1032,9 @@ type style struct {
 	sentenceCase bool
 	authors      bool
 	// host is release-please's changelog-host, "" for none.
-	host string
+	host            string
+	commitLinks     bool
+	issueReferences bool
 }
 
 // workspacePlugins maps each release-please workspace plugin to the
@@ -1322,6 +1328,12 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 
 	add(doc, "changelog-source", scalar("all"))
+	if top.style.commitLinks {
+		add(doc, "changelog-commit-links", boolean(true))
+	}
+	if top.style.issueReferences {
+		add(doc, "changelog-issue-references", boolean(true))
+	}
 	if top.versioning != "" {
 		add(doc, "versioning", scalar(top.versioning))
 	}
