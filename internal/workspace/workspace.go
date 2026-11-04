@@ -18,6 +18,9 @@ const (
 	// Node reads a component's package.json: an npm, pnpm or yarn
 	// workspace package.
 	Node = "node"
+	// Cargo reads a component's Cargo.toml: a crate of a Cargo
+	// workspace.
+	Cargo = "cargo"
 )
 
 // manager is one package manager's manifest file name, reader and
@@ -31,12 +34,13 @@ type manager struct {
 // managers maps every package manager "workspaces" accepts to its
 // manifest.
 var managers = map[string]manager{
-	Node: {file: "package.json", parse: parseNode, set: setNodeDependency},
+	Node:  {file: "package.json", parse: parseNode, set: setNodeDependency},
+	Cargo: {file: "Cargo.toml", parse: parseCargo, set: setCargoDependency},
 }
 
 // Managers lists every package manager "workspaces" accepts, in the order
 // errors report them.
-var Managers = []string{Node}
+var Managers = []string{Node, Cargo}
 
 // ManifestFile returns the file name a component's manifest carries for
 // manager, relative to the component's path, "" for an unknown manager.
@@ -84,7 +88,10 @@ func SetDependency(manager, content, name, version string) (string, error) {
 
 // Member is one component's manifest of one package manager.
 type Member struct {
-	// Component is the component's name.
+	// Component is the component's name, "" for the workspace root
+	// manifest of a repository without a component at ".": it releases
+	// nothing, but the dependencies it declares, such as a Cargo
+	// "[workspace.dependencies]" table, still move.
 	Component string
 	Manager   string
 	Package   Package
@@ -125,7 +132,8 @@ func Links(members []Member) []Link {
 // Dependents returns every component that must release because a
 // component in released does: one that depends on a released component,
 // directly or through another dependent, in members' order, the released
-// components themselves left out.
+// components themselves left out, and so is the workspace root manifest,
+// which belongs to no component.
 func Dependents(members []Member, released []string) []string {
 	links := Links(members)
 	releasing := slices.Clone(released)
@@ -133,7 +141,7 @@ func Dependents(members []Member, released []string) []string {
 	for changed := true; changed; {
 		changed = false
 		for _, m := range members {
-			if slices.Contains(releasing, m.Component) {
+			if m.Component == "" || slices.Contains(releasing, m.Component) {
 				continue
 			}
 			if slices.ContainsFunc(links, func(l Link) bool {
