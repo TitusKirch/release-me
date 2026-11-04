@@ -254,6 +254,18 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	// the issues it closes; release-me's does neither unless asked to.
 	st.commitLinks = true
 	st.issueReferences = true
+
+	if versioning == "locked" {
+		// release-me's service pack counts on one component's own tags,
+		// so a locked family, one shared version line, refuses it.
+		for i := range components {
+			if components[i].strategy == "service-pack" {
+				warn("package %s: versioning service-pack: release-me releases service packs only with "+
+					"versioning independent, not in the locked family linked-versions became, left out", components[i].path)
+				components[i].strategy = ""
+			}
+		}
+	}
 	// release-please groups every package into one release pull request
 	// unless separate-pull-requests is true; release-me's own default is one
 	// per component, so the grouped default is written out. locked always
@@ -918,9 +930,10 @@ func dropShippedReleaseAs(packages []rpPackage, components []component, versions
 }
 
 // translateVersioning maps release-please's "versioning" strategy to
-// release-me's versioning-strategy, "" for the default one. The
-// always-bump strategies carry over by name; the others have no
-// release-me equivalent and are warned about.
+// release-me's versioning-strategy, "" for the default one. Every
+// strategy release-me has carries over by name, a difference a reader
+// should know about warned; any other has no release-me equivalent and is
+// warned about.
 func translateVersioning(pkgPath, versioning string, warn func(string, ...any)) string {
 	switch versioning {
 	case "", "default":
@@ -928,11 +941,13 @@ func translateVersioning(pkgPath, versioning string, warn func(string, ...any)) 
 	case "always-bump-patch", "always-bump-minor", "always-bump-major":
 		return versioning
 	case "service-pack":
-		warn("package %s: versioning service-pack: release-me has no Maven service pack versions, "+
-			"X.Y.Z-sp.N would read as a pre-release, left out", pkgPath)
+		warn("package %s: versioning service-pack: release-me releases X.Y.Z-sp.N as a GitHub pre-release, "+
+			"semver orders it below X.Y.Z", pkgPath)
+		return versioning
 	case "dependency-manifest":
-		warn("package %s: versioning dependency-manifest: release-me bumps by the changes alone, "+
-			"not by a Java dependency manifest, left out", pkgPath)
+		warn("package %s: versioning dependency-manifest: release-me reads the dependency update from the "+
+			"Renovate or Dependabot title, not from a Java manifest", pkgPath)
+		return versioning
 	default:
 		warn("package %s: versioning %s: no release-me equivalent, left out", pkgPath, versioning)
 	}
