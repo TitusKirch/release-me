@@ -6,7 +6,7 @@
 // release-as, hidden-types, fallback-type, token-env, files,
 // changelog, changelog-source, changelog-sections, skip-changelog,
 // changelog-type, the changelog style keys ChangelogStyle lists, labels,
-// prerelease-types, author, major-tag, versioning,
+// prerelease-types, author, major-tag, versioning, signoff,
 // release-pull-request-header, release-pull-request-footer,
 // release-pull-request-title, release-pull-request-shared-title,
 // release-pull-request-draft, draft-until-assets-attach, comment-mention,
@@ -423,6 +423,9 @@ type Config struct {
 	// key, default false: when true, pr opens every release pull request as
 	// a draft. It never touches one already open.
 	ReleasePullRequestDraft bool
+	// Signoff is the top-level "signoff" key: "Name <email>" the release
+	// commit's message carries a "Signed-off-by:" trailer for, "" for none.
+	Signoff string
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
 	// key, default false: when true, release creates every release as a
 	// draft instead of publishing it immediately, and resumes publishing
@@ -806,6 +809,7 @@ type raw struct {
 	SkipChangelog             *bool                  `yaml:"skip-changelog"`
 	Versioning                *string                `yaml:"versioning"`
 	ReleasePullRequest        *string                `yaml:"release-pull-request"`
+	Signoff                   *string                `yaml:"signoff"`
 	ReleasePullRequestDraft   *bool                  `yaml:"release-pull-request-draft"`
 	ReleasePullRequestTitle   *string                `yaml:"release-pull-request-title"`
 	// ReleasePullRequestSharedTitle is "release-pull-request-shared-title".
@@ -1199,6 +1203,14 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.ReleasePullRequestDraft != nil {
 		cfg.ReleasePullRequestDraft = *r.ReleasePullRequestDraft
+	}
+	if r.Signoff != nil {
+		if *r.Signoff != "" {
+			if err := releasepr.CheckSignoff(*r.Signoff); err != nil {
+				return Config{}, fmt.Errorf("config: parse %s: signoff %q %w", path, *r.Signoff, err)
+			}
+		}
+		cfg.Signoff = *r.Signoff
 	}
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach

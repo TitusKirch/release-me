@@ -124,6 +124,8 @@ title back with, and the row offers the default title or a pattern carrying them
 
 Its `draft-pull-request` carries over as `release-pull-request-draft`.
 
+Its `signoff` carries over as `signoff`.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.

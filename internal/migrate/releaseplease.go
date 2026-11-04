@@ -77,6 +77,7 @@ var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "extra-label", "separate-pull-requests", "$schema",
 	"bootstrap-sha", "last-release-sha", "always-link-local", "pull-request-header", "pull-request-footer",
 	"pull-request-title-pattern", "group-pull-request-title-pattern", "draft-pull-request",
+	"signoff",
 }
 
 // unsupportedReasons explains a release-please key the translation leaves
@@ -335,6 +336,18 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	if raw, ok := topValues["draft-pull-request"]; ok {
 		if err := json.Unmarshal(raw, &opts.draft); err != nil {
 			return Result{}, fmt.Errorf("migrate: draft-pull-request: %w", err)
+		}
+	}
+
+	if raw, ok := topValues["signoff"]; ok {
+		if err := json.Unmarshal(raw, &opts.signoff); err != nil {
+			return Result{}, fmt.Errorf("migrate: signoff: %w", err)
+		}
+		if opts.signoff != "" {
+			if err := releasepr.CheckSignoff(opts.signoff); err != nil {
+				warn("signoff: %q %v, left out", opts.signoff, err)
+				opts.signoff = ""
+			}
 		}
 	}
 
@@ -1314,6 +1327,8 @@ type topLevel struct {
 	title, sharedTitle string
 	// draft writes release-pull-request-draft: true.
 	draft bool
+	// signoff writes signoff.
+	signoff string
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1363,6 +1378,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.draft {
 		add(doc, "release-pull-request-draft", boolean(true))
+	}
+	if top.signoff != "" {
+		add(doc, "signoff", scalar(top.signoff))
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
 	add(labels, "pending", labelNode(top.pending))
