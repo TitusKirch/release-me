@@ -177,6 +177,9 @@ func TestUpdatersRegistersEveryUpdaterWithTheRightKeyRequirement(t *testing.T) {
 		{updater.JSON, true},
 		{updater.YAML, true},
 		{updater.TOML, true},
+		{updater.NpmLock, false},
+		{updater.CargoLock, true},
+		{updater.GemfileLock, true},
 	}
 	for _, tc := range cases {
 		entry, ok := updater.Updaters[tc.name]
