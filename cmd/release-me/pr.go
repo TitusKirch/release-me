@@ -638,22 +638,7 @@ func mergedPendingRelease(ctx context.Context, f forge.Forge, owner, repoName, b
 // unpublishedDeferredRelease checks the version the merged PR actually
 // released, rather than the next version recomputed from a still-missing tag.
 func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoName string, cfg config.Config, pr forge.PullRequest) (bool, error) {
-	versions := map[string]string{}
-	for _, comp := range cfg.Resolve() {
-		if v, ok := tagrelease.VersionFromTitle(pr.Title, comp.Name); ok {
-			versions[comp.Name] = v
-		}
-	}
-	if titled, ok := tagrelease.ParseSharedTitle(pr.Title); ok {
-		for _, r := range titled {
-			versions[r.Name] = r.Version
-		}
-	}
-	if v, names, ok := tagrelease.VersionFromLockedTitle(pr.Title); ok {
-		for _, name := range names {
-			versions[name] = v
-		}
-	}
+	versions := titleVersions(cfg, pr)
 	for _, comp := range cfg.Resolve() {
 		v := versions[comp.Name]
 		if comp.ForceTagCreation || v == "" {
@@ -679,6 +664,42 @@ func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoN
 		}
 	}
 	return false, nil
+}
+
+// titleVersions reads every component's version back from the title of
+// the merged release pull request pr, the way release reads it: with the
+// title pattern pr's body records first, then the legacy default shape,
+// then the configured patterns, see releasepr.ReadPatterns. Each title
+// kind is tried, so a per-component pull request still reads back after
+// switching to a shared one, and a pattern changed since pr opened never
+// reinterprets its title.
+func titleVersions(cfg config.Config, pr forge.PullRequest) map[string]string {
+	versions := map[string]string{}
+	for _, kind := range []releasepr.TitleKind{releasepr.TitlePerComponent, releasepr.TitleShared, releasepr.TitleLocked} {
+		var configured []releasepr.TitlePattern
+		switch {
+		case kind == releasepr.TitlePerComponent:
+			configured = cfg.TitlePatterns()
+		case kind == cfg.SharedTitleKind():
+			configured = cfg.SharedTitlePatterns()
+		}
+		v, _, ok := releasepr.ParseAny(releasepr.ReadPatterns(configured, pr.Body, kind), pr.Title)
+		if !ok {
+			continue
+		}
+		if v.Component != "" {
+			versions[v.Component] = v.Version
+		}
+		for _, r := range v.Releases {
+			versions[r.Name] = r.Version
+		}
+		if v.Version != "" {
+			for _, name := range v.Components {
+				versions[name] = v.Version
+			}
+		}
+	}
+	return versions
 }
 
 // resolveBaseBranch reads the repository's default branch from the forge,

@@ -11,6 +11,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/forge/forgetest"
+	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 )
 
 func TestRunRetriesAnUnpublishedDeferredTagWithoutAnotherReleasePR(t *testing.T) {
@@ -117,6 +118,74 @@ func TestDeferredDraftDeferralRequiresAnAbsentTagAndAnUnpublishedRelease(t *test
 			got, err := unpublishedDeferredRelease(t.Context(), f, "owner", "repo", cfg, forge.PullRequest{Number: 9, Title: title})
 			if err != nil || got != tc.want {
 				t.Fatalf("deferred=%v,%v;want %v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestDeferredDraftGuardReadsTheRecordedTitlePattern holds back pr for an
+// unpublished deferred-tag draft whose pull request was titled with a
+// custom pattern its body records, after the configured pattern changed:
+// the recorded pattern reads the title first, the legacy default shape
+// next, so the current setting never reinterprets it.
+func TestDeferredDraftGuardReadsTheRecordedTitlePattern(t *testing.T) {
+	components := "components:\n  api:\n    path: api\n  web:\n    path: web\n"
+	for _, tc := range []struct {
+		name, config, pattern, title, current string
+		kind                                  releasepr.TitleKind
+		tag                                   string
+	}{
+		{
+			name: "single", pattern: "ship ${component} ${version}", title: "ship main 1.1.0",
+			current: "release(${component}): ${version}", kind: releasepr.TitlePerComponent, tag: "v1.1.0",
+		},
+		{
+			name: "shared", config: "release-pull-request: shared\n" + components,
+			pattern: "ship ${releases}", title: "ship api v1.1.0, web v0.3.0",
+			current: "release ${releases} now", kind: releasepr.TitleShared, tag: "web/v0.3.0",
+		},
+		{
+			name: "locked", config: "versioning: locked\n" + components,
+			pattern: "ship ${version} of ${components}", title: "ship 1.1.0 of api, web",
+			current: "locked ${version}: ${components}", kind: releasepr.TitleLocked, tag: "web/v1.1.0",
+		},
+		{
+			name: "legacy per-component after switching to shared", config: "release-pull-request: shared\n" + components,
+			pattern: "ship ${component} ${version}", title: "ship web 0.3.0",
+			kind: releasepr.TitlePerComponent, tag: "web/v0.3.0",
+		},
+		{
+			name: "legacy default title after switching to shared", config: "release-pull-request: shared\n" + components,
+			title: "chore(web): release v0.3.0", tag: "web/v0.3.0",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := newRepo(t)
+			writeConfig(t, dir, tc.config)
+			cfg := loadConfig(t, dir)
+			cfg.ForceTagCreation = false
+			for i := range cfg.Components {
+				off := false
+				cfg.Components[i].ForceTagCreation = &off
+			}
+			if tc.current != "" && tc.kind == releasepr.TitlePerComponent {
+				cfg.ReleasePullRequestTitle = tc.current
+			} else if tc.current != "" {
+				cfg.ReleasePullRequestSharedTitle = tc.current
+			}
+			body := "Release notes\n"
+			if tc.pattern != "" {
+				p, err := releasepr.NewTitlePattern(tc.pattern, tc.kind)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body += releasepr.TitlePatternMarker(p, tc.kind)
+			}
+			f := newFake()
+			f.ReleaseDrafts = map[string]bool{tc.tag: true}
+			got, err := unpublishedDeferredRelease(t.Context(), f, "owner", "repo", cfg, forge.PullRequest{Number: 9, Title: tc.title, Body: body})
+			if err != nil || !got {
+				t.Fatalf("deferred = %v, %v, want the draft %s held back", got, err, tc.tag)
 			}
 		})
 	}
