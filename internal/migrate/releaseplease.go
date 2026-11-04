@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
+	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 	"gopkg.in/yaml.v3"
 )
 
@@ -66,7 +67,7 @@ var packageKeys = []string{
 // level and that this translation reads or deliberately leaves out.
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "separate-pull-requests", "$schema",
-	"bootstrap-sha", "last-release-sha",
+	"bootstrap-sha", "last-release-sha", "signoff",
 }
 
 // FromReleasePlease translates release-please-config.json and
@@ -208,7 +209,20 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		}
 	}
 
-	out, err := render(components, versioning, sharedPR, pending, tagged)
+	opts := topLevel{versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged}
+	if raw, ok := topValues["signoff"]; ok {
+		if err := json.Unmarshal(raw, &opts.signoff); err != nil {
+			return Result{}, fmt.Errorf("migrate: signoff: %w", err)
+		}
+		if opts.signoff != "" {
+			if err := releasepr.CheckSignoff(opts.signoff); err != nil {
+				warn("signoff: %q %v, left out", opts.signoff, err)
+				opts.signoff = ""
+			}
+		}
+	}
+
+	out, err := render(components, opts)
 	if err != nil {
 		return Result{}, err
 	}
@@ -509,26 +523,39 @@ func repoPath(pkgPath, file string) string {
 	return stdpath.Join(pkgPath, file)
 }
 
+// topLevel is every top-level release-me key the translation writes besides
+// the components.
+type topLevel struct {
+	versioning string
+	sharedPR   bool
+	pending    string
+	tagged     string
+	signoff    string
+}
+
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
 // the implicit main component and needs no components key; everything else
 // is a components mapping in release-please's package order, carrying only
 // the keys whose value differs from what release-me would derive.
-func render(components []component, versioning string, sharedPR bool, pending, tagged string) ([]byte, error) {
+func render(components []component, top topLevel) ([]byte, error) {
 	doc := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(m *yaml.Node, key string, value *yaml.Node) {
 		m.Content = append(m.Content, scalar(key), value)
 	}
 
 	add(doc, "changelog-source", scalar("all"))
-	if versioning != "" {
-		add(doc, "versioning", scalar(versioning))
+	if top.versioning != "" {
+		add(doc, "versioning", scalar(top.versioning))
 	}
-	if sharedPR {
+	if top.sharedPR {
 		add(doc, "release-pull-request", scalar("shared"))
 	}
+	if top.signoff != "" {
+		add(doc, "signoff", scalar(top.signoff))
+	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
-	add(labels, "pending", scalar(pending))
-	add(labels, "tagged", scalar(tagged))
+	add(labels, "pending", scalar(top.pending))
+	add(labels, "tagged", scalar(top.tagged))
 	for _, t := range []string{"alpha", "beta", "rc"} {
 		add(labels, t, boolean(false))
 	}
