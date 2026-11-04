@@ -228,11 +228,11 @@ func BodyTitlePattern(body string, kind TitleKind) (p TitlePattern, ok bool) {
 }
 
 // ReadPatterns returns the patterns release reads the title of a merged
-// release pull request of kind back with, in order: configured, the
-// pattern its body records, the one it was rendered with, then the default,
-// so a pull request opened before the pattern changed still releases.
+// release pull request of kind back with: its recorded pattern first, then
+// the legacy default shape, then configured fallbacks. A current setting
+// must never reinterpret a title created with an earlier pattern.
 func ReadPatterns(configured []TitlePattern, body string, kind TitleKind) []TitlePattern {
-	out := slices.Clone(configured)
+	out := make([]TitlePattern, 0, len(configured)+2)
 	add := func(p TitlePattern) {
 		if !slices.ContainsFunc(out, func(o TitlePattern) bool { return o.raw == p.raw }) {
 			out = append(out, p)
@@ -242,6 +242,9 @@ func ReadPatterns(configured []TitlePattern, body string, kind TitleKind) []Titl
 		add(p)
 	}
 	add(DefaultTitle(kind))
+	for _, p := range configured {
+		add(p)
+	}
 	return out
 }
 

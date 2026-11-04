@@ -338,10 +338,10 @@ onto a branch named `rc-2`, or one past GitHub's 256 characters.
 
 Changing the pattern while a release pull request is open is safe. The next `pr` run retitles
 it through a body update alone, without pushing the release branch. A pull request merged
-before that run still releases: `release` reads a title with the configured pattern, then with
-the pattern the body records in an HTML comment, `<!-- release-me-title-pattern: ... -->`,
-written for any pattern other than the default, then with the default, so a pull request
-opened before the key existed or under an earlier pattern is read too.
+before that run still releases: `release` first reads the pattern the body records in an HTML
+comment, `<!-- release-me-title-pattern: ... -->`, written for any non-default pattern. It
+then tries the legacy default shape before the current configured pattern, so an ambiguous
+new setting never reinterprets an older title.
 
 ## `release-pull-request-shared-title`
 
