@@ -107,6 +107,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
+				DeleteReleaseBranch:      true,
 			},
 		},
 		{
@@ -131,6 +132,7 @@ major-tag: true
 release-pull-request: shared
 release-pull-request-layout: details
 draft-until-assets-attach: true
+delete-release-branch: false
 files:
   - path: cmd/cli/version.go
   - path: deploy/values.yaml
@@ -158,6 +160,7 @@ files:
 				ReleasePullRequestLayout: config.LayoutDetails,
 				DraftUntilAssetsAttach:   true,
 				CommentMention:           config.DefaultCommentMention,
+				DeleteReleaseBranch:      false,
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
 					{Path: "deploy/values.yaml", Updater: "marker"},
@@ -184,6 +187,7 @@ files:
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
+				DeleteReleaseBranch:      true,
 			},
 		},
 		{
@@ -205,6 +209,7 @@ files:
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
+				DeleteReleaseBranch:      true,
 			},
 		},
 		{
@@ -226,6 +231,7 @@ files:
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
+				DeleteReleaseBranch:      true,
 			},
 		},
 	}
@@ -528,6 +534,36 @@ func TestLoadRejectsAnUnknownVersioningValue(t *testing.T) {
 
 	if _, err := config.Load(path); err == nil {
 		t.Fatal("Load() error = nil, want an error")
+	}
+}
+
+func TestLoadReadsDeleteReleaseBranch(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "left out defaults to deleting the released branch", content: "", want: true},
+		{name: "explicit true keeps deleting it", content: "delete-release-branch: true\n", want: true},
+		{name: "explicit false keeps the branch", content: "delete-release-branch: false\n", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := writeFile(t, tc.content)
+
+			got, err := config.Load(path)
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got.DeleteReleaseBranch != tc.want {
+				t.Fatalf("DeleteReleaseBranch = %v, want %v", got.DeleteReleaseBranch, tc.want)
+			}
+		})
+	}
+	if !config.Default().DeleteReleaseBranch {
+		t.Fatal("Default().DeleteReleaseBranch = false, want true for a repository without release-me.yaml")
 	}
 }
 
