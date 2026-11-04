@@ -278,3 +278,28 @@ func TestReleaseDraftsTheReleaseUnderDraftAndLeavesItForAHuman(t *testing.T) {
 		})
 	}
 }
+
+func TestSkipGitHubReleaseWinsOverDraft(t *testing.T) {
+	t.Parallel()
+	both := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", SkipGitHubRelease: true, Draft: true}
+	for _, dryRun := range []bool{false, true} {
+		f := mergedFake("chore(main): release v1.4.0", "release: pending")
+		results, err := runOwn(f, []release.Component{both}, false, dryRun)
+		if err != nil {
+			t.Fatalf("Run(dryRun %v) error = %v", dryRun, err)
+		}
+		want := "tagged v1.4.0, GitHub release skipped"
+		if dryRun {
+			want = "would tag v1.4.0, GitHub release skipped"
+		}
+		if len(results) != 1 || results[0].Message != want {
+			t.Fatalf("Run(dryRun %v) = %+v, want one result reporting %q", dryRun, results, want)
+		}
+		if len(f.CreatedReleases) != 0 {
+			t.Fatalf("CreatedReleases = %+v, want none: skip-github-release leaves no release to draft", f.CreatedReleases)
+		}
+		if !dryRun && (len(f.CreatedTags) != 1 || len(f.SetLabelsCalls) != 1) {
+			t.Fatalf("CreatedTags = %+v, SetLabelsCalls = %+v, want the tag and the label swap", f.CreatedTags, f.SetLabelsCalls)
+		}
+	}
+}
