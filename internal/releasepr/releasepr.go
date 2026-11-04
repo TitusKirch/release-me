@@ -34,16 +34,29 @@ type GuideLabels struct {
 	Rc     string
 }
 
+// Guide is the collapsed "How this release works" guide Body and
+// SharedBody render below the version line.
+type Guide struct {
+	// Show renders the guide. false, "release-pull-request-guide: false",
+	// leaves it out of the body, every other part in its place, and Labels
+	// unused.
+	Show bool
+	// Labels names the repository's configured labels the guide renders.
+	Labels GuideLabels
+}
+
 // Body renders the release pull request body: the version line, the "How
-// this release works" guide, the preserved release-me-version override
-// block when versionOverride is not empty, the preserved release-me-notes
-// block when notes is not empty, then the changelog for the version
-// collapsed inside a <details> block. tag is the tag merging this pull
-// request creates, and labels names the repository's configured label
-// values, so the guide always matches what merging and labelling actually
-// do.
-func Body(version, tag string, labels GuideLabels, notes, versionOverride, changelogSection string) string {
-	return render(fmt.Sprintf("Release v%s", version), tag, labels, false, notes, versionOverride, changelogSection)
+// this release works" guide when guide.Show is true, the preserved
+// release-me-version override block when versionOverride is not empty,
+// the preserved release-me-notes block when notes is not empty, then the
+// changelog for the version collapsed inside a <details> block. tag is the
+// tag merging this pull request creates, and guide.Labels names the
+// repository's configured label values, so the guide always matches what merging and
+// labelling actually do. Nothing reads the body back by the guide: every
+// Extract function, ParseComponents and ReleaseBody read a body the same
+// with the guide or without it.
+func Body(version, tag string, guide Guide, notes, versionOverride, changelogSection string) string {
+	return render(fmt.Sprintf("Release v%s", version), tag, guide, false, notes, versionOverride, changelogSection)
 }
 
 // Release is one component a shared release pull request carries: its
@@ -57,14 +70,14 @@ type Release struct {
 // SharedBody renders the body of a release pull request every component
 // shares, in VersioningIndependent or VersioningLinked with
 // "release-pull-request: shared": Body's shape, with a version line naming
-// every component in releases at its own version and a guide naming every
-// tag merging creates. perComponentVersion is true when the components'
+// every component in releases at its own version and, when guide.Show is
+// true, a guide naming every tag merging creates. perComponentVersion is true when the components'
 // versions are independent of each other, so the guide asks for one
 // "<component> X.Y.Z" line per component in the release-me-version block,
 // instead of one version for all of them. changelogSection carries one
 // slice per component, rendered by RenderComponents in any layout, as
 // ComponentSection reads it back.
-func SharedBody(releases []Release, labels GuideLabels, perComponentVersion bool, notes, versionOverride, changelogSection string) string {
+func SharedBody(releases []Release, guide Guide, perComponentVersion bool, notes, versionOverride, changelogSection string) string {
 	parts := make([]string, 0, len(releases))
 	tags := make([]string, 0, len(releases))
 	for _, r := range releases {
@@ -72,14 +85,18 @@ func SharedBody(releases []Release, labels GuideLabels, perComponentVersion bool
 		tags = append(tags, r.Tag)
 	}
 	headline := "Release " + strings.Join(parts, ", ")
-	return render(headline, strings.Join(tags, ", "), labels, perComponentVersion, notes, versionOverride, changelogSection)
+	return render(headline, strings.Join(tags, ", "), guide, perComponentVersion, notes, versionOverride, changelogSection)
 }
 
 // render is the body Body and SharedBody share, below the headline line.
-func render(headline, tag string, labels GuideLabels, perComponentVersion bool, notes, versionOverride, changelogSection string) string {
+// guide.Show false leaves the guide block out, every other part in its
+// place.
+func render(headline, tag string, guide Guide, perComponentVersion bool, notes, versionOverride, changelogSection string) string {
 	var b strings.Builder
-	b.WriteString(headline + "\n\n")
-	b.WriteString(guideBlock(tag, labels, perComponentVersion))
+	b.WriteString(headline + "\n")
+	if guide.Show {
+		b.WriteString("\n" + guideBlock(tag, guide.Labels, perComponentVersion))
+	}
 
 	if versionOverride != "" {
 		b.WriteString("\n```release-me-version\n")
@@ -111,7 +128,7 @@ func guideBlock(tag string, labels GuideLabels, perComponentVersion bool) string
 	fmt.Fprintf(&b, "- Merging this pull request tags `%s`, creates the release and moves the label to `%s`. "+
 		"With `major-tag` enabled, the moving major tag follows a stable release.\n", tag, labels.Tagged)
 	b.WriteString("- Release notes: add a fenced block with the info string `release-me-notes` anywhere in this body. " +
-		"It is rendered above the entries in the changelog file and in the release and survives updates.\n")
+		"It is rendered above the changelog in the GitHub release, never in the changelog file, and survives updates.\n")
 	if perComponentVersion {
 		b.WriteString("- Force the next version of a component: add a fenced block with the info string " +
 			"`release-me-version` containing one `<component> X.Y.Z` line per component anywhere in this body, " +

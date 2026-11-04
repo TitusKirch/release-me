@@ -89,7 +89,10 @@ recommend `per-component`. Confirm the translated choice with the human alongsid
 versioning mode. A shared body gives each component a `## <name>` heading by default, where
 release-please collapsed each package into a `<details>` block: `migrate` leaves
 `release-pull-request-layout` out, add `release-pull-request-layout: details` only when the
-human wants the collapsed look kept.
+human wants the collapsed look kept. Every release pull request body also opens with a
+collapsed "How this release works" guide release-please never rendered: `migrate` leaves
+`release-pull-request-guide` out, add `release-pull-request-guide: false` only when the human
+wants the body without it.
 
 **Release branches** are deleted once released: release-please leaves its
 `release-please--*` branch behind, release-me's `release` deletes `release-me/*` after

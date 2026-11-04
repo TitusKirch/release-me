@@ -14,8 +14,11 @@ Run the migration before upgrading.
 ```
 ````
 
-Add it by hand once the pull request is open. `pr` keeps it verbatim on every later update, and
-`release` carries it into the GitHub release, above the changelog.
+Add it by hand once the pull request is open, anywhere in the body, or through a
+[`release-notes` comment](#comment-commands). `pr` keeps it verbatim on every later update, and
+`release` carries it into the GitHub release, above the changelog. A shared release pull
+request's notes reach every component's release. Every other edit to the body, outside the
+notes block and the `release-me-version` block, is overwritten by the next `pr` run.
 
 ## Override block
 

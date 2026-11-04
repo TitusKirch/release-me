@@ -179,6 +179,42 @@ block whose summary reads `<name> vX.Y.Z`, at the changelog's top level and clos
 section, an override block's text carried into an entry, never marks `details`; the release
 notes and version override blocks are never read for components.
 
+## `release-pull-request-guide`
+
+Every release pull request body, per component, shared or locked, opens with a collapsed
+`<details><summary>How this release works</summary>` guide below its version line. The
+top-level `release-pull-request-guide` key turns it off for every one of them, default `true`:
+
+```yaml
+release-pull-request-guide: false
+```
+
+The guide is a reminder for whoever reviews the pull request, never something release-me reads:
+the notes block, the `release-me-version` block, the components of a shared or locked body in
+every layout, the changelog date and the release bodies all read back the same with the guide
+or without it, and both comment commands work on either. Changing the key while a release pull
+request is open is safe: the next `pr` run adds or drops the guide through a body update alone,
+without pushing the release branch, the notes block and a version override kept.
+
+A team that turns the guide off finds everything it says documented here:
+
+- What merging does, the tag, the release, the label swap and the moving major tag:
+  [release](commands.md#release).
+- Release notes, the `release-me-notes` block: [notes block](overrides.md#notes-block).
+- Forcing the next version, the `release-me-version` block and the `release-as` comment, per
+  component on a shared pull request with `independent` versions:
+  [comment commands](overrides.md#comment-commands), the
+  [Release-As footer](overrides.md#release-as-footer) for doing it from a commit, and
+  [shared release pull request](versioning-modes.md#shared-release-pull-request).
+- Pre-releases through the `alpha`, `beta` and `rc` labels:
+  [pre-releases](commands.md#pre-releases).
+- Hiding or rewriting a merged pull request's entry, the `release-me` block in its body:
+  [override block](overrides.md#override-block).
+- What a push to the default branch updates and which edits survive it: [pr](commands.md#pr)
+  and the [notes block](overrides.md#notes-block).
+
+`migrate` leaves the key out, so a migrated repository keeps the guide.
+
 ## `draft-until-assets-attach`
 
 Drafts every release instead of publishing it immediately, default `false`. There is no

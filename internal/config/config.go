@@ -256,6 +256,15 @@ type Config struct {
 	// changes: every CHANGELOG.md and every release body read back from it
 	// stays the same whichever layout is set.
 	ReleasePullRequestLayout ReleasePullRequestLayout
+	// ReleasePullRequestGuide is the top-level "release-pull-request-guide"
+	// key, default true: every release pull request body, per component,
+	// shared or locked, opens with the collapsed "How this release works"
+	// guide. false leaves the guide out and disables nothing it advertises:
+	// the release-me-notes block, the release-me-version block, the
+	// pre-release labels and both comment commands keep working, they only
+	// stop being advertised in the body. Nothing reads the body back by the
+	// guide, so the key can change while a release pull request is open.
+	ReleasePullRequestGuide bool
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
 	// key, default false: when true, release creates every release as a
 	// draft instead of publishing it immediately, and resumes publishing
@@ -473,6 +482,7 @@ type raw struct {
 	Versioning               *string    `yaml:"versioning"`
 	ReleasePullRequest       *string    `yaml:"release-pull-request"`
 	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
+	ReleasePullRequestGuide  *bool      `yaml:"release-pull-request-guide"`
 	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
 	CommentMention           *string    `yaml:"comment-mention"`
 	DeleteReleaseBranch      *bool      `yaml:"delete-release-branch"`
@@ -515,6 +525,7 @@ func Default() Config {
 		Versioning:               DefaultVersioning,
 		ReleasePullRequest:       ReleasePullRequestPerComponent,
 		ReleasePullRequestLayout: DefaultReleasePullRequestLayout,
+		ReleasePullRequestGuide:  true,
 		CommentMention:           DefaultCommentMention,
 		DeleteReleaseBranch:      true,
 	}
@@ -671,6 +682,9 @@ func Load(path string) (cfg Config, err error) {
 				path, *r.ReleasePullRequestLayout,
 			)
 		}
+	}
+	if r.ReleasePullRequestGuide != nil {
+		cfg.ReleasePullRequestGuide = *r.ReleasePullRequestGuide
 	}
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach

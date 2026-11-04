@@ -72,9 +72,11 @@ the `pending` label is added back if it is ever missing, never set by replacing 
 The pull request title is `chore(<name>): release vX.Y.Z`, `chore(main): release vX.Y.Z` for
 the implicit `main` component. Its body starts with `Release vX.Y.Z`, then a collapsed
 `<details><summary>How this release works</summary>` guide naming the tag merging creates and
-the configured labels for pre-releases and tagging, then the [notes block](overrides.md#notes-block)
-when one is present, then the full changelog for the version inside a collapsed `<details>`
-section. When every entry is a hidden type, the changelog carries one explicit line,
+the configured labels for pre-releases and tagging, left out with
+[`release-pull-request-guide: false`](configuration.md#release-pull-request-guide), then the
+version override block and the [notes block](overrides.md#notes-block) when present, then the
+full changelog for the version inside a collapsed `<details>` section. When every entry is a
+hidden type, the changelog carries one explicit line,
 `- Version bump without user facing changes.`, instead of an empty heading. The guide never
 reaches the changelog file or the GitHub release. A shared release pull request's title and
 body name every component it releases: see
