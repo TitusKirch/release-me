@@ -38,7 +38,8 @@ var cargoString = regexp.MustCompile(`^(?:"((?:[^"\\]|\\.)*)"|'([^']*)')`)
 // declared under, the crate it names, its version requirement, "" for
 // none, and where it sits.
 type cargoDecl struct {
-	key, crate, version string
+	key, crate, version  string
+	workspace, inherited bool
 	// line is the line holding the version, or the declaration's own line
 	// when it carries none; table is true for a "[dependencies.<key>]"
 	// table.
@@ -51,7 +52,13 @@ func parseCargo(content []byte) (Package, error) {
 	lines := strings.Split(string(content), "\n")
 	pkg := Package{}
 	for _, d := range cargoDecls(lines) {
-		pkg.Dependencies = append(pkg.Dependencies, Dependency{Name: d.crate, Range: d.version})
+		pkg.Dependencies = append(pkg.Dependencies, Dependency{Name: d.crate, Range: d.version, Workspace: d.inherited})
+		if d.workspace && d.key != d.crate {
+			if pkg.WorkspaceAliases == nil {
+				pkg.WorkspaceAliases = map[string]string{}
+			}
+			pkg.WorkspaceAliases[d.key] = d.crate
+		}
 	}
 	table := ""
 	for _, line := range lines {
@@ -93,7 +100,7 @@ func cargoDecls(lines []string) []cargoDecl {
 			}
 			if t := cargoDepTable.FindStringSubmatch(table); t != nil && t[2] != "" {
 				key := unquoteKey(t[2])
-				decls = append(decls, cargoDecl{key: key, crate: key, line: i, table: true})
+				decls = append(decls, cargoDecl{key: key, crate: key, line: i, table: true, workspace: strings.HasPrefix(table, "workspace.dependencies")})
 				tableDep = len(decls) - 1
 			}
 			continue
@@ -111,20 +118,23 @@ func cargoDecls(lines []string) []cargoDecl {
 				d.line = i
 			case "package":
 				d.crate, _ = cargoStringValue(value)
+			case "workspace":
+				d.inherited = cargoTrue(value)
 			}
 			continue
 		}
 		if !cargoDepTable.MatchString(table) {
 			continue
 		}
-		name, _, dotted := strings.Cut(key, ".")
-		d := cargoDecl{key: name, crate: name, line: i}
+		name, field, dotted := strings.Cut(key, ".")
+		d := cargoDecl{key: name, crate: name, line: i, workspace: strings.HasPrefix(table, "workspace.dependencies")}
 		switch {
 		case dotted:
-			// "core.workspace = true": the workspace's own version.
+			d.inherited = field == "workspace" && cargoTrue(value)
 		case strings.HasPrefix(value, "{"):
 			fields := cargoInlineTable(value)
 			d.version = fields["version"]
+			d.inherited = fields["workspace"] == "true"
 			if p, ok := fields["package"]; ok {
 				d.crate = p
 			}
@@ -148,9 +158,16 @@ func cargoInlineTable(value string) map[string]string {
 		}
 		if s, ok := cargoStringValue(strings.TrimSpace(v)); ok {
 			fields[unquoteKey(strings.TrimSpace(k))] = s
+		} else if cargoTrue(v) {
+			fields[unquoteKey(strings.TrimSpace(k))] = "true"
 		}
 	}
 	return fields
+}
+
+func cargoTrue(value string) bool {
+	value, _, _ = strings.Cut(value, "#")
+	return strings.TrimSpace(value) == "true"
 }
 
 // cargoStringValue returns the content of the string value starts with.

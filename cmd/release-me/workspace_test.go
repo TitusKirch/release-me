@@ -239,3 +239,37 @@ func TestNodeWorkspaceLeftOutReleasesNoDependent(t *testing.T) {
 		t.Errorf("packages/ui/package.json = %q, want its dependency left alone", got)
 	}
 }
+
+func TestCargoWorkspaceReleasesDependentsThroughInheritedAliases(t *testing.T) {
+	for _, decl := range []string{"[dependencies]\nengine = { workspace = true }\n", "[dependencies.engine]\nworkspace = true\n", "[dependencies]\nengine.workspace = true\n"} {
+		t.Run(decl, func(t *testing.T) {
+			dir, remote := newPRRepo(t)
+			writeConfig(t, dir, "release-pull-request: shared\nworkspaces: [cargo]\ncomponents:\n  core:\n    path: crates/core\n    files:\n      - {path: crates/core/Cargo.toml, updater: toml, key: package.version}\n  cli:\n    path: crates/cli\n    files:\n      - {path: crates/cli/Cargo.toml, updater: toml, key: package.version}\n")
+			child := "[package]\nname = \"cli\"\nversion = \"1.0.0\"\nedition = \"2021\"\n" + decl
+			writeFiles(t, dir, "chore: scaffold Cargo workspace", map[string]string{
+				"Cargo.toml":             "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n[workspace.dependencies]\nengine = { package = \"core\", path = \"crates/core\", version = \"1.0.0\" }\n",
+				"crates/core/Cargo.toml": "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+				"crates/cli/Cargo.toml":  child,
+			})
+			runGit(t, dir, "tag", "core/v1.0.0")
+			runGit(t, dir, "tag", "cli/v1.0.0")
+			writeFiles(t, dir, "feat: add the core API", map[string]string{"crates/core/src/lib.rs": "pub fn export() {}\n"})
+			f := newFake()
+			var out bytes.Buffer
+			if err := doPR(t.Context(), dir, loadConfig(t, dir), "", f, discardLogger(), false, &out); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.CreatedPullRequests) != 1 || f.CreatedPullRequests[0].Title != "chore: release core v1.1.0, cli v1.0.1" {
+				t.Fatalf("PRs=%+v", f.CreatedPullRequests)
+			}
+			root := showBareFile(t, remote, mainBranch, "Cargo.toml")
+			if !strings.Contains(root, `engine = { package = "core", path = "crates/core", version = "1.1.0" }`) {
+				t.Fatalf("workspace root = %s", root)
+			}
+			want := strings.Replace(child, `version = "1.0.0"`, `version = "1.0.1"`, 1)
+			if got := showBareFile(t, remote, mainBranch, "crates/cli/Cargo.toml"); got != want {
+				t.Fatalf("child = %s; want %s", got, want)
+			}
+		})
+	}
+}
