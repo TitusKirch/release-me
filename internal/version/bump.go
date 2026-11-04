@@ -47,6 +47,47 @@ type Rules struct {
 	// out: a version that wins over every "Release-As" footer and the
 	// computed bump while ParseForced accepts it against the last version.
 	ReleaseAs string
+	// Strategy picks how a release bumps the version, StrategyDefault
+	// when "".
+	Strategy Strategy
+}
+
+// Strategy names how a release bumps the version, release-please's
+// versioning strategies of the same names.
+type Strategy string
+
+// The strategies Rules.Strategy accepts.
+const (
+	// StrategyDefault bumps by the highest change: major for a breaking
+	// change, minor for a feat, patch for a fix, perf or revert, with the
+	// pre-major rules applied below 1.0.0.
+	StrategyDefault Strategy = "default"
+	// StrategyAlwaysBumpPatch, StrategyAlwaysBumpMinor and
+	// StrategyAlwaysBumpMajor bump the patch, minor or major of every
+	// release, whatever its changes are. The changes still decide whether
+	// there is a release at all; the pre-major rules do not apply.
+	StrategyAlwaysBumpPatch Strategy = "always-bump-patch"
+	StrategyAlwaysBumpMinor Strategy = "always-bump-minor"
+	StrategyAlwaysBumpMajor Strategy = "always-bump-major"
+)
+
+// Strategies lists every Strategy, in the order a configuration error
+// names them.
+var Strategies = []Strategy{StrategyDefault, StrategyAlwaysBumpPatch, StrategyAlwaysBumpMinor, StrategyAlwaysBumpMajor}
+
+// fixedBump returns the bump an always-bump strategy gives every release.
+// ok is false for StrategyDefault, which bumps by the changes.
+func (s Strategy) fixedBump() (bump Bump, ok bool) {
+	switch s {
+	case StrategyAlwaysBumpPatch:
+		return BumpPatch, true
+	case StrategyAlwaysBumpMinor:
+		return BumpMinor, true
+	case StrategyAlwaysBumpMajor:
+		return BumpMajor, true
+	default:
+		return BumpNone, false
+	}
 }
 
 // The reasons a forced Result names, and the Source of a Refusal.
@@ -67,7 +108,9 @@ type Result struct {
 // lastOK is false when no version tag exists yet; Next then returns
 // rules.InitialVersion, still only once at least one change bumps the version.
 // released is false when there is nothing to release: either no changes at
-// all, or no change of a type that bumps the version.
+// all, or no change of a type that bumps the version. An always-bump
+// rules.Strategy replaces the bump the changes compute, never whether
+// there is a release.
 //
 // rules.ReleaseAs, when ParseForced accepts it against last, a pre-release
 // refused, wins outright over every footer, the computed bump and the
@@ -99,30 +142,37 @@ func Next(last Semver, lastOK bool, changes []Change, rules Rules) (result Resul
 		return Result{Version: rules.InitialVersion, Bump: BumpInitial, Reason: "initial version"}, true, refused
 	}
 
-	next := last
+	if fixed, ok := rules.Strategy.fixedBump(); ok {
+		return Result{Version: bumped(last, fixed).String(), Bump: fixed, Reason: reason + ", " + string(rules.Strategy)}, true, refused
+	}
+
+	switch {
+	case bump == BumpMajor && rules.BumpMinorPreMajor && last.Major < 1:
+		bump = BumpMinor
+		reason += ", minor below 1.0.0"
+	case bump == BumpMinor && rules.BumpPatchForMinorPreMajor && last.Major < 1:
+		bump = BumpPatch
+		reason += ", patch below 1.0.0"
+	}
+	return Result{Version: bumped(last, bump).String(), Bump: bump, Reason: reason}, true, refused
+}
+
+// bumped returns last with bump applied: the bumped part counted up, every
+// part below it reset to 0. BumpNone, BumpInitial and BumpForced return
+// last unchanged.
+func bumped(last Semver, bump Bump) Semver {
 	switch bump {
 	case BumpMajor:
-		if rules.BumpMinorPreMajor && last.Major < 1 {
-			next = Semver{Major: last.Major, Minor: last.Minor + 1}
-			bump = BumpMinor
-			reason += ", minor below 1.0.0"
-		} else {
-			next = Semver{Major: last.Major + 1}
-		}
+		return Semver{Major: last.Major + 1}
 	case BumpMinor:
-		if rules.BumpPatchForMinorPreMajor && last.Major < 1 {
-			next = Semver{Major: last.Major, Minor: last.Minor, Patch: last.Patch + 1}
-			bump = BumpPatch
-			reason += ", patch below 1.0.0"
-		} else {
-			next = Semver{Major: last.Major, Minor: last.Minor + 1}
-		}
+		return Semver{Major: last.Major, Minor: last.Minor + 1}
 	case BumpPatch:
-		next = Semver{Major: last.Major, Minor: last.Minor, Patch: last.Patch + 1}
+		return Semver{Major: last.Major, Minor: last.Minor, Patch: last.Patch + 1}
 	case BumpNone, BumpInitial, BumpForced:
-		// unreachable: highestBump never returns these
+		return last
+	default:
+		return last
 	}
-	return Result{Version: next.String(), Bump: bump, Reason: reason}, true, refused
 }
 
 // Changed reports whether changes contains at least one change that bumps
