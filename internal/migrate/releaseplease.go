@@ -71,7 +71,7 @@ var packageKeys = []string{
 // level and that this translation reads or deliberately leaves out.
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "separate-pull-requests", "$schema",
-	"bootstrap-sha", "last-release-sha",
+	"bootstrap-sha", "last-release-sha", "always-link-local",
 }
 
 // FromReleasePlease translates release-please-config.json and
@@ -219,6 +219,19 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		workspaces = nil
 	}
 
+	// always-link-local is a node-workspace option, default true, release-me's
+	// default too; only false needs writing.
+	linkLocal := true
+	if raw, ok := topValues["always-link-local"]; ok {
+		if err := json.Unmarshal(raw, &linkLocal); err != nil {
+			return Result{}, fmt.Errorf("migrate: always-link-local: %w", err)
+		}
+		if !slices.Contains(workspaces, workspace.Node) {
+			warn("always-link-local: applies to the node-workspace plugin, left out")
+			linkLocal = true
+		}
+	}
+
 	pending, err := label(topValues["label"], "autorelease: pending", "label", warn)
 	if err != nil {
 		return Result{}, err
@@ -252,6 +265,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 
 	out, err := render(components, topLevel{
 		versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, workspaces: workspaces,
+		separateLinks: !linkLocal,
 	})
 	if err != nil {
 		return Result{}, err
@@ -1070,6 +1084,8 @@ type topLevel struct {
 	sharedPR        bool
 	pending, tagged string
 	workspaces      []string
+	// separateLinks writes always-link-local: false.
+	separateLinks bool
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1095,6 +1111,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 			list.Content = append(list.Content, scalar(w))
 		}
 		add(doc, "workspaces", list)
+	}
+	if top.separateLinks {
+		add(doc, "always-link-local", boolean(false))
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
 	add(labels, "pending", scalar(top.pending))

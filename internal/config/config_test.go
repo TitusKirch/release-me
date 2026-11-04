@@ -110,6 +110,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 				DeleteReleaseBranch:      true,
+				AlwaysLinkLocal:          true,
 			},
 		},
 		{
@@ -162,14 +163,14 @@ files:
 					Pending: "needs-release", Tagged: "released",
 					Alpha: "needs-alpha", Beta: "needs-beta", Rc: "needs-rc",
 				},
-				Author:                   config.Author{Name: "renovate", Email: "renovate@example.com", Set: []string{"author.name", "author.email"}},
-				MajorTag:                 true,
-				Versioning:               config.DefaultVersioning,
-				ReleasePullRequest:       config.ReleasePullRequestShared,
-				ReleasePullRequestLayout: config.LayoutDetails,
-				DraftUntilAssetsAttach:   true,
-				CommentMention:           config.DefaultCommentMention,
-				DeleteReleaseBranch:      false,
+				Author:                 config.Author{Name: "renovate", Email: "renovate@example.com", Set: []string{"author.name", "author.email"}},
+				MajorTag:               true,
+				Versioning:             config.DefaultVersioning,
+				ReleasePullRequest:     config.ReleasePullRequestShared,
+				DraftUntilAssetsAttach: true,
+				CommentMention:         config.DefaultCommentMention,
+				DeleteReleaseBranch:    false,
+				AlwaysLinkLocal:        true,
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
 					{Path: "deploy/values.yaml", Updater: "marker"},
@@ -198,6 +199,7 @@ files:
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 				DeleteReleaseBranch:      true,
+				AlwaysLinkLocal:          true,
 			},
 		},
 		{
@@ -221,6 +223,7 @@ files:
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 				DeleteReleaseBranch:      true,
+				AlwaysLinkLocal:          true,
 			},
 		},
 		{
@@ -244,6 +247,7 @@ files:
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 				DeleteReleaseBranch:      true,
+				AlwaysLinkLocal:          true,
 			},
 		},
 	}
@@ -402,6 +406,7 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			content: "release-pull-request: shared\nworkspaces: [node, node]\ncomponents:\n  web:\n    path: web\n",
 		},
 		{name: "rejects workspaces without components", content: "workspaces: [node]\n"},
+		{name: "rejects always-link-local without node workspaces", content: "always-link-local: false\n"},
 		{
 			name:    "rejects workspaces with one release pull request per component",
 			content: "workspaces: [node]\ncomponents:\n  core:\n    path: packages/core\n  web:\n    path: packages/web\n",
@@ -509,6 +514,32 @@ func TestLoadAcceptsARootComponentBesideOthers(t *testing.T) {
 	}
 	if got[1].OtherPaths != nil || got[2].OtherPaths != nil {
 		t.Fatalf("OtherPaths = %q, %q, want none for a component below the root", got[1].OtherPaths, got[2].OtherPaths)
+	}
+}
+
+func TestLoadReadsAlwaysLinkLocal(t *testing.T) {
+	t.Parallel()
+	head := "release-pull-request: shared\nworkspaces: [node]\ncomponents:\n  core:\n    path: packages/core\n"
+	cases := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "left out, every local dependency links", content: head, want: true},
+		{name: "turned off", content: head + "always-link-local: false\n", want: false},
+		{name: "turned on", content: head + "always-link-local: true\n", want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := config.Load(writeFile(t, tc.content))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.AlwaysLinkLocal != tc.want {
+				t.Fatalf("AlwaysLinkLocal = %v, want %v", cfg.AlwaysLinkLocal, tc.want)
+			}
+		})
 	}
 }
 
