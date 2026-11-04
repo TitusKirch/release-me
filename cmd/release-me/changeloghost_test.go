@@ -71,7 +71,7 @@ func TestChangelogHostKeepsAPathPrefixAndLeavesOtherCallsAlone(t *testing.T) {
 	if got := withChangelogHost(config.Default(), newFake()).CompareURL("owner", "repo", "v1.0.0", "v1.1.0"); got != "https://github.com/owner/repo/compare/v1.0.0...v1.1.0" {
 		t.Fatalf("CompareURL() without changelog-host = %q, want the forge's own", got)
 	}
-	created, err := f.CreatePullRequest(t.Context(), "owner", "repo", "main", "release-me/main", "chore: release v1.0.0", "", nil)
+	created, err := f.CreatePullRequest(t.Context(), "owner", "repo", "main", "release-me/main", "chore: release v1.0.0", "", nil, false)
 	if err != nil || !strings.HasPrefix(created.URL, "https://github.com/") {
 		t.Fatalf("CreatePullRequest() = %+v, %v, want the release pull request's own URL untouched", created, err)
 	}

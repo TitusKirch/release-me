@@ -19,9 +19,9 @@ func TestDoPROpensEveryReleasePullRequestAsADraftOnlyWhileTheKeyIsOn(t *testing.
 				name = family.name + "/draft"
 			}
 			t.Run(name, func(t *testing.T) {
-				dir, _, cfg := family.repo(t)
+				dir, origin, cfg := family.repo(t)
 				cfg.ReleasePullRequestDraft = draft
-				f := newFake()
+				f := newPRFake(origin)
 				var stdout bytes.Buffer
 				if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 					t.Fatalf("doPR() error = %v", err)
@@ -41,7 +41,7 @@ func TestDoPROpensEveryReleasePullRequestAsADraftOnlyWhileTheKeyIsOn(t *testing.
 func TestDraftReleasePullRequestUpdatesAndReleasesLikeAnyOther(t *testing.T) {
 	dir, origin, cfg := newSingleComponentRepo(t)
 	cfg.ReleasePullRequestDraft = true
-	f := newFake()
+	f := newPRFake(origin)
 	var first bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &first); err != nil {
 		t.Fatalf("doPR() first run error = %v", err)
