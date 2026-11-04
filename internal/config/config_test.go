@@ -108,6 +108,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
+				AlwaysLinkLocal:          true,
 			},
 		},
 		{
@@ -157,9 +158,10 @@ files:
 				MajorTag:                 true,
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestShared,
-				ReleasePullRequestLayout: config.LayoutDetails,
 				DraftUntilAssetsAttach:   true,
 				CommentMention:           config.DefaultCommentMention,
+				AlwaysLinkLocal:          true,
+				ReleasePullRequestLayout: config.LayoutDetails,
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
 					{Path: "deploy/values.yaml", Updater: "marker"},
@@ -187,6 +189,7 @@ files:
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
+				AlwaysLinkLocal:          true,
 			},
 		},
 		{
@@ -209,6 +212,7 @@ files:
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
+				AlwaysLinkLocal:          true,
 			},
 		},
 		{
@@ -231,6 +235,7 @@ files:
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
+				AlwaysLinkLocal:          true,
 			},
 		},
 	}
@@ -348,6 +353,7 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			content: "release-pull-request: shared\nworkspaces: [node, node]\ncomponents:\n  web:\n    path: web\n",
 		},
 		{name: "rejects workspaces without components", content: "workspaces: [node]\n"},
+		{name: "rejects always-link-local without node workspaces", content: "always-link-local: false\n"},
 		{
 			name:    "rejects workspaces with one release pull request per component",
 			content: "workspaces: [node]\ncomponents:\n  core:\n    path: packages/core\n  web:\n    path: packages/web\n",
@@ -391,6 +397,32 @@ func TestLoadReadsComponentsInConfigOrder(t *testing.T) {
 	}
 	if got.Components[0].Path != "backend" || got.Components[1].Path != "frontend" {
 		t.Fatalf("Components paths = [%s, %s], want [backend, frontend]", got.Components[0].Path, got.Components[1].Path)
+	}
+}
+
+func TestLoadReadsAlwaysLinkLocal(t *testing.T) {
+	t.Parallel()
+	head := "release-pull-request: shared\nworkspaces: [node]\ncomponents:\n  core:\n    path: packages/core\n"
+	cases := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "left out, every local dependency links", content: head, want: true},
+		{name: "turned off", content: head + "always-link-local: false\n", want: false},
+		{name: "turned on", content: head + "always-link-local: true\n", want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := config.Load(writeFile(t, tc.content))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.AlwaysLinkLocal != tc.want {
+				t.Fatalf("AlwaysLinkLocal = %v, want %v", cfg.AlwaysLinkLocal, tc.want)
+			}
+		})
 	}
 }
 
