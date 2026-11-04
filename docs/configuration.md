@@ -217,13 +217,15 @@ changelog-host: https://github.example.com
 
 It moves the heading's compare link and each entry's pull request link, and the commit and issue
 links [`changelog-commit-links`](#changelog-commit-links) and
-[`changelog-issue-references`](#changelog-issue-references) add. Each link keeps its path,
-`/<owner>/<repo>/pull/12`, behind the configured address, which may carry a path prefix of its own,
-`https://code.example.com/github`. It changes no request and no link outside the changelog: the
-release pull request's own address, the action outputs and the API calls all stay on the forge. The
-address is an absolute `http` or `https` one with a host and no query, fragment or credentials; a
-trailing `/` is dropped. Whitespace and parentheses are refused, as they break the markdown link the
-heading's compare link is read back from. There is no per-component override.
+[`changelog-issue-references`](#changelog-issue-references) add, and every link to the forge's own
+host in the notes [`changelog-type: github`](#changelog-type) has GitHub generate, while a link to
+any other host stays as written. Each link keeps its path, `/<owner>/<repo>/pull/12`, behind the
+configured address, which may carry a path prefix of its own, `https://code.example.com/github`. It
+changes no request and no link outside the changelog: the release pull request's own address, the
+action outputs and the API calls all stay on the forge. The address is an absolute `http` or `https`
+one with a host and no query, fragment or credentials; a trailing `/` is dropped. Whitespace and
+parentheses are refused, as they break the markdown link the heading's compare link is read back
+from. There is no per-component override.
 
 ## `changelog-date-format`
 

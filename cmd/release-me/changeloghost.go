@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
@@ -13,8 +14,9 @@ import (
 )
 
 // withChangelogHost returns f with every link a changelog renders moved to
-// cfg's "changelog-host": the compare view, a pull request's, a commit's
-// and a closed issue's. It
+// cfg's "changelog-host": the compare view, a pull request's, a commit's,
+// a closed issue's, and every link to the forge's own host in the release
+// notes changelog-type github has the forge generate. It
 // returns f unchanged without the key. Everything else f does, the
 // requests it makes included, stays on the host f talks to.
 func withChangelogHost(cfg config.Config, f forge.Forge) forge.Forge {
@@ -75,4 +77,29 @@ func (h hostedForge) CommitURL(owner, repo, sha string) string {
 // changelog-issue-references renders.
 func (h hostedForge) IssueURL(owner, repo string, number int) string {
 	return h.rehost(h.Forge.IssueURL(owner, repo, number))
+}
+
+// forgeLink matches a web address in generated Markdown, up to the
+// whitespace, closing bracket or angle bracket that ends it.
+var forgeLink = regexp.MustCompile(`https?://[^\s)\]>]+`)
+
+// GenerateReleaseNotes implements forge.Forge: the notes as f generates
+// them, every link on f's own web host, a pull request's, a commit's, a
+// user's or the full changelog's compare view, moved to h.host. A link to
+// any other host stays as written. The request itself still goes to f.
+func (h hostedForge) GenerateReleaseNotes(ctx context.Context, owner, repo, tag, previousTag, target string) (string, error) {
+	notes, err := h.Forge.GenerateReleaseNotes(ctx, owner, repo, tag, previousTag, target)
+	if err != nil {
+		return notes, err
+	}
+	own, err := url.Parse(h.Forge.CompareURL(owner, repo, "a", "b"))
+	if err != nil || own.Host == "" {
+		return notes, nil
+	}
+	return forgeLink.ReplaceAllStringFunc(notes, func(link string) string {
+		if u, err := url.Parse(link); err != nil || !strings.EqualFold(u.Host, own.Host) {
+			return link
+		}
+		return h.rehost(link)
+	}), nil
 }

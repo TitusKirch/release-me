@@ -116,3 +116,43 @@ func TestDoPRPointsCommitAndIssueLinksAtTheChangelogHost(t *testing.T) {
 		t.Fatalf("pull request body = %q, want no link left on github.com", body)
 	}
 }
+
+func TestDoPRPointsGitHubsGeneratedNotesAtTheChangelogHost(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeConfig(t, dir, "changelog-host: https://github.example.com/\nchangelog-type: github\n")
+	commitEntry(t, dir, "chore: initial commit")
+	tagRepo(t, dir)
+	mergePullRequest(t, dir, 12, "feat/widget", map[string]string{"widget.go": "package widget\n"})
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	f := withHostedPullRequests(forge.PullRequest{
+		Number: 12, Title: "feat: add the widget", URL: "https://github.com/owner/repo/pull/12",
+	})
+	f.GitDir = origin
+	f.ReleaseNotes = map[string]string{"v0.2.0": "## What's Changed\n" +
+		"* feat: add the widget by @octocat in https://github.com/owner/repo/pull/12, see <https://docs.example.org/widget>\n\n" +
+		"**Full Changelog**: https://github.com/owner/repo/compare/v0.1.0...v0.2.0"}
+	if err := doPR(t.Context(), dir, cfg, "", withChangelogHost(cfg, f), discardLogger(), false, io.Discard); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	content := showBareBranchFile(t, origin, "CHANGELOG.md")
+	section, _ := changelog.TopSection(content)
+	for _, want := range []string{
+		"in https://github.example.com/owner/repo/pull/12, see <https://docs.example.org/widget>",
+		"**Full Changelog**: https://github.example.com/owner/repo/compare/v0.1.0...v0.2.0",
+	} {
+		if !strings.Contains(section, want) {
+			t.Errorf("CHANGELOG.md section = %q, want it to contain %q", section, want)
+		}
+	}
+	if strings.Contains(content, "https://github.com/") {
+		t.Fatalf("CHANGELOG.md = %q, want no link left on github.com", content)
+	}
+	if len(f.GeneratedReleaseNotes) != 1 {
+		t.Fatalf("GeneratedReleaseNotes = %+v, want the request made through the forge once", f.GeneratedReleaseNotes)
+	}
+}
