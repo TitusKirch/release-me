@@ -3,7 +3,8 @@
 
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
-// changelog, changelog-source, labels, author, major-tag, versioning,
+// changelog, changelog-source, labels, prerelease-types, author,
+// major-tag, versioning,
 // draft-until-assets-attach, comment-mention and components.
 package config
 
@@ -14,6 +15,7 @@ import (
 	"io"
 	"os"
 	stdpath "path"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -201,6 +203,43 @@ type Labels struct {
 	Alpha   string
 	Beta    string
 	Rc      string
+	// PreReleaseTypes is the top-level "prerelease-types" key: further
+	// pre-release types, each selected by its own label, in
+	// release-me.yaml's order, nil when the key is left out.
+	PreReleaseTypes []PreReleaseType
+}
+
+// PreReleaseType is one pre-release type and the label that selects it on
+// the release pull request: an entry of "prerelease-types", or one of
+// alpha, beta and rc.
+type PreReleaseType struct {
+	Type  string
+	Label string
+}
+
+// PreReleaseKinds returns every enabled pre-release type with its label:
+// alpha, beta and rc, in that order, each left out when its label is
+// turned off, then PreReleaseTypes. It is the order a pull request
+// carrying more than one of the labels is reported in.
+func (l Labels) PreReleaseKinds() []PreReleaseType {
+	kinds := make([]PreReleaseType, 0, 3+len(l.PreReleaseTypes))
+	for _, k := range []PreReleaseType{{"alpha", l.Alpha}, {"beta", l.Beta}, {"rc", l.Rc}} {
+		if k.Label != "" {
+			kinds = append(kinds, k)
+		}
+	}
+	return append(kinds, l.PreReleaseTypes...)
+}
+
+// PreReleaseLabels returns the label of every enabled pre-release type, in
+// PreReleaseKinds's order.
+func (l Labels) PreReleaseLabels() []string {
+	kinds := l.PreReleaseKinds()
+	names := make([]string, len(kinds))
+	for i, k := range kinds {
+		names[i] = k.Label
+	}
+	return names
 }
 
 // Author is the "author" key: the git identity pr commits the release
@@ -445,22 +484,25 @@ type rawAuthor struct {
 // raw mirrors Config with pointer fields, so Load can tell a key left out of
 // the file apart from one set to its zero value.
 type raw struct {
-	InitialVersion           *string    `yaml:"initial-version"`
-	BumpMinorPreMajor        *bool      `yaml:"bump-minor-pre-major"`
-	HiddenTypes              *[]string  `yaml:"hidden-types"`
-	FallbackType             *string    `yaml:"fallback-type"`
-	TokenEnv                 *string    `yaml:"token-env"`
-	Files                    *[]rawFile `yaml:"files"`
-	Changelog                *string    `yaml:"changelog"`
-	ChangelogSource          *string    `yaml:"changelog-source"`
-	Labels                   *rawLabels `yaml:"labels"`
-	Author                   *rawAuthor `yaml:"author"`
-	MajorTag                 *bool      `yaml:"major-tag"`
-	Versioning               *string    `yaml:"versioning"`
-	ReleasePullRequest       *string    `yaml:"release-pull-request"`
-	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
-	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
-	CommentMention           *string    `yaml:"comment-mention"`
+	InitialVersion         *string    `yaml:"initial-version"`
+	BumpMinorPreMajor      *bool      `yaml:"bump-minor-pre-major"`
+	HiddenTypes            *[]string  `yaml:"hidden-types"`
+	FallbackType           *string    `yaml:"fallback-type"`
+	TokenEnv               *string    `yaml:"token-env"`
+	Files                  *[]rawFile `yaml:"files"`
+	Changelog              *string    `yaml:"changelog"`
+	ChangelogSource        *string    `yaml:"changelog-source"`
+	Labels                 *rawLabels `yaml:"labels"`
+	Author                 *rawAuthor `yaml:"author"`
+	MajorTag               *bool      `yaml:"major-tag"`
+	Versioning             *string    `yaml:"versioning"`
+	ReleasePullRequest     *string    `yaml:"release-pull-request"`
+	DraftUntilAssetsAttach *bool      `yaml:"draft-until-assets-attach"`
+	CommentMention         *string    `yaml:"comment-mention"`
+	// PreReleaseTypes is decoded as a node, like Components, so its
+	// entries keep release-me.yaml's order.
+	PreReleaseTypes          yaml.Node `yaml:"prerelease-types"`
+	ReleasePullRequestLayout *string   `yaml:"release-pull-request-layout"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -599,9 +641,16 @@ func Load(path string) (cfg Config, err error) {
 		if r.Labels.Rc != nil {
 			cfg.Labels.Rc = string(*r.Labels.Rc)
 		}
-		if err := validateLabels(path, cfg.Labels); err != nil {
+	}
+	if r.PreReleaseTypes.Kind != 0 {
+		types, err := decodePreReleaseTypes(path, &r.PreReleaseTypes)
+		if err != nil {
 			return Config{}, err
 		}
+		cfg.Labels.PreReleaseTypes = types
+	}
+	if err := validateLabels(path, cfg.Labels); err != nil {
+		return Config{}, err
 	}
 	if r.Author != nil {
 		if r.Author.Name != nil {
@@ -967,18 +1016,57 @@ func validateFileUpdates(path string, cfg Config) error {
 // pre-release types, configured empty, are not compared.
 func validateLabels(path string, l Labels) error {
 	roles := []struct{ key, name string }{
-		{"pending", l.Pending}, {"tagged", l.Tagged}, {"alpha", l.Alpha}, {"beta", l.Beta}, {"rc", l.Rc},
+		{"labels.pending", l.Pending}, {"labels.tagged", l.Tagged},
+		{"labels.alpha", l.Alpha}, {"labels.beta", l.Beta}, {"labels.rc", l.Rc},
+	}
+	for _, t := range l.PreReleaseTypes {
+		roles = append(roles, struct{ key, name string }{"prerelease-types." + t.Type, t.Label})
 	}
 	for i := 0; i < len(roles); i++ {
 		for j := i + 1; j < len(roles); j++ {
 			if roles[i].name != "" && roles[i].name == roles[j].name {
-				return fmt.Errorf("config: parse %s: labels.%s and labels.%s are both %q",
+				return fmt.Errorf("config: parse %s: %s and %s are both %q",
 					path, roles[i].key, roles[j].key, roles[i].name)
 			}
 		}
 	}
 	return nil
 }
+
+// reservedPreReleaseTypes are the type names "prerelease-types" refuses:
+// alpha, beta and rc are configured under "labels".
+var reservedPreReleaseTypes = []string{"alpha", "beta", "rc"}
+
+// decodePreReleaseTypes converts the "prerelease-types" mapping node, type
+// name to label, into []PreReleaseType in release-me.yaml's order. A type
+// name is one semver pre-release identifier that is not only digits, the
+// "<type>" of "X.Y.Z-<type>.N", and none of reservedPreReleaseTypes; a
+// label is a non-empty string.
+func decodePreReleaseTypes(path string, node *yaml.Node) ([]PreReleaseType, error) {
+	if node.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("config: parse %s: prerelease-types: must be a mapping of type to label", path)
+	}
+	types := make([]PreReleaseType, 0, len(node.Content)/2)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		name, value := node.Content[i].Value, node.Content[i+1]
+		if !preReleaseTypeName.MatchString(name) || strings.Trim(name, "0123456789") == "" {
+			return nil, fmt.Errorf("config: parse %s: prerelease-types: type %q is not one pre-release identifier "+
+				"of ASCII letters, digits and \"-\" with at least one letter or \"-\"", path, name)
+		}
+		if slices.Contains(reservedPreReleaseTypes, name) {
+			return nil, fmt.Errorf("config: parse %s: prerelease-types: type %q is reserved, "+
+				"alpha, beta and rc are configured under labels", path, name)
+		}
+		if value.Kind != yaml.ScalarNode || value.Tag != "!!str" || value.Value == "" {
+			return nil, fmt.Errorf("config: parse %s: prerelease-types.%s: the label must be a non-empty string", path, name)
+		}
+		types = append(types, PreReleaseType{Type: name, Label: value.Value})
+	}
+	return types, nil
+}
+
+// preReleaseTypeName matches one semver pre-release identifier.
+var preReleaseTypeName = regexp.MustCompile(`^[0-9A-Za-z-]+$`)
 
 // pathsOverlap reports whether a and b name the same component path, or one
 // is nested inside the other. "." is the repository root and overlaps with
