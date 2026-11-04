@@ -263,7 +263,8 @@ counted every commit. It also carries over:
   gets its top-level `version` bumped, as release-please does. Each is carried over only where
   the file exists and holds what it bumps; a `glob` entry is warned about, since release-me
   lists its files;
-- `label` and `release-label` as the `pending` and `tagged` labels;
+- `label`, `release-label` and `extra-label` as the `pending`, `tagged` and `extra` labels,
+  every label of each comma separated list;
 - `prerelease-type` as a pre-release type selected by the label `release: <type>`: `alpha`,
   `beta` or `rc` stays on, any other name but `sp`, which `versioning-strategy: service-pack`
   owns and which is left out with a warning, becomes a

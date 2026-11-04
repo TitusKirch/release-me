@@ -741,7 +741,7 @@ func TestDoPRRendersTheGuideWithTheRealTagAndConfiguredLabelNames(t *testing.T) 
 	commitEntry(t, dir, "feat: add the next command")
 
 	cfg := config.Default()
-	cfg.Labels.Tagged = "status: released"
+	cfg.Labels.Tagged = []string{"status: released"}
 	cfg.Labels.Alpha = "pre: alpha"
 	cfg.Labels.Beta = "pre: beta"
 	cfg.Labels.Rc = "pre: rc"

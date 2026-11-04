@@ -60,7 +60,7 @@ var mainComponent = release.Component{Name: "main", Branch: "release-me/main", T
 // testLabels are the labels release.Run reads and writes in a test that
 // does not exercise a pre-release.
 var testLabels = release.Labels{
-	Pending: "release: pending", Tagged: "release: tagged",
+	Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"},
 	Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc",
 }
 

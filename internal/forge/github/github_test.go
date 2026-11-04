@@ -204,7 +204,7 @@ func TestPullRequestsListedMergeTimestampDrivesRelease(t *testing.T) {
 
 	comp := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v"}
 	labels := release.Labels{
-		Pending: "release: pending", Tagged: "release: tagged",
+		Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"},
 		Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc",
 	}
 

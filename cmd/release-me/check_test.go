@@ -22,7 +22,7 @@ import (
 // exercise a missing pre-release label does not trip over one left at its
 // zero value.
 var testLabels = config.Labels{
-	Pending: "release: pending", Tagged: "release: tagged",
+	Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"},
 	Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc",
 }
 
@@ -82,7 +82,7 @@ func TestDoCheckReportsEveryMissingItem(t *testing.T) {
 		{
 			name: "does not expect a pre-release label configured empty",
 			cfg: config.Config{Labels: config.Labels{
-				Pending: "autorelease: pending", Tagged: "autorelease: tagged", Alpha: "", Beta: "", Rc: "release: rc",
+				Pending: []string{"autorelease: pending"}, Tagged: []string{"autorelease: tagged"}, Alpha: "", Beta: "", Rc: "release: rc",
 			}},
 			token:      "a-token",
 			repoLabels: []string{"autorelease: pending", "autorelease: tagged"},

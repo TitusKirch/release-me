@@ -44,7 +44,7 @@ func TestDefaultSetsTheChangelogPathAndLabels(t *testing.T) {
 		t.Fatalf("ChangelogPath = %q, want %q", got.ChangelogPath, "CHANGELOG.md")
 	}
 	want := config.Labels{
-		Pending: "release: pending", Tagged: "release: tagged",
+		Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"},
 		Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc",
 	}
 	if !reflect.DeepEqual(got.Labels, want) {
@@ -100,7 +100,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				ChangelogPath:   config.DefaultChangelogPath,
 				ChangelogSource: config.DefaultChangelogSource,
 				Labels: config.Labels{
-					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
+					Pending: []string{config.DefaultPendingLabel}, Tagged: []string{config.DefaultTaggedLabel},
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
 				Author:                   config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
@@ -160,7 +160,7 @@ files:
 				ChangelogPath:             "HISTORY.md",
 				ChangelogSource:           "all",
 				Labels: config.Labels{
-					Pending: "needs-release", Tagged: "released",
+					Pending: []string{"needs-release"}, Tagged: []string{"released"},
 					Alpha: "needs-alpha", Beta: "needs-beta", Rc: "needs-rc",
 				},
 				Author:                   config.Author{Name: "renovate", Email: "renovate@example.com", Set: []string{"author.name", "author.email"}},
@@ -190,7 +190,7 @@ files:
 				ChangelogPath:   config.DefaultChangelogPath,
 				ChangelogSource: config.DefaultChangelogSource,
 				Labels: config.Labels{
-					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
+					Pending: []string{config.DefaultPendingLabel}, Tagged: []string{config.DefaultTaggedLabel},
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
 				Author:                   config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
@@ -214,7 +214,7 @@ files:
 				ChangelogPath:   config.DefaultChangelogPath,
 				ChangelogSource: config.DefaultChangelogSource,
 				Labels: config.Labels{
-					Pending: "needs-release", Tagged: config.DefaultTaggedLabel,
+					Pending: []string{"needs-release"}, Tagged: []string{config.DefaultTaggedLabel},
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
 				Author:                   config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
@@ -238,7 +238,7 @@ files:
 				ChangelogPath:   config.DefaultChangelogPath,
 				ChangelogSource: config.DefaultChangelogSource,
 				Labels: config.Labels{
-					Pending: config.DefaultPendingLabel, Tagged: config.DefaultTaggedLabel,
+					Pending: []string{config.DefaultPendingLabel}, Tagged: []string{config.DefaultTaggedLabel},
 					Alpha: config.DefaultAlphaLabel, Beta: config.DefaultBetaLabel, Rc: config.DefaultRcLabel,
 				},
 				Author:                   config.Author{Name: "renovate", Email: config.DefaultAuthorEmail, Set: []string{"author.name"}},

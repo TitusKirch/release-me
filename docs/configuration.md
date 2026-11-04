@@ -326,14 +326,34 @@ component overrides it through its own `changelog-source` key.
 ## `labels`
 
 `labels.pending` and `labels.tagged`: the label names `pr`, `release` and `check` use, default
-`release: pending` and `release: tagged`.
+`release: pending` and `release: tagged`. Each is one name or a list of names, the way
+release-please's comma separated `label` and `release-label` work:
+
+```yaml
+labels:
+  pending: ["autorelease: pending", release]
+  tagged: "autorelease: tagged"
+  extra: ["team: platform", automerge]
+```
+
+`pr` opens a release pull request with every pending label and adds back any one it lost. A
+merged release pull request is pending, and `release` tags it, only while it carries every
+pending label; `release` then removes all of them and adds every tagged label, and a draft is
+resumed only on a pull request carrying every tagged label. A configuration written with one
+name per role keeps working unchanged.
+
+`labels.extra`: labels `pr` adds to a release pull request it opens, beside the pending ones,
+release-please's `extra-label`, default none. Nothing reads them, `release` leaves them in
+place, and `pr` never adds one back after a human removed it. `check` and `pr` expect them on
+the repository like every other configured label.
 
 `labels.alpha`, `labels.beta` and `labels.rc`: the pre-release type labels `pr`, `release` and
-`check` use, default `release: alpha`, `release: beta` and `release: rc`. `false`, or `""`,
-turns that pre-release type off, so a repository that never cuts pre-releases needs none of
-the three labels. See [Pre-releases](commands.md#pre-releases). `check` reports any of the
-enabled labels missing by name, it never creates one. `labels.pending` and `labels.tagged`
-cannot be empty. A pre-release type of another name goes under
+`check` use, default `release: alpha`, `release: beta` and `release: rc`. `false`, or `""`, turns
+that pre-release type off, so a repository that never cuts pre-releases needs none of the three
+labels. See [Pre-releases](commands.md#pre-releases). `check` reports any of the enabled labels
+missing by name, it never creates one. `labels.pending` and `labels.tagged` cannot be empty, no name
+can be empty, and one name in two roles, or twice in one, is a configuration error: an extra label
+named like a pre-release label would select that type. A pre-release type of another name goes under
 [`prerelease-types`](#prerelease-types).
 
 ## `prerelease-types`

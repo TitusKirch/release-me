@@ -162,7 +162,7 @@ func RunLocked(
 			continue
 		}
 
-		if slices.Contains(pr.Labels, labels.Pending) {
+		if HasAll(pr.Labels, labels.Pending) {
 			logger.Debug("locked release pull request merged", "number", pr.Number, "title", pr.Title)
 
 			versionStr, ok := lockedVersion(releasepr.ReadPatterns(titles, pr.Body, releasepr.TitleLocked), pr.Title)
@@ -190,7 +190,7 @@ func RunLocked(
 		// repository opted into drafting in the first place: off, a
 		// release publishes the moment it is created, so a tagged pull
 		// request never has anything left to resume.
-		if dryRun || !draftUntilAssetsAttach || !slices.Contains(pr.Labels, labels.Tagged) {
+		if dryRun || !draftUntilAssetsAttach || !HasAll(pr.Labels, labels.Tagged) {
 			continue
 		}
 		versionStr, ok := lockedVersion(releasepr.ReadPatterns(titles, pr.Body, releasepr.TitleLocked), pr.Title)
@@ -234,8 +234,8 @@ func RunShared(
 		if !pr.Merged {
 			continue
 		}
-		pending := slices.Contains(pr.Labels, labels.Pending)
-		if !pending && (dryRun || !draftUntilAssetsAttach || !slices.Contains(pr.Labels, labels.Tagged)) {
+		pending := HasAll(pr.Labels, labels.Pending)
+		if !pending && (dryRun || !draftUntilAssetsAttach || !HasAll(pr.Labels, labels.Tagged)) {
 			continue
 		}
 
@@ -348,7 +348,7 @@ func releaseShared(
 	}
 
 	results := make([]Result, 0, len(plan))
-	remove := []string{labels.Pending}
+	remove := slices.Clone(labels.Pending)
 	for _, p := range plan {
 		comp, versionStr, ver := p.comp, p.versionStr, p.ver
 		if preType, _, ok := ver.PreReleaseType(); ok {
@@ -449,11 +449,16 @@ type Component struct {
 // pull request's type label swaps to Tagged alongside Pending, the same as
 // Pending does.
 type Labels struct {
-	Pending string
-	Tagged  string
-	Alpha   string
-	Beta    string
-	Rc      string
+	// Pending is every label a merged release pull request carries while
+	// it waits for its tag: it is pending only while it carries all of
+	// them.
+	Pending []string
+	// Tagged is every label releasing a pull request adds in place of the
+	// pending ones; it is tagged only while it carries all of them.
+	Tagged []string
+	Alpha  string
+	Beta   string
+	Rc     string
 	// Others maps every further pre-release type "prerelease-types"
 	// configures to its label.
 	Others map[string]string
@@ -578,7 +583,7 @@ func Run(
 			continue
 		}
 
-		if slices.Contains(pr.Labels, labels.Pending) {
+		if HasAll(pr.Labels, labels.Pending) {
 			logger.Debug("release pull request merged", "component", comp.Name, "number", pr.Number, "title", pr.Title)
 
 			versionStr, ok := componentVersion(releasepr.ReadPatterns(comp.Titles, pr.Body, releasepr.TitlePerComponent), pr.Title, comp.Name)
@@ -607,7 +612,7 @@ func Run(
 		// repository opted into drafting in the first place: off, a
 		// release publishes the moment it is created, so a tagged pull
 		// request never has anything left to resume.
-		if dryRun || !draftUntilAssetsAttach || !slices.Contains(pr.Labels, labels.Tagged) {
+		if dryRun || !draftUntilAssetsAttach || !HasAll(pr.Labels, labels.Tagged) {
 			continue
 		}
 		result, resumed, err := resumeOne(ctx, f, owner, repoName, comp, pr)
@@ -735,7 +740,7 @@ func releaseOne(
 	if err != nil {
 		return Result{}, fmt.Errorf("release: component %s: pull request #%d: labels: %w", componentName, pr.Number, err)
 	}
-	remove := []string{labels.Pending}
+	remove := slices.Clone(labels.Pending)
 	if preType, _, ok := ver.PreReleaseType(); ok {
 		if typeLabel := labels.typeLabel(preType); typeLabel != "" {
 			remove = append(remove, typeLabel)
@@ -762,14 +767,26 @@ func releaseOne(
 }
 
 // swapLabels removes every label in remove from labels, when present, and
-// appends add.
-func swapLabels(labels, remove []string, add string) []string {
-	out := make([]string, 0, len(labels)+1)
+// appends every label in add it does not carry yet.
+func swapLabels(labels, remove, add []string) []string {
+	out := make([]string, 0, len(labels)+len(add))
 	for _, l := range labels {
-		if slices.Contains(remove, l) {
+		if slices.Contains(remove, l) || slices.Contains(add, l) {
 			continue
 		}
 		out = append(out, l)
 	}
-	return append(out, add)
+	return append(out, add...)
+}
+
+// HasAll reports whether labels carries every label in want: how a release
+// pull request is recognized as pending or tagged when either role names
+// several labels.
+func HasAll(labels, want []string) bool {
+	for _, w := range want {
+		if !slices.Contains(labels, w) {
+			return false
+		}
+	}
+	return len(want) > 0
 }

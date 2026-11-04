@@ -250,13 +250,17 @@ type ChangelogStyle struct {
 // Labels is the "labels" key: the label names release-me expects on the
 // repository. Alpha, Beta and Rc select a pre-release type on the release
 // pull request; Pending and Tagged apply to every release, stable or not.
-// An empty Alpha, Beta or Rc, configured as "" or false, turns that
-// pre-release type off: release-me neither expects the label on the
-// repository nor reads it from a pull request. Pending and Tagged are never
-// empty.
+// Pending and Tagged are each one name or a list of them, never empty: a
+// release pull request is pending while it carries every pending label, and
+// releasing it swaps all of them for every tagged label. Extra is the labels
+// pr adds to a release pull request it opens beside the pending ones, read
+// by nothing. An empty Alpha, Beta or Rc, configured as "" or false, turns
+// that pre-release type off: release-me neither expects the label on the
+// repository nor reads it from a pull request.
 type Labels struct {
-	Pending string
-	Tagged  string
+	Pending []string
+	Tagged  []string
+	Extra   []string
 	Alpha   string
 	Beta    string
 	Rc      string
@@ -297,6 +301,12 @@ func (l Labels) PreReleaseLabels() []string {
 		names[i] = k.Label
 	}
 	return names
+}
+
+// Opened returns the labels pr opens a release pull request with: every
+// pending label, then every extra one.
+func (l Labels) Opened() []string {
+	return append(slices.Clone(l.Pending), l.Extra...)
 }
 
 // Author is the "author" key, still accepted so an existing configuration
@@ -697,11 +707,41 @@ type rawChangelogSection struct {
 // rawLabels mirrors Labels with pointer fields, so Load can tell a key left
 // out of the "labels" block apart from one set to its zero value.
 type rawLabels struct {
-	Pending *string          `yaml:"pending"`
-	Tagged  *string          `yaml:"tagged"`
+	Pending *labelList       `yaml:"pending"`
+	Tagged  *labelList       `yaml:"tagged"`
+	Extra   *labelList       `yaml:"extra"`
 	Alpha   *preReleaseLabel `yaml:"alpha"`
 	Beta    *preReleaseLabel `yaml:"beta"`
 	Rc      *preReleaseLabel `yaml:"rc"`
+}
+
+// labelList is "labels.pending", "labels.tagged" or "labels.extra": one
+// label name, the form every release-me.yaml before lists existed carries,
+// or a list of them.
+type labelList []string
+
+// UnmarshalYAML accepts a string or a list of strings. An empty name is
+// rejected wherever it appears.
+func (l *labelList) UnmarshalYAML(node *yaml.Node) error {
+	var names []string
+	if node.Kind == yaml.SequenceNode {
+		if err := node.Decode(&names); err != nil {
+			return err
+		}
+	} else {
+		var name string
+		if err := node.Decode(&name); err != nil {
+			return err
+		}
+		names = []string{name}
+	}
+	for _, n := range names {
+		if strings.TrimSpace(n) == "" {
+			return fmt.Errorf("line %d: a label name is empty", node.Line)
+		}
+	}
+	*l = names
+	return nil
 }
 
 // preReleaseLabel is one of "labels.alpha", "labels.beta" and "labels.rc":
@@ -822,7 +862,7 @@ func Default() Config {
 		ChangelogPath:   DefaultChangelogPath,
 		ChangelogSource: DefaultChangelogSource,
 		Labels: Labels{
-			Pending: DefaultPendingLabel, Tagged: DefaultTaggedLabel,
+			Pending: []string{DefaultPendingLabel}, Tagged: []string{DefaultTaggedLabel},
 			Alpha: DefaultAlphaLabel, Beta: DefaultBetaLabel, Rc: DefaultRcLabel,
 		},
 		Author:                   Author{Name: DefaultAuthorName, Email: DefaultAuthorEmail},
@@ -1024,16 +1064,19 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {
-			if *r.Labels.Pending == "" {
+			if len(*r.Labels.Pending) == 0 {
 				return Config{}, fmt.Errorf("config: parse %s: labels.pending is empty", path)
 			}
 			cfg.Labels.Pending = *r.Labels.Pending
 		}
 		if r.Labels.Tagged != nil {
-			if *r.Labels.Tagged == "" {
+			if len(*r.Labels.Tagged) == 0 {
 				return Config{}, fmt.Errorf("config: parse %s: labels.tagged is empty", path)
 			}
 			cfg.Labels.Tagged = *r.Labels.Tagged
+		}
+		if r.Labels.Extra != nil {
+			cfg.Labels.Extra = *r.Labels.Extra
 		}
 		if r.Labels.Alpha != nil {
 			cfg.Labels.Alpha = string(*r.Labels.Alpha)
@@ -1703,12 +1746,21 @@ func validateFileUpdates(path string, cfg Config) error {
 // then names the same label twice and points at no fix. Turned-off
 // pre-release types, configured empty, are not compared.
 func validateLabels(path string, l Labels) error {
-	roles := []struct{ key, name string }{
+	var roles []struct{ key, name string }
+	for _, group := range []struct {
+		key   string
+		names []string
+	}{
 		{"labels.pending", l.Pending},
 		{"labels.tagged", l.Tagged},
-		{"labels.alpha", l.Alpha},
-		{"labels.beta", l.Beta},
-		{"labels.rc", l.Rc},
+		{"labels.alpha", []string{l.Alpha}},
+		{"labels.beta", []string{l.Beta}},
+		{"labels.rc", []string{l.Rc}},
+		{"labels.extra", l.Extra},
+	} {
+		for _, name := range group.names {
+			roles = append(roles, struct{ key, name string }{group.key, name})
+		}
 	}
 	for _, t := range l.PreReleaseTypes {
 		roles = append(roles, struct{ key, name string }{"prerelease-types." + t.Type, t.Label})
@@ -1716,6 +1768,9 @@ func validateLabels(path string, l Labels) error {
 	for i := 0; i < len(roles); i++ {
 		for j := i + 1; j < len(roles); j++ {
 			if roles[i].name != "" && roles[i].name == roles[j].name {
+				if roles[i].key == roles[j].key {
+					return fmt.Errorf("config: parse %s: %s lists %q twice", path, roles[i].key, roles[i].name)
+				}
 				return fmt.Errorf("config: parse %s: %s and %s are both %q",
 					path, roles[i].key, roles[j].key, roles[i].name)
 			}

@@ -26,7 +26,7 @@ func missingLabels(ctx context.Context, f forge.Forge, owner, repoName string, c
 	}
 	// Pending and tagged are always expected; an empty pre-release label
 	// turns that type off, so there is no label to expect for it.
-	for _, want := range []string{cfg.Labels.Pending, cfg.Labels.Tagged} {
+	for _, want := range append(append(slices.Clone(cfg.Labels.Pending), cfg.Labels.Tagged...), cfg.Labels.Extra...) {
 		if !slices.Contains(repoLabels, want) {
 			missing = append(missing, want)
 		}

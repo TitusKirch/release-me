@@ -860,8 +860,8 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 	}
 
 	cfg := load(t, got.YAML)
-	if cfg.Labels.Pending != "autorelease: pending" {
-		t.Fatalf("Labels.Pending = %q, want the first label of the list", cfg.Labels.Pending)
+	if !reflect.DeepEqual(cfg.Labels.Pending, []string{"autorelease: pending", "release"}) {
+		t.Fatalf("Labels.Pending = %q, want every label of the list", cfg.Labels.Pending)
 	}
 	if !reflect.DeepEqual(cfg.Resolve()[0].Files, []config.File{{Path: "manifest.json", Updater: "json", Key: "app.version"}}) {
 		t.Fatalf("a's files = %+v, want only the typed extra file, at the repository root", cfg.Resolve()[0].Files)
@@ -876,7 +876,6 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 		".release-please-manifest.json: c: no package configured at this path, left out",
 		"plugins: group-priority: no release-me equivalent, left out",
 		"plugins: linked-versions: release-me links every component or none, left out",
-		`label: release-me carries one label, kept "autorelease: pending"`,
 	} {
 		if !slices.Contains(got.Warnings, want) {
 			t.Errorf("Warnings = %q, want it to contain %q", got.Warnings, want)

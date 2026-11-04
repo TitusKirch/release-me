@@ -157,7 +157,8 @@ files:
 | `changelog-host` | Web address every changelog link points at. | the forge's own | No |
 | `changelog-date-format` | Format of the date in each version heading. | `%Y-%m-%d` | No |
 | `changelog-type` | Changelog from the entries (`default`) or GitHub's generated release notes (`github`). | `default` | No |
-| `labels.pending` / `labels.tagged` | Label names `pr`, `release` and `check` use. | `release: pending` / `release: tagged` | No |
+| `labels.pending` / `labels.tagged` | Label names `pr`, `release` and `check` use, one or a list. | `release: pending` / `release: tagged` | No |
+| `labels.extra` | Labels `pr` adds to every release pull request it opens. | none | No |
 | `labels.alpha` / `labels.beta` / `labels.rc` | Pre-release type labels. | `release: alpha` / `release: beta` / `release: rc` | No |
 | `prerelease-types` | Further pre-release types, each mapped to the label that selects it. | none | No |
 | `author.name` / `author.email` | Ignored, still accepted; `check` warns when set. | `release-me` / `release-me[bot]@users.noreply.github.com` | No |

@@ -15,6 +15,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/history"
+	tagrelease "github.com/ostendorf-cloud/release-me/internal/release"
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 )
 
@@ -234,7 +235,10 @@ func ofComponent(name string) string {
 // request, never an ordinary one; this is the same signal the labeled and
 // unlabeled workflow trigger already uses to tell the two apart.
 func isReleasePullRequest(prLabels []string, labels config.Labels) bool {
-	for _, l := range append([]string{labels.Pending, labels.Tagged}, labels.PreReleaseLabels()...) {
+	if tagrelease.HasAll(prLabels, labels.Pending) || tagrelease.HasAll(prLabels, labels.Tagged) {
+		return true
+	}
+	for _, l := range labels.PreReleaseLabels() {
 		if l != "" && slices.Contains(prLabels, l) {
 			return true
 		}
