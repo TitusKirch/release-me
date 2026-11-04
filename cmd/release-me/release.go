@@ -20,9 +20,11 @@ import (
 // release is the computed next version and changelog entries for one
 // component, ready for the next and changelog commands to print.
 type release struct {
-	version     version.Result
-	entries     []changelog.Entry
-	hiddenTypes []string
+	version version.Result
+	entries []changelog.Entry
+	// options is how the component's entries render, changelogOptions of
+	// it.
+	options changelog.Options
 	// fromTag is the tag entries are collected since, the one the
 	// changelog heading's compare link starts at: the component's last
 	// stable tag, or, for a pre-release with an earlier one of the same
@@ -108,7 +110,7 @@ func computeReleaseWith(
 	if !released {
 		return release{}, false, nil
 	}
-	rel := release{version: result, entries: entries, hiddenTypes: comp.HiddenTypes, fromTag: since}
+	rel := release{version: result, entries: entries, options: changelogOptions(comp), fromTag: since}
 	if result.Bump == version.BumpServicePack {
 		return servicePackRelease(ctx, dir, cfg, comp, attr, last, rel)
 	}

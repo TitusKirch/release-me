@@ -160,7 +160,7 @@ func doPRShared(
 	changelogs := make([]changelogUpdate, 0, len(members))
 	var files []fileUpdate
 	for _, m := range members {
-		entriesBody := changelog.Sections(m.entries, m.rel.hiddenTypes)
+		entriesBody := changelog.Sections(m.entries, m.rel.options)
 		if entriesBody == "" {
 			entriesBody = noUserFacingChangesLine
 		}
