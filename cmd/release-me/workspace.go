@@ -83,7 +83,11 @@ func dependencyRelease(ctx context.Context, dir string, comp config.ResolvedComp
 	if hasTag {
 		since = tag
 	}
-	result, _, _ := version.Next(last, hasTag, []version.Change{{Type: "fix"}}, comp.InitialVersion, comp.BumpMinorPreMajor)
+	// Only the initial version carries over from the component's rules: a
+	// dependency release is a patch bump whatever versioning-strategy,
+	// release-as or pre-major rule the component configures, since its own
+	// changes, which those rules are for, are none.
+	result, _, _ := version.Next(last, hasTag, []version.Change{{Type: "fix"}}, version.Rules{InitialVersion: comp.InitialVersion})
 	result.Reason = "workspace dependency"
 	return release{version: result, hiddenTypes: comp.HiddenTypes, fromTag: since}, nil
 }

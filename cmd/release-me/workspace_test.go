@@ -121,6 +121,24 @@ func TestNodeWorkspaceReleasesEveryDependentWithTheNewDependencyVersion(t *testi
 	}
 }
 
+func TestNodeWorkspaceReleasesADependentWithAPatchWhateverTheVersioningRules(t *testing.T) {
+	dir, origin, cfg := newNodeWorkspaceRepo(t, "release-pull-request: shared\nworkspaces: [node]\n"+
+		"versioning-strategy: always-bump-major\nbump-patch-for-minor-pre-major: true\n")
+
+	f := newPRFake(origin)
+	var stdout bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	if len(f.CreatedPullRequests) != 1 {
+		t.Fatalf("CreatedPullRequests = %+v, want one shared pull request", f.CreatedPullRequests)
+	}
+	if got, want := f.CreatedPullRequests[0].Title, "chore: release core v2.0.0, ui v0.8.1, web v0.4.1"; got != want {
+		t.Fatalf("title = %q, want %q: core follows always-bump-major, its dependents get the dependency patch", got, want)
+	}
+}
+
 func TestNodeWorkspaceMovesDependenciesInALockedFamily(t *testing.T) {
 	dir, origin, cfg := newNodeWorkspaceRepo(t, "versioning: locked\nworkspaces: [node]\n")
 
