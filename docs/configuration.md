@@ -201,6 +201,10 @@ must not expect it, a rerun cannot tell a draft it tagged before, and the
 name, so the resume of `draft-until-assets-attach` and the guard against a second draft work
 the same. A component overrides it through its own `force-tag-creation` key.
 
+While a deferred version tag is absent and its release is an unpublished draft, `pr` waits
+for `release` to resume that draft. It does not open another pull request for the same version,
+including after switching per-component releases to a shared pull request.
+
 ## `comment-mention`
 
 The mention prefix a comment on the release pull request names to issue a `release-as` or
