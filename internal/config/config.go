@@ -318,6 +318,11 @@ type ResolvedComponent struct {
 	// ChangelogSource is one of the ChangelogSource* constants: which
 	// commits become this component's changelog entries.
 	ChangelogSource string
+	// OtherPaths are, for a root component beside others, every other
+	// component's path, in release-me.yaml's order: the root component owns
+	// every file outside them, so a change inside them does not count for
+	// it, see history.Counts. Empty for every other component.
+	OtherPaths []string
 }
 
 // Resolve returns the components a command should loop over, in
@@ -385,6 +390,13 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.ChangelogSource != nil {
 			rc.ChangelogSource = *c.ChangelogSource
+		}
+		if c.Path == "." {
+			for _, other := range cfg.Components {
+				if other.Path != "." {
+					rc.OtherPaths = append(rc.OtherPaths, other.Path)
+				}
+			}
 		}
 		out = append(out, rc)
 	}
@@ -762,8 +774,14 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			)
 		}
 
+		// The repository root is always ".", so "./" is the root component
+		// too, for the path validation and the attribution alike.
+		componentPath := *rc.Path
+		if stdpath.Clean(componentPath) == "." {
+			componentPath = "."
+		}
 		c := Component{
-			Name: name, Path: *rc.Path, InitialVersion: rc.InitialVersion,
+			Name: name, Path: componentPath, InitialVersion: rc.InitialVersion,
 			BumpMinorPreMajor: rc.BumpMinorPreMajor, HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
 		}
@@ -813,12 +831,17 @@ func isComponentNameRune(r rune) bool {
 }
 
 // validateComponentPaths rejects two components whose paths overlap: equal,
-// or one nested inside the other, including the root path ".", which
-// overlaps with every other component.
+// or one nested inside the other. The root path "." is the one exception:
+// a root component beside others is allowed and owns every file outside
+// their paths, see ResolvedComponent.OtherPaths. Two components at the
+// root are still rejected.
 func validateComponentPaths(path string, components []Component) error {
 	for i := 0; i < len(components); i++ {
 		for j := i + 1; j < len(components); j++ {
 			a, b := components[i], components[j]
+			if a.Path != b.Path && (a.Path == "." || b.Path == ".") {
+				continue
+			}
 			if pathsOverlap(a.Path, b.Path) {
 				return fmt.Errorf("config: parse %s: component %q and %q have overlapping paths %q and %q",
 					path, a.Name, b.Name, a.Path, b.Path)
