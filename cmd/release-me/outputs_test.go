@@ -213,7 +213,7 @@ func TestOutputsFollowTheReleasePullRequestAndTheReleaseInEveryMode(t *testing.T
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, cfg := tc.setup(t)
-			f := newFake()
+			f := newPRFake(gitOut(t, dir, "remote", "get-url", "--push", "origin"))
 			var stdout bytes.Buffer
 
 			prOut := &runOutputs{}
@@ -389,7 +389,7 @@ func TestFinishWriteEmitsWhatARunDidBeforeItsReleasePhaseFailed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "github_output")
 	t.Setenv(outputsEnv, path)
 
-	f := releaseListingFailsForge{newFake()}
+	f := releaseListingFailsForge{newPRFake(gitOut(t, dir, "remote", "get-url", "--push", "origin"))}
 	out := &runOutputs{}
 	runErr := doRun(withOutputs(t.Context(), out), dir, config.Default(), "", f, discardLogger(), false, io.Discard)
 	if runErr == nil {

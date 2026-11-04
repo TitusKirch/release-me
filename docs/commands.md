@@ -55,12 +55,12 @@ settles after that one push. Should the heading this tool would write not read b
 heading is left out of the comparison instead, so `pr` never pushes the same content on every
 run. Equal content
 changes nothing, not even the pull request body, and nothing is pushed. A change pushes the
-branch, through the forge's API (see [signed release commits](#signed-release-commits)), and
+branch, publishing an API-created commit (see [signed release commits](#signed-release-commits)), and
 sets the heading to today's date. The new commit is always built on the default branch's tip,
 and replaces the existing branch only while it is still at the existing pull request's head
 SHA from the forge, the lease `--force-with-lease` takes; a branch found anywhere else is left
-alone and `pr` fails, naming the branch and the pull request. GitHub's ref update takes no
-expected value, so that check is a read of the branch right before the forced update. A fresh
+alone and `pr` fails, naming the branch and the pull request. The commit object is fetched
+from the forge and published through Git with an atomic `--force-with-lease` comparison. A fresh
 branch, with no existing pull request to lease against, is created, or moved only as a
 fast-forward, the rule a push without force follows.
 Editing only the notes block of an open pull request updates its body, with no push: the content
@@ -82,7 +82,7 @@ body name every component it releases: see
 
 ### Signed release commits
 
-`pr` never commits locally and pushes. It creates the release branch's commit through the
+`pr` creates no local commit. It creates the release branch's commit through the
 forge's API, on GitHub the Git Data API: a blob per changed file, a tree on top of the default
 branch's tip, a commit with that one parent, then the branch created or moved onto it.
 

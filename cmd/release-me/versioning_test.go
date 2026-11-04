@@ -297,7 +297,7 @@ func TestLockedFamilyDoesNotDuplicateTheReleasePullRequestOnTheMergeThatReleases
 		t.Fatalf("config.Load() error = %v", err)
 	}
 
-	f := newFake()
+	f := newPRFake(gitOut(t, dir, "remote", "get-url", "--push", "origin"))
 	var stdout bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
@@ -359,7 +359,7 @@ func TestDoPRIndependentLeavesAnUnchangedComponentUntouched(t *testing.T) {
 		t.Fatalf("Versioning = %q, want the independent default", cfg.Versioning)
 	}
 
-	f := newFake()
+	f := newPRFake(gitOut(t, dir, "remote", "get-url", "--push", "origin"))
 	var stdout bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)

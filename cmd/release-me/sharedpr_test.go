@@ -294,7 +294,7 @@ func TestSharedReleasePullRequestTurnsEveryComponentIntoAPreRelease(t *testing.T
 
 func TestSharedReleasePullRequestReportsAPerComponentOneItSupersedes(t *testing.T) {
 	dir, _, cfg := newSharedRepo(t)
-	f := newFake()
+	f := newPRFake(gitOut(t, dir, "remote", "get-url", "--push", "origin"))
 	f.ListResponses = []forgetest.ListResponse{
 		{Head: "release-me/api", State: "open", PullRequests: []forge.PullRequest{
 			{Number: 4, Title: "chore(api): release v1.3.0", Labels: []string{"release: pending"}},
@@ -315,7 +315,7 @@ func TestSharedReleasePullRequestReportsAPerComponentOneItSupersedes(t *testing.
 
 func TestSharedReleasePullRequestIsWrittenWhenLookingForASupersededOneFails(t *testing.T) {
 	dir, _, cfg := newSharedRepo(t)
-	f := newFake()
+	f := newPRFake(gitOut(t, dir, "remote", "get-url", "--push", "origin"))
 	f.ListResponses = []forgetest.ListResponse{
 		{Head: "release-me/api", State: "open", Err: errors.New("GET /repos/owner/repo/pulls: 502 Bad Gateway")},
 	}
@@ -504,7 +504,7 @@ func TestSharedReleasePullRequestHonoursTheReleaseAsAndReleaseComponentFooters(t
 	commitEntry(t, dir, "fix: correct the session cookie\n\nRelease-Component: web\nRelease-As: 1.0.0")
 	commitEntry(t, dir, "docs: describe the CSV export\n\nRelease-Component: docs\nRelease-As: 2.1.0")
 
-	f := newFake()
+	f := newPRFake(gitOut(t, dir, "remote", "get-url", "--push", "origin"))
 	var stdout bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)

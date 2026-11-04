@@ -961,7 +961,44 @@ func (p *releasePlan) write(
 		}
 		return fmt.Errorf("release-me: commit release branch %s: %w", branch, err)
 	}
+	if err := publishReleaseCommit(ctx, p.tmp, branch, sha, commit.ExpectedHead); err != nil {
+		if existing != nil {
+			return fmt.Errorf("release-me: publish release branch %s for pull request #%d: %w", branch, existing.Number, err)
+		}
+		return fmt.Errorf("release-me: publish release branch %s: %w", branch, err)
+	}
 	warnUnsigned(ctx, f, owner, repoName, branch, sha, logger)
+	return nil
+}
+
+// publishReleaseCommit fetches the API-created object before publishing it.
+// The receive-pack comparison is atomic, including a writer arriving after
+// the fetch. A new branch retains the ordinary fast-forward-only push rule.
+func publishReleaseCommit(ctx context.Context, dir, branch, sha, expected string) error {
+	pushURL, err := gitOutput(ctx, dir, "remote", "get-url", "--push", "origin")
+	if err != nil {
+		return fmt.Errorf("resolve publication remote: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, "git", "fetch", "--quiet", "--no-tags", pushURL, sha)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("fetch prepared release commit from origin: %w: %s", err,
+			strings.ReplaceAll(strings.TrimSpace(stderr.String()), pushURL, "origin"))
+	}
+	args := []string{"push", "--porcelain"}
+	if expected != "" {
+		args = append(args, "--force-with-lease=refs/heads/"+branch+":"+expected)
+	}
+	args = append(args, "origin", sha+":refs/heads/"+branch)
+	out, err := gitOutput(ctx, dir, args...)
+	if err != nil {
+		if strings.Contains(out, "[rejected]") {
+			return fmt.Errorf("publish branch %s: %w", branch, forge.ErrBranchMoved)
+		}
+		return fmt.Errorf("publish branch %s: %w", branch, err)
+	}
 	return nil
 }
 
@@ -1036,7 +1073,7 @@ func gitOutputEnv(ctx context.Context, dir string, env []string, args ...string)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		return strings.TrimSpace(stdout.String()), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }

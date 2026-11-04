@@ -376,11 +376,8 @@ func (f *Fake) CreateComment(_ context.Context, owner, repo string, number int, 
 	return nil
 }
 
-// CommitBranch implements forge.Forge. With GitDir set it builds the
-// commit there, on c.Parent's tree, and moves the branch with the same
-// rules the GitHub implementation applies: replaced when it is at
-// c.ExpectedHead, otherwise created or fast-forwarded, forge.ErrBranchMoved
-// in every other case.
+// CommitBranch implements forge.Forge, creating objects in GitDir without
+// publishing a branch. The command layer uses the same transport as production.
 func (f *Fake) CommitBranch(ctx context.Context, owner, repo string, c forge.BranchCommit) (string, error) {
 	f.CommitBranchCalls = append(f.CommitBranchCalls, CommitBranchCall{Owner: owner, Repo: repo, Commit: c})
 	if f.CommitBranchErr != nil {
