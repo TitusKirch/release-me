@@ -271,6 +271,16 @@ and publishing the release branch go through the git credentials the checkout's
 The changelog file path, default `CHANGELOG.md`. `pr` prepends the new version's section to
 it, creating the file when it does not exist yet.
 
+## `skip-changelog`
+
+Leaves the changelog file alone, default `false`, release-please's `skip-changelog`: `pr`
+neither creates nor prepends to it, for a repository that keeps its changelog elsewhere, or by
+hand. Everything else stays: the release pull request body and the release still carry the
+version's section, and the files under `files` are still bumped. With no file to bump, the
+release branch carries an empty release commit, so the release pull request still has one to
+merge. A component overrides it through its own `skip-changelog` key, so one component of a
+shared release pull request can skip its changelog while the others keep theirs.
+
 ## `changelog-source`
 
 Which commits become changelog entries, default `first-parent`. See
@@ -700,17 +710,18 @@ Setting the key without `node` in [`workspaces`](#workspaces) is a configuration
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `versioning-strategy`, `release-as` (only with `versioning:
-independent`), `hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source` and
-`changelog`, plus its own [`exclude-paths`](#exclude-paths). A key left out of a component falls
-back to the top-level setting above. A repository without `components` is one component named `main`
-at path `.`, tag prefix `v`, branch `release-me/main`, the default shape a repository with no
-configuration at all already has. A configured component gets tag prefix `<name>/v`, branch
-`release-me/<name>`, or `release-me/main` when the release pull request is shared, changelog
-`<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A name holds ASCII letters, digits, `-`,
-`_` and `.` only, does not start with `.` or `-`, does not end with `.` or `.lock` and does not
-contain `..`; anything else is a configuration error naming the component and the character, since
-the name has to survive the tag prefix, the branch, the shared pull request title release reads
-back, the [Release-Component footer](overrides.md#release-component-footer) and the compare link.
+independent`), `hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
+`skip-changelog` and `changelog`, plus its own [`exclude-paths`](#exclude-paths). A key left out of
+a component falls back to the top-level setting above. A repository without `components` is one
+component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the default shape a
+repository with no configuration at all already has. A configured component gets tag prefix
+`<name>/v`, branch `release-me/<name>`, or `release-me/main` when the release pull request is
+shared, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A name holds ASCII
+letters, digits, `-`, `_` and `.` only, does not start with `.` or `-`, does not end with `.` or
+`.lock` and does not contain `..`; anything else is a configuration error naming the component and
+the character, since the name has to survive the tag prefix, the branch, the shared pull request
+title release reads back, the [Release-Component footer](overrides.md#release-component-footer) and
+the compare link.
 
 `tag-prefix` replaces the derived prefix, for a component whose existing tags follow another
 scheme, such as `api@v1.4.0`: release-me continues from its last such tag instead of starting

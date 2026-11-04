@@ -4,11 +4,11 @@
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, versioning-strategy,
 // release-as, hidden-types, fallback-type, token-env, files,
-// changelog, changelog-source, changelog-sections, the changelog style keys
-// ChangelogStyle lists, labels, prerelease-types, author, major-tag,
-// versioning, draft-until-assets-attach, comment-mention,
-// delete-release-branch, exclude-paths, workspaces, always-link-local and
-// components.
+// changelog, changelog-source, changelog-sections, skip-changelog, the
+// changelog style keys ChangelogStyle lists, labels, prerelease-types,
+// author, major-tag, versioning, draft-until-assets-attach,
+// comment-mention, delete-release-branch, exclude-paths, workspaces,
+// always-link-local and components.
 package config
 
 import (
@@ -337,6 +337,11 @@ type Config struct {
 	// release moves the major tag "vX" to the release commit. A component
 	// overrides it through its own "major-tag" key.
 	MajorTag bool
+	// SkipChangelog is the top-level "skip-changelog" key, default false:
+	// when true, pr leaves the changelog file alone, the release pull
+	// request and the release still carry the changelog. A component
+	// overrides it through its own "skip-changelog" key.
+	SkipChangelog bool
 	// Versioning is the top-level "versioning" key: how the configured
 	// components' versions relate to each other, default
 	// VersioningIndependent. It applies to the whole family; there is no
@@ -429,6 +434,7 @@ type Component struct {
 	HiddenTypes               *[]string
 	Files                     *[]File
 	MajorTag                  *bool
+	SkipChangelog             *bool
 	ChangelogSource           *string
 	ChangelogSections         *[]ChangelogSection
 	// TagPrefix is the component's "tag-prefix" key, nil when it was left
@@ -469,6 +475,9 @@ type ResolvedComponent struct {
 	HiddenTypes               []string
 	Files                     []File
 	MajorTag                  bool
+	// SkipChangelog is true when pr leaves this component's changelog
+	// file alone.
+	SkipChangelog bool
 	// ChangelogSource is one of the ChangelogSource* constants: which
 	// commits become this component's changelog entries.
 	ChangelogSource string
@@ -508,6 +517,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			HiddenTypes:               cfg.HiddenTypes,
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
+			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
 			ChangelogStyle:            cfg.ChangelogStyle,
 			ChangelogSections:         cfg.ChangelogSections,
@@ -542,6 +552,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			HiddenTypes:               cfg.HiddenTypes,
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
+			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
 			ChangelogStyle:            cfg.ChangelogStyle,
 			ChangelogSections:         cfg.ChangelogSections,
@@ -570,6 +581,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.MajorTag != nil {
 			rc.MajorTag = *c.MajorTag
+		}
+		if c.SkipChangelog != nil {
+			rc.SkipChangelog = *c.SkipChangelog
 		}
 		if c.ChangelogSource != nil {
 			rc.ChangelogSource = *c.ChangelogSource
@@ -695,6 +709,7 @@ type raw struct {
 	Labels                    *rawLabels             `yaml:"labels"`
 	Author                    *rawAuthor             `yaml:"author"`
 	MajorTag                  *bool                  `yaml:"major-tag"`
+	SkipChangelog             *bool                  `yaml:"skip-changelog"`
 	Versioning                *string                `yaml:"versioning"`
 	ReleasePullRequest        *string                `yaml:"release-pull-request"`
 	ReleasePullRequestLayout  *string                `yaml:"release-pull-request-layout"`
@@ -728,6 +743,7 @@ type rawComponent struct {
 	HiddenTypes               *[]string              `yaml:"hidden-types"`
 	Files                     *[]rawFile             `yaml:"files"`
 	MajorTag                  *bool                  `yaml:"major-tag"`
+	SkipChangelog             *bool                  `yaml:"skip-changelog"`
 	ChangelogSource           *string                `yaml:"changelog-source"`
 	ChangelogSections         *[]rawChangelogSection `yaml:"changelog-sections"`
 	TagPrefix                 *string                `yaml:"tag-prefix"`
@@ -933,6 +949,9 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.MajorTag != nil {
 		cfg.MajorTag = *r.MajorTag
+	}
+	if r.SkipChangelog != nil {
+		cfg.SkipChangelog = *r.SkipChangelog
 	}
 	if r.Versioning != nil {
 		cfg.Versioning = Versioning(*r.Versioning)
@@ -1238,7 +1257,7 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			Name:         name, Path: componentPath, InitialVersion: rc.InitialVersion,
 			BumpMinorPreMajor: rc.BumpMinorPreMajor, BumpPatchForMinorPreMajor: rc.BumpPatchForMinorPreMajor,
 			VersioningStrategy: strategy, ReleaseAs: rc.ReleaseAs,
-			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag,
+			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag, SkipChangelog: rc.SkipChangelog,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
 		}
 		if rc.Files != nil {

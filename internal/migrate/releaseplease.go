@@ -66,7 +66,7 @@ var packageKeys = []string{
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
 	"initial-version", "extra-files", "versioning", "release-as", "prerelease-type", "prerelease",
 	"exclude-paths", "version-file", "changelog-sections",
-	"include-commit-authors", "changelog-host",
+	"include-commit-authors", "changelog-host", "skip-changelog",
 }
 
 // topLevelKeys are the release-please settings that only exist at the top
@@ -340,6 +340,8 @@ type component struct {
 	includeCommitAuthors bool
 	// changelogHost is release-please's changelog-host, "" for none.
 	changelogHost string
+	// skipChangelog is release-please's skip-changelog.
+	skipChangelog bool
 }
 
 // file is one release-me "files" entry.
@@ -356,7 +358,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	var (
 		releaseType, packageName, componentName, separator, changelogPath, initialVersion, versioning string
 		releaseAs, preReleaseType, versionFileName, changelogHost                                     string
-		preRelease                                                                                    bool
+		preRelease, skipChangelog                                                                     bool
 		includeComponent, includeV                                                                    = true, true
 		bumpMinor, bumpPatchForMinor, includeAuthors                                                  bool
 	)
@@ -373,6 +375,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"prerelease-type": &preReleaseType, "prerelease": &preRelease,
 		"include-commit-authors": &includeAuthors,
 		"changelog-host":         &changelogHost,
+		"skip-changelog":         &skipChangelog,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -447,6 +450,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		initialVersion:            initialVersion,
 		includeCommitAuthors:      includeAuthors,
 		changelogHost:             changelogHost,
+		skipChangelog:             skipChangelog,
 	}
 
 	// A version file the release type implies is carried over only where it
@@ -1274,7 +1278,7 @@ func render(components []component, top topLevel) ([]byte, error) {
 		add(doc, "changelog-host", scalar(top.host))
 	}
 
-	// A pre-major rule, a release-as value and a changelog-sections list
+	// A pre-major rule, a release-as value, a changelog-sections list and skip-changelog
 	// carried by every component are written once, at the top level,
 	// instead of repeated per component.
 	shared := sharedRules{
@@ -1286,6 +1290,7 @@ func render(components []component, top topLevel) ([]byte, error) {
 			!slices.ContainsFunc(components, func(c component) bool {
 				return !reflect.DeepEqual(c.changelogSections, components[0].changelogSections)
 			}),
+		skipChangelog: !slices.ContainsFunc(components, func(c component) bool { return !c.skipChangelog }),
 	}
 	if !slices.ContainsFunc(components, func(c component) bool { return c.strategy != components[0].strategy }) {
 		shared.strategy = components[0].strategy
@@ -1307,6 +1312,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if shared.changelogSections {
 		add(doc, "changelog-sections", sectionsNode(*components[0].changelogSections, add))
+	}
+	if shared.skipChangelog {
+		add(doc, "skip-changelog", boolean(true))
 	}
 
 	if len(components) == 1 && components[0].path == "." && components[0].tagPrefix == "v" {
@@ -1359,6 +1367,8 @@ type sharedRules struct {
 	// changelogSections is true when every component carries the same
 	// changelog-sections list.
 	changelogSections bool
+	// skipChangelog is true when every component skips its changelog.
+	skipChangelog bool
 }
 
 // sectionsNode is a changelog-sections list, release-please's shape.
@@ -1381,8 +1391,8 @@ func sectionsNode(sections []config.ChangelogSection, add func(*yaml.Node, strin
 // addSettings writes the settings release-me reads per component or at the
 // top level alike: initial-version, bump-minor-pre-major,
 // bump-patch-for-minor-pre-major, versioning-strategy, release-as,
-// changelog-sections and files. A setting is left out where the top level
-// already carries it.
+// changelog-sections, skip-changelog and files. A setting is left out where
+// the top level already carries it.
 func addSettings(m *yaml.Node, c component, shared sharedRules, add func(*yaml.Node, string, *yaml.Node)) {
 	if c.initialVersion != "" {
 		add(m, "initial-version", scalar(c.initialVersion))
@@ -1401,6 +1411,9 @@ func addSettings(m *yaml.Node, c component, shared sharedRules, add func(*yaml.N
 	}
 	if c.changelogSections != nil && !shared.changelogSections {
 		add(m, "changelog-sections", sectionsNode(*c.changelogSections, add))
+	}
+	if c.skipChangelog && !shared.skipChangelog {
+		add(m, "skip-changelog", boolean(true))
 	}
 	if len(c.files) > 0 {
 		list := &yaml.Node{Kind: yaml.SequenceNode}
