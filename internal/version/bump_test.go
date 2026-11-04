@@ -14,13 +14,12 @@ import (
 func TestNextComputesTheReleasedVersion(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name              string
-		last              version.Semver
-		lastOK            bool
-		changes           []version.Change
-		initialVersion    string
-		bumpMinorPreMajor bool
-		want              version.Result
+		name    string
+		last    version.Semver
+		lastOK  bool
+		changes []version.Change
+		rules   version.Rules
+		want    version.Result
 	}{
 		{
 			name:    "bumps minor for a feature",
@@ -58,12 +57,12 @@ func TestNextComputesTheReleasedVersion(t *testing.T) {
 			want:    version.Result{Version: "2.0.0", Bump: version.BumpMajor, Reason: "breaking change"},
 		},
 		{
-			name:              "bumps minor for a breaking change below one pre major",
-			last:              version.Semver{Major: 0, Minor: 4, Patch: 1},
-			lastOK:            true,
-			changes:           []version.Change{{Type: "feat", Breaking: true}},
-			bumpMinorPreMajor: true,
-			want:              version.Result{Version: "0.5.0", Bump: version.BumpMinor, Reason: "breaking change, minor below 1.0.0"},
+			name:    "bumps minor for a breaking change below one pre major",
+			last:    version.Semver{Major: 0, Minor: 4, Patch: 1},
+			lastOK:  true,
+			changes: []version.Change{{Type: "feat", Breaking: true}},
+			rules:   version.Rules{BumpMinorPreMajor: true},
+			want:    version.Result{Version: "0.5.0", Bump: version.BumpMinor, Reason: "breaking change, minor below 1.0.0"},
 		},
 		{
 			name:    "keeps major for a breaking change below one without pre major",
@@ -80,17 +79,17 @@ func TestNextComputesTheReleasedVersion(t *testing.T) {
 			want:    version.Result{Version: "1.1.0", Bump: version.BumpMinor, Reason: "feat"},
 		},
 		{
-			name:           "uses the initial version when no tag exists and a change bumps",
-			lastOK:         false,
-			changes:        []version.Change{{Type: "chore"}, {Type: "feat"}},
-			initialVersion: "0.3.0",
-			want:           version.Result{Version: "0.3.0", Bump: version.BumpInitial, Reason: "initial version"},
+			name:    "uses the initial version when no tag exists and a change bumps",
+			lastOK:  false,
+			changes: []version.Change{{Type: "chore"}, {Type: "feat"}},
+			rules:   version.Rules{InitialVersion: "0.3.0"},
+			want:    version.Result{Version: "0.3.0", Bump: version.BumpInitial, Reason: "initial version"},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, released, _ := version.Next(tc.last, tc.lastOK, tc.changes, tc.initialVersion, tc.bumpMinorPreMajor)
+			got, released, _ := version.Next(tc.last, tc.lastOK, tc.changes, tc.rules)
 			if !released {
 				t.Fatal("released = false, want true")
 			}
@@ -133,7 +132,7 @@ func TestNextReportsNoRelease(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, released, _ := version.Next(tc.last, tc.lastOK, tc.changes, "0.1.0", false)
+			_, released, _ := version.Next(tc.last, tc.lastOK, tc.changes, version.Rules{InitialVersion: "0.1.0"})
 			if released {
 				t.Fatal("released = true, want false")
 			}
@@ -231,7 +230,7 @@ func TestNextLetsAReleaseAsFooterWinOverTheComputedBump(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, released, refused := version.Next(tc.last, tc.lastOK, tc.changes, "0.1.0", false)
+			got, released, refused := version.Next(tc.last, tc.lastOK, tc.changes, version.Rules{InitialVersion: "0.1.0"})
 			if got != tc.want || released != tc.wantReleased {
 				t.Fatalf("Next() = %+v, %v, want %+v, %v", got, released, tc.want, tc.wantReleased)
 			}
