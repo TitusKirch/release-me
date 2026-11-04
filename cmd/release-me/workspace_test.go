@@ -207,6 +207,68 @@ func TestNodeWorkspaceWithoutAlwaysLinkLocalLeavesARangeTheLocalVersionMissesAlo
 	}
 }
 
+func TestCargoWorkspaceReleasesEveryDependentAndMovesTheWorkspaceRoot(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeConfig(t, dir, `release-pull-request: shared
+workspaces: [cargo]
+components:
+  core:
+    path: crates/core
+    files:
+      - {path: crates/core/Cargo.toml, updater: toml, key: package.version}
+  cli:
+    path: crates/cli
+    files:
+      - {path: crates/cli/Cargo.toml, updater: toml, key: package.version}
+  server:
+    path: crates/server
+    files:
+      - {path: crates/server/Cargo.toml, updater: toml, key: package.version}
+`)
+	writeFiles(t, dir, "chore: scaffold the cargo workspace", map[string]string{
+		"Cargo.toml": "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n\n[workspace.dependencies]\n" +
+			"acme-core = { path = \"crates/core\", version = \"1.2.0\" }\nserde = \"1.0\"\n",
+		"crates/core/Cargo.toml": "[package]\nname = \"acme-core\"\nversion = \"1.2.0\"\nedition = \"2021\"\n",
+		"crates/cli/Cargo.toml": "[package]\nname = \"acme-cli\"\nversion = \"0.4.0\"\nedition = \"2021\"\n\n" +
+			"[dependencies]\nacme-core = { workspace = true }\n",
+		"crates/server/Cargo.toml": "[package]\nname = \"acme-server\"\nversion = \"2.1.0\"\nedition = \"2021\"\n\n" +
+			"[dependencies]\nacme-core = { path = \"../core\", version = \"1.2.0\" }\nserde = { workspace = true }\n",
+	})
+	for _, tag := range []string{"core/v1.2.0", "cli/v0.4.0", "server/v2.1.0"} {
+		runGit(t, dir, "tag", tag)
+	}
+	writeFiles(t, dir, "fix(core): stop the parser dropping the last token", map[string]string{
+		"crates/core/src/lib.rs": "pub fn parse() {}\n",
+	})
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+
+	f := newFake()
+	var stdout bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	if len(f.CreatedPullRequests) != 1 || f.CreatedPullRequests[0].Title != "chore: release core v1.2.1, cli v0.4.1, server v2.1.1" {
+		t.Fatalf("CreatedPullRequests = %+v, want core with both dependents", f.CreatedPullRequests)
+	}
+	for path, want := range map[string]string{
+		"Cargo.toml":               `acme-core = { path = "crates/core", version = "1.2.1" }`,
+		"crates/server/Cargo.toml": `acme-core = { path = "../core", version = "1.2.1" }`,
+		"crates/cli/Cargo.toml":    "version = \"0.4.1\"\n",
+		"crates/cli/CHANGELOG.md":  "- **deps:** update acme-core to 1.2.1",
+	} {
+		if got := showBareFile(t, origin, "release-me/main", path); !strings.Contains(got, want) {
+			t.Errorf("%s = %q, want it to contain %q", path, got, want)
+		}
+	}
+	if got := showBareFile(t, origin, "release-me/main", "crates/cli/Cargo.toml"); !strings.Contains(got, "acme-core = { workspace = true }") {
+		t.Errorf("crates/cli/Cargo.toml = %q, want the workspace dependency left as written", got)
+	}
+}
+
 func TestNodeWorkspaceLeftOutReleasesNoDependent(t *testing.T) {
 	dir, origin, cfg := newNodeWorkspaceRepo(t, "release-pull-request: shared\n")
 
@@ -249,6 +311,40 @@ func TestNodeWorkspaceFiltersEachDeclarationOfTheSameDependency(t *testing.T) {
 			want = strings.Replace(want, `"^9.0.0"`, `"`+tc.wantDev+`"`, 1)
 			if got != want {
 				t.Fatalf("manifest = %s;want %s", got, want)
+			}
+		})
+	}
+}
+
+func TestCargoWorkspaceReleasesDependentsThroughInheritedAliases(t *testing.T) {
+	for _, decl := range []string{"[dependencies]\nengine = { workspace = true }\n", "[dependencies.engine]\nworkspace = true\n", "[dependencies]\nengine.workspace = true\n"} {
+		t.Run(decl, func(t *testing.T) {
+			dir, remote := newPRRepo(t)
+			writeConfig(t, dir, "release-pull-request: shared\nworkspaces: [cargo]\ncomponents:\n  core:\n    path: crates/core\n    files:\n      - {path: crates/core/Cargo.toml, updater: toml, key: package.version}\n  cli:\n    path: crates/cli\n    files:\n      - {path: crates/cli/Cargo.toml, updater: toml, key: package.version}\n")
+			child := "[package]\nname = \"cli\"\nversion = \"1.0.0\"\nedition = \"2021\"\n" + decl
+			writeFiles(t, dir, "chore: scaffold Cargo workspace", map[string]string{
+				"Cargo.toml":             "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n[workspace.dependencies]\nengine = { package = \"core\", path = \"crates/core\", version = \"1.0.0\" }\n",
+				"crates/core/Cargo.toml": "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+				"crates/cli/Cargo.toml":  child,
+			})
+			runGit(t, dir, "tag", "core/v1.0.0")
+			runGit(t, dir, "tag", "cli/v1.0.0")
+			writeFiles(t, dir, "feat: add the core API", map[string]string{"crates/core/src/lib.rs": "pub fn export() {}\n"})
+			f := newFake()
+			var out bytes.Buffer
+			if err := doPR(t.Context(), dir, loadConfig(t, dir), "", f, discardLogger(), false, &out); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.CreatedPullRequests) != 1 || f.CreatedPullRequests[0].Title != "chore: release core v1.1.0, cli v1.0.1" {
+				t.Fatalf("PRs=%+v", f.CreatedPullRequests)
+			}
+			root := showBareFile(t, remote, mainBranch, "Cargo.toml")
+			if !strings.Contains(root, `engine = { package = "core", path = "crates/core", version = "1.1.0" }`) {
+				t.Fatalf("workspace root = %s", root)
+			}
+			want := strings.Replace(child, `version = "1.0.0"`, `version = "1.0.1"`, 1)
+			if got := showBareFile(t, remote, mainBranch, "crates/cli/Cargo.toml"); got != want {
+				t.Fatalf("child = %s; want %s", got, want)
 			}
 		})
 	}

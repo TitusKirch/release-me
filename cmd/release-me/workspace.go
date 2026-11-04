@@ -32,27 +32,46 @@ type workspaceManifest struct {
 // readWorkspace reads the manifest of every component in all for every
 // package manager cfg.Workspaces names, in release-me.yaml's order. A
 // component without such a manifest is no member of that manager's
-// workspace; a manifest that does not parse is an error naming it.
+// workspace; a manifest that does not parse is an error naming it. Without
+// a root component, the manifest at the repository root, the workspace
+// root such as a virtual Cargo workspace, is read too, as the member of no
+// component: its dependencies on a released component move, it releases
+// nothing.
 func readWorkspace(dir string, cfg config.Config, all []config.ResolvedComponent) ([]workspaceManifest, error) {
 	var out []workspaceManifest
+	read := func(component, path, manager string) error {
+		content, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(path)))
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		who := "workspace root"
+		if component != "" {
+			who = "component " + component
+		}
+		if err != nil {
+			return fmt.Errorf("release-me: %s: workspace: read %s: %w", who, path, err)
+		}
+		pkg, err := workspace.Parse(manager, content)
+		if err != nil {
+			return fmt.Errorf("release-me: %s: workspace: %s: %w", who, path, err)
+		}
+		out = append(out, workspaceManifest{
+			member: workspace.Member{Component: component, Manager: manager, Package: pkg},
+			path:   path,
+		})
+		return nil
+	}
+	hasRoot := slices.ContainsFunc(all, func(c config.ResolvedComponent) bool { return c.Path == "." })
 	for _, manager := range cfg.Workspaces {
 		for _, comp := range all {
-			path := stdpath.Join(comp.Path, workspace.ManifestFile(manager))
-			content, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(path)))
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
+			if err := read(comp.Name, stdpath.Join(comp.Path, workspace.ManifestFile(manager)), manager); err != nil {
+				return nil, err
 			}
-			if err != nil {
-				return nil, fmt.Errorf("release-me: component %s: workspace: read %s: %w", comp.Name, path, err)
+		}
+		if !hasRoot {
+			if err := read("", workspace.ManifestFile(manager), manager); err != nil {
+				return nil, err
 			}
-			pkg, err := workspace.Parse(manager, content)
-			if err != nil {
-				return nil, fmt.Errorf("release-me: component %s: workspace: %s: %w", comp.Name, path, err)
-			}
-			out = append(out, workspaceManifest{
-				member: workspace.Member{Component: comp.Name, Manager: manager, Package: pkg},
-				path:   path,
-			})
 		}
 	}
 	return out, nil
@@ -116,7 +135,9 @@ func workspaceUpdates(
 	var done []workspace.Link
 	for _, link := range workspace.Links(members, workspaceOptions(cfg)) {
 		to, released := versions[link.Dependency]
-		if _, releasing := versions[link.Dependent]; !released || !releasing {
+		// The workspace root manifest belongs to no component: it never
+		// releases, but its dependencies move.
+		if _, releasing := versions[link.Dependent]; !released || !releasing && link.Dependent != "" {
 			continue
 		}
 		key := workspace.Link{Dependent: link.Dependent, Manager: link.Manager, Name: link.Name}
@@ -145,6 +166,9 @@ func workspaceUpdates(
 			})
 		}
 		logger.Debug("workspace dependency", "component", link.Dependent, "dependency", link.Name, "version", to)
+		if link.Dependent == "" {
+			continue
+		}
 		entries[link.Dependent] = append(entries[link.Dependent], changelog.Entry{
 			Type: "fix", Scope: "deps", Description: fmt.Sprintf("update %s to %s", link.Name, to),
 		})
