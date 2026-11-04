@@ -943,11 +943,15 @@ func (p *releasePlan) write(
 
 	files := make([]forge.CommitFile, 0, len(order))
 	for _, path := range order {
-		executable, err := executableAt(ctx, p.tmp, path)
+		target, err := releaseFileTarget(ctx, p.tmp, path)
 		if err != nil {
 			return fmt.Errorf("release-me: release branch %s: %w", branch, err)
 		}
-		files = append(files, forge.CommitFile{Path: path, Content: []byte(contents[path]), Executable: executable})
+		executable, err := executableAt(ctx, p.tmp, target)
+		if err != nil {
+			return fmt.Errorf("release-me: release branch %s: %w", branch, err)
+		}
+		files = append(files, forge.CommitFile{Path: target, Content: []byte(contents[path]), Executable: executable})
 	}
 
 	commit := forge.BranchCommit{Branch: branch, Parent: parent, Message: commitMessage, Files: files}
@@ -1025,6 +1029,54 @@ func warnUnsigned(ctx context.Context, f forge.Forge, owner, repoName, branch, s
 		"installation token, a user token such as a personal access token yields an unsigned one, and a "+
 		"ruleset requiring signed commits blocks the release pull request from merging",
 		"branch", branch, "commit", sha, "reason", sig.Reason)
+}
+
+// releaseFileTarget follows symlinks as the worktree writer does, while
+// refusing to replace a link or write outside the scratch repository.
+func releaseFileTarget(ctx context.Context, dir, path string) (string, error) {
+	candidate := filepath.Join(dir, filepath.FromSlash(path))
+	ancestor := candidate
+	var suffix []string
+	for {
+		_, err := os.Lstat(ancestor)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("resolve release file %s: %w", path, err)
+		}
+		suffix = append(suffix, filepath.Base(ancestor))
+		next := filepath.Dir(ancestor)
+		if next == ancestor {
+			return "", fmt.Errorf("resolve release file %s: %w", path, err)
+		}
+		ancestor = next
+	}
+	real, err := filepath.EvalSymlinks(ancestor)
+	if err != nil {
+		return "", fmt.Errorf("resolve release file %s: %w", path, err)
+	}
+	for i := len(suffix) - 1; i >= 0; i-- {
+		real = filepath.Join(real, suffix[i])
+	}
+	rel, err := filepath.Rel(dir, real)
+	if err != nil {
+		return "", fmt.Errorf("resolve release file %s: %w", path, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("release file %s: symlink target escapes the repository", path)
+	}
+	target := filepath.ToSlash(rel)
+	if target != path {
+		entry, err := gitOutput(ctx, dir, "ls-tree", "HEAD", "--", target)
+		if err != nil {
+			return "", fmt.Errorf("release file %s: read symlink target: %w", path, err)
+		}
+		if !strings.HasPrefix(entry, "100644 ") && !strings.HasPrefix(entry, "100755 ") {
+			return "", fmt.Errorf("release file %s: symlink target %s is not a tracked regular file", path, target)
+		}
+	}
+	return target, nil
 }
 
 // executableAt reports whether path is tracked as an executable file at
