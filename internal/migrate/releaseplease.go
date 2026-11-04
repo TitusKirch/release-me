@@ -226,8 +226,11 @@ type component struct {
 	tagPrefix         string
 	changelog         string
 	bumpMinorPreMajor bool
-	initialVersion    string
-	files             []file
+	// bumpPatchForMinorPreMajor is release-please's key of the same name,
+	// release-me's too.
+	bumpPatchForMinorPreMajor bool
+	initialVersion            string
+	files                     []file
 }
 
 // file is one release-me "files" entry.
@@ -265,11 +268,6 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	if releaseType == "" {
 		releaseType = "node"
 	}
-	if bumpPatchForMinor {
-		warn("package %s: bump-patch-for-minor-pre-major: release-me bumps a feat to a minor below 1.0.0, "+
-			"left out", p.path)
-	}
-
 	// release-please names a package after its component, else its package
 	// name, a node package's scope stripped, else the name package.json
 	// carries.
@@ -316,13 +314,14 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	}
 
 	c := component{
-		name:              name,
-		rpName:            rpName,
-		path:              p.path,
-		tagPrefix:         prefix,
-		changelog:         repoPath(p.path, changelogPath),
-		bumpMinorPreMajor: bumpMinor,
-		initialVersion:    initialVersion,
+		name:                      name,
+		rpName:                    rpName,
+		path:                      p.path,
+		tagPrefix:                 prefix,
+		changelog:                 repoPath(p.path, changelogPath),
+		bumpMinorPreMajor:         bumpMinor,
+		bumpPatchForMinorPreMajor: bumpPatchForMinor,
+		initialVersion:            initialVersion,
 	}
 
 	// A version file the release type implies is carried over only where it
@@ -534,11 +533,19 @@ func render(components []component, versioning string, sharedPR bool, pending, t
 	}
 	add(doc, "labels", labels)
 
-	// bump-minor-pre-major carried by every component is written once, at
-	// the top level, instead of repeated per component.
-	shared := slices.IndexFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }) == -1
-	if shared {
+	// A pre-major rule carried by every component is written once, at the
+	// top level, instead of repeated per component.
+	shared := sharedRules{
+		bumpMinorPreMajor: !slices.ContainsFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }),
+		bumpPatchForMinorPreMajor: !slices.ContainsFunc(components, func(c component) bool {
+			return !c.bumpPatchForMinorPreMajor
+		}),
+	}
+	if shared.bumpMinorPreMajor {
 		add(doc, "bump-minor-pre-major", boolean(true))
+	}
+	if shared.bumpPatchForMinorPreMajor {
+		add(doc, "bump-patch-for-minor-pre-major", boolean(true))
 	}
 
 	if len(components) == 1 && components[0].path == "." && components[0].tagPrefix == "v" {
@@ -577,15 +584,26 @@ func render(components []component, versioning string, sharedPR bool, pending, t
 	return buf.Bytes(), nil
 }
 
+// sharedRules names the pre-major rules every component carries, which
+// render writes once at the top level.
+type sharedRules struct {
+	bumpMinorPreMajor         bool
+	bumpPatchForMinorPreMajor bool
+}
+
 // addSettings writes the settings release-me reads per component or at the
-// top level alike: initial-version, bump-minor-pre-major and files.
-// bump-minor-pre-major is left out where the top level already carries it.
-func addSettings(m *yaml.Node, c component, shared bool, add func(*yaml.Node, string, *yaml.Node)) {
+// top level alike: initial-version, bump-minor-pre-major,
+// bump-patch-for-minor-pre-major and files. A pre-major rule is left out
+// where the top level already carries it.
+func addSettings(m *yaml.Node, c component, shared sharedRules, add func(*yaml.Node, string, *yaml.Node)) {
 	if c.initialVersion != "" {
 		add(m, "initial-version", scalar(c.initialVersion))
 	}
-	if c.bumpMinorPreMajor && !shared {
+	if c.bumpMinorPreMajor && !shared.bumpMinorPreMajor {
 		add(m, "bump-minor-pre-major", boolean(true))
+	}
+	if c.bumpPatchForMinorPreMajor && !shared.bumpPatchForMinorPreMajor {
+		add(m, "bump-patch-for-minor-pre-major", boolean(true))
 	}
 	if len(c.files) > 0 {
 		list := &yaml.Node{Kind: yaml.SequenceNode}
