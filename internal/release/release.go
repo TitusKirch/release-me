@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,43 +21,61 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/version"
 )
 
-// titlePattern matches the release pull request title releasepr.Title
-// renders, "chore(<name>): release vX.Y.Z" or "chore(<name>): release
-// vX.Y.Z-<pre>" for a pre-release.
-var titlePattern = regexp.MustCompile(`^chore\(([^)]+)\): release v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$`)
-
 // VersionFromTitle extracts "X.Y.Z", or "X.Y.Z-<pre>" for a pre-release,
-// from a release pull request title whose component name matches name. ok
-// is false when title does not match that shape, or names a different
+// from a release pull request title in the default per-component shape,
+// "chore(<name>): release vX.Y.Z", whose component name matches name. ok is
+// false when title does not match that shape, or names a different
 // component.
 func VersionFromTitle(title, name string) (versionStr string, ok bool) {
-	m := titlePattern.FindStringSubmatch(title)
-	if m == nil || m[1] != name {
-		return "", false
+	return componentVersion(nil, title, name)
+}
+
+// componentVersion reads the version back from title with the first of
+// patterns it matches, the default per-component pattern when patterns is
+// empty, and only from a title naming name: every per-component pattern
+// carries ${component}.
+func componentVersion(patterns []releasepr.TitlePattern, title, name string) (versionStr string, ok bool) {
+	if len(patterns) == 0 {
+		patterns = []releasepr.TitlePattern{releasepr.DefaultTitle(releasepr.TitlePerComponent)}
 	}
-	return m[2], true
+	for _, p := range patterns {
+		v, ok := p.Parse(title)
+		if !ok || v.Component != name {
+			continue
+		}
+		return v.Version, true
+	}
+	return "", false
 }
 
 // LockedTitle renders the release pull request and release title for a
-// locked family run: the version, then every component it covers, in
-// release-me.yaml's order, so the title names both even though it always
-// covers the whole family.
+// locked family run in the default shape: the version, then every
+// component it covers, in release-me.yaml's order, so the title names both
+// even though it always covers the whole family.
 func LockedTitle(versionStr string, names []string) string {
 	return fmt.Sprintf("chore: release v%s (%s)", versionStr, strings.Join(names, ", "))
 }
 
-// lockedTitlePattern matches the title LockedTitle renders.
-var lockedTitlePattern = regexp.MustCompile(`^chore: release v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?) \(([^)]*)\)$`)
-
 // VersionFromLockedTitle extracts the version and the component names from
-// a locked release pull request title LockedTitle renders. ok is false
-// when title does not match that shape.
+// a locked release pull request title in LockedTitle's default shape. ok is
+// false when title does not match that shape.
 func VersionFromLockedTitle(title string) (versionStr string, names []string, ok bool) {
-	m := lockedTitlePattern.FindStringSubmatch(title)
-	if m == nil {
+	v, ok := releasepr.DefaultTitle(releasepr.TitleLocked).Parse(title)
+	if !ok {
 		return "", nil, false
 	}
-	return m[1], strings.Split(m[2], ", "), true
+	return v.Version, v.Components, true
+}
+
+// lockedVersion reads a locked family's version back from title with the
+// first of patterns it matches, the default locked pattern when patterns
+// is empty.
+func lockedVersion(patterns []releasepr.TitlePattern, title string) (versionStr string, ok bool) {
+	if len(patterns) == 0 {
+		patterns = []releasepr.TitlePattern{releasepr.DefaultTitle(releasepr.TitleLocked)}
+	}
+	v, _, ok := releasepr.ParseAny(patterns, title)
+	return v.Version, ok
 }
 
 // lockedReleaseBody renders the GitHub release body for one component of a
@@ -78,17 +95,14 @@ func lockedReleaseBody(prBody, name string) string {
 
 // TitleRelease is one component a shared release pull request title names,
 // at the version it releases.
-type TitleRelease struct {
-	Name    string
-	Version string
-}
+type TitleRelease = releasepr.TitleRelease
 
 // SharedTitle renders the release pull request title for a shared release
-// pull request in VersioningIndependent or VersioningLinked: every
-// component it releases, in release-me.yaml's order, each at its own
-// version, "chore: release api v1.3.0, web v0.4.1". The title is where
-// release reads every component's version back from after the merge, the
-// same as it does for one component's own title.
+// pull request in VersioningIndependent or VersioningLinked in the default
+// shape: every component it releases, in release-me.yaml's order, each at
+// its own version, "chore: release api v1.3.0, web v0.4.1". The title is
+// where release reads every component's version back from after the
+// merge, the same as it does for one component's own title.
 func SharedTitle(releases []TitleRelease) string {
 	parts := make([]string, 0, len(releases))
 	for _, r := range releases {
@@ -97,28 +111,22 @@ func SharedTitle(releases []TitleRelease) string {
 	return "chore: release " + strings.Join(parts, ", ")
 }
 
-// sharedTitlePattern matches the title SharedTitle renders, and
-// sharedTitlePart one of its comma separated components.
-var (
-	sharedTitlePattern = regexp.MustCompile(`^chore: release (.+)$`)
-	sharedTitlePart    = regexp.MustCompile(`^(\S+) v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$`)
-)
-
 // ParseSharedTitle extracts every component and its version from a title
-// SharedTitle renders. ok is false when title does not match that shape.
+// in SharedTitle's default shape. ok is false when title does not match
+// that shape.
 func ParseSharedTitle(title string) (releases []TitleRelease, ok bool) {
-	m := sharedTitlePattern.FindStringSubmatch(title)
-	if m == nil {
-		return nil, false
+	return sharedReleases(nil, title)
+}
+
+// sharedReleases reads every component and its version back from title
+// with the first of patterns it matches, the default shared pattern when
+// patterns is empty.
+func sharedReleases(patterns []releasepr.TitlePattern, title string) (releases []TitleRelease, ok bool) {
+	if len(patterns) == 0 {
+		patterns = []releasepr.TitlePattern{releasepr.DefaultTitle(releasepr.TitleShared)}
 	}
-	for _, part := range strings.Split(m[1], ", ") {
-		pm := sharedTitlePart.FindStringSubmatch(part)
-		if pm == nil {
-			return nil, false
-		}
-		releases = append(releases, TitleRelease{Name: pm[1], Version: pm[2]})
-	}
-	return releases, true
+	v, _, ok := releasepr.ParseAny(patterns, title)
+	return v.Releases, ok
 }
 
 // planned is one component a merged shared release pull request tags and
@@ -140,7 +148,7 @@ type planned struct {
 // existed; true drafts instead, and also resumes a release a prior,
 // interrupted run already tagged and drafted but never got to publish.
 func RunLocked(
-	ctx context.Context, f forge.Forge, owner, repoName, branch string, comps []Component, labels Labels,
+	ctx context.Context, f forge.Forge, owner, repoName, branch string, comps []Component, titles []releasepr.TitlePattern, labels Labels,
 	draftUntilAssetsAttach, dryRun bool, logger *slog.Logger,
 ) ([]Result, error) {
 	prs, err := f.PullRequests(ctx, owner, repoName, branch, "closed")
@@ -157,7 +165,7 @@ func RunLocked(
 		if slices.Contains(pr.Labels, labels.Pending) {
 			logger.Debug("locked release pull request merged", "number", pr.Number, "title", pr.Title)
 
-			versionStr, _, ok := VersionFromLockedTitle(pr.Title)
+			versionStr, ok := lockedVersion(releasepr.ReadPatterns(titles, pr.Body, releasepr.TitleLocked), pr.Title)
 			if !ok {
 				return nil, fmt.Errorf("release: locked family: pull request #%d: title %q does not name a version", pr.Number, pr.Title)
 			}
@@ -185,7 +193,7 @@ func RunLocked(
 		if dryRun || !draftUntilAssetsAttach || !slices.Contains(pr.Labels, labels.Tagged) {
 			continue
 		}
-		versionStr, _, ok := VersionFromLockedTitle(pr.Title)
+		versionStr, ok := lockedVersion(releasepr.ReadPatterns(titles, pr.Body, releasepr.TitleLocked), pr.Title)
 		if !ok {
 			continue
 		}
@@ -213,7 +221,7 @@ func RunLocked(
 // the pull request was opened, and tagging it under a guessed prefix
 // would be wrong. draftUntilAssetsAttach is as in RunLocked.
 func RunShared(
-	ctx context.Context, f forge.Forge, owner, repoName, branch string, comps []Component, labels Labels,
+	ctx context.Context, f forge.Forge, owner, repoName, branch string, comps []Component, titles []releasepr.TitlePattern, labels Labels,
 	draftUntilAssetsAttach, dryRun bool, logger *slog.Logger,
 ) ([]Result, error) {
 	prs, err := f.PullRequests(ctx, owner, repoName, branch, "closed")
@@ -231,7 +239,7 @@ func RunShared(
 			continue
 		}
 
-		titled, ok := ParseSharedTitle(pr.Title)
+		titled, ok := sharedReleases(releasepr.ReadPatterns(titles, pr.Body, releasepr.TitleShared), pr.Title)
 		if !ok {
 			if !pending {
 				continue
@@ -429,6 +437,11 @@ type Component struct {
 	// release moves the major tag, TagPrefix plus the released major
 	// number, to the release commit. A pre-release never moves it.
 	MajorTag bool
+	// Titles are the configured patterns Run reads the version back from the
+	// title of the component's own release pull request with, in order, see
+	// releasepr.TitlePatterns, before the pattern the pull request body
+	// records and the default, see releasepr.ReadPatterns.
+	Titles []releasepr.TitlePattern
 }
 
 // Labels names the labels Run reads and writes: Pending and Tagged on
@@ -559,7 +572,7 @@ func Run(
 		if slices.Contains(pr.Labels, labels.Pending) {
 			logger.Debug("release pull request merged", "component", comp.Name, "number", pr.Number, "title", pr.Title)
 
-			versionStr, ok := VersionFromTitle(pr.Title, comp.Name)
+			versionStr, ok := componentVersion(releasepr.ReadPatterns(comp.Titles, pr.Body, releasepr.TitlePerComponent), pr.Title, comp.Name)
 			if !ok {
 				return nil, fmt.Errorf("release: component %s: pull request #%d: title %q does not name a version", comp.Name, pr.Number, pr.Title)
 			}
@@ -588,7 +601,7 @@ func Run(
 		if dryRun || !draftUntilAssetsAttach || !slices.Contains(pr.Labels, labels.Tagged) {
 			continue
 		}
-		result, resumed, err := resumeOne(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, pr)
+		result, resumed, err := resumeOne(ctx, f, owner, repoName, comp, pr)
 		if err != nil {
 			return nil, err
 		}
@@ -611,9 +624,10 @@ func Run(
 // risk creating a second, duplicate draft for the same tag instead of
 // finishing the first.
 func resumeOne(
-	ctx context.Context, f forge.Forge, owner, repoName, componentName, tagPrefix string, pr forge.PullRequest,
+	ctx context.Context, f forge.Forge, owner, repoName string, comp Component, pr forge.PullRequest,
 ) (result Result, ok bool, err error) {
-	versionStr, titleOK := VersionFromTitle(pr.Title, componentName)
+	componentName, tagPrefix := comp.Name, comp.TagPrefix
+	versionStr, titleOK := componentVersion(releasepr.ReadPatterns(comp.Titles, pr.Body, releasepr.TitlePerComponent), pr.Title, componentName)
 	if !titleOK {
 		return Result{}, false, nil
 	}
