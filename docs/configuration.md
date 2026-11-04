@@ -235,13 +235,13 @@ Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor
 `hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source` and
 `changelog`. A key left out of a component falls back to the top-level setting above. A
 repository without `components` is one component named `main` at path `.`, tag prefix `v`,
-branch `release-me/main`, the default shape a repository with no configuration at all already has. A configured component gets tag
-prefix `<name>/v`, branch `release-me/<name>`, or `release-me/main` when the release pull
-request is shared, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A
-name holds ASCII letters, digits, `-`, `_` and `.` only, does not start with `.` or `-`, does
-not end with `.` or `.lock` and does not contain `..`; anything else is a configuration error
-naming the component and the character, since the name has to survive the tag prefix, the
-branch, the shared pull request title release reads back, the
+branch `release-me/main`, the default shape a repository with no configuration at all already
+has. A configured component gets tag prefix `<name>/v`, branch `release-me/<name>`, or
+`release-me/main` when the release pull request is shared, changelog `<path>/CHANGELOG.md`, and
+a release title `<name> vX.Y.Z`. A name holds ASCII letters, digits, `-`, `_` and `.` only,
+does not start with `.` or `-`, does not end with `.` or `.lock` and does not contain `..`;
+anything else is a configuration error naming the component and the character, since the name
+has to survive the tag prefix, the branch, the shared pull request title release reads back, the
 [Release-Component footer](overrides.md#release-component-footer) and the compare link.
 
 `tag-prefix` replaces the derived prefix, for a component whose existing tags follow another
