@@ -140,12 +140,57 @@ func UpdateBazel(content, version string) (string, error) {
 		return "", fmt.Errorf("updater: bazel: the module() call is never closed")
 	}
 	call := content[loc[1]:end]
-	m := bazelVersion.FindStringSubmatchIndex(call)
+	m := bazelVersionArgument(call)
 	if m == nil {
 		return "", fmt.Errorf("updater: bazel: the module() call has no version attribute")
 	}
 	start, stop := loc[1]+m[2], loc[1]+m[3]
 	return content[:start] + quoteLike(content[start:stop], version) + content[stop:], nil
+}
+
+// bazelVersionArgument locates the top-level keyword and its string span,
+// skipping comments, other strings and nested expressions in the call.
+func bazelVersionArgument(call string) []int {
+	depth := 0
+	for i := 0; i < len(call); i++ {
+		switch c := call[i]; c {
+		case '#':
+			for i < len(call) && call[i] != '\n' {
+				i++
+			}
+		case '\'', '"':
+			quote := c
+			for i++; i < len(call); i++ {
+				if call[i] == '\\' {
+					i++
+					continue
+				}
+				if call[i] == quote {
+					break
+				}
+			}
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		default:
+			if depth == 0 && strings.HasPrefix(call[i:], "version") {
+				if i > 0 {
+					prev := call[i-1]
+					if prev == '_' || prev >= 'a' && prev <= 'z' || prev >= 'A' && prev <= 'Z' || prev >= '0' && prev <= '9' {
+						continue
+					}
+				}
+				if m := bazelVersion.FindStringSubmatchIndex(call[i:]); m != nil && m[0] == 0 {
+					for n := range m {
+						m[n] += i
+					}
+					return m
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // closingParen returns the index of the ")" that closes the call whose
