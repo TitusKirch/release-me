@@ -23,7 +23,7 @@ var (
 // the first full version on the line for "version", the first number for
 // "major", "minor" and "patch".
 var (
-	genericVersion = regexp.MustCompile(`\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[-\w.]+)?`)
+	genericVersion = regexp.MustCompile(`\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`)
 	genericMajor   = regexp.MustCompile(`\d+\b`)
 	genericSingle  = regexp.MustCompile(`\b\d+\b`)
 	genericCore    = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)`)

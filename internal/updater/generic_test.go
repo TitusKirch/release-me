@@ -87,3 +87,19 @@ func TestUpdateGenericRejectsMarkersItCannotApply(t *testing.T) {
 		})
 	}
 }
+
+func TestGenericMarkersReplaceHyphenatedPrereleaseAndBuildSuffixes(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, content, want string }{
+		{name: "inline", content: "VERSION = \"1.2.3-preview-one.1+build-ci.7\" # x-release-please-version\n", want: "VERSION = \"2.0.0\" # x-release-please-version\n"},
+		{name: "block", content: "<!-- x-release-please-start-version -->\nimage: notes:1.2.3-preview-one.1+build-ci.7\n<!-- x-release-please-end -->\n", want: "<!-- x-release-please-start-version -->\nimage: notes:2.0.0\n<!-- x-release-please-end -->\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := updater.UpdateGeneric(tc.content, "2.0.0")
+			if err != nil || got != tc.want {
+				t.Fatalf("generic = %q,%v; want %q", got, err, tc.want)
+			}
+		})
+	}
+}
