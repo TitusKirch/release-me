@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package config loads release-me.yaml: initial-version,
-// bump-minor-pre-major, bump-patch-for-minor-pre-major, hidden-types, fallback-type, token-env, files,
+// bump-minor-pre-major, bump-patch-for-minor-pre-major, versioning-strategy,
+// hidden-types, fallback-type, token-env, files,
 // changelog, changelog-source, labels, author, major-tag, versioning,
 // draft-until-assets-attach, comment-mention, delete-release-branch and
 // components.
@@ -224,11 +225,16 @@ type Config struct {
 	InitialVersion            string
 	BumpMinorPreMajor         bool
 	BumpPatchForMinorPreMajor bool
-	HiddenTypes               []string
-	FallbackType              string
-	TokenEnv                  string
-	Files                     []File
-	ChangelogPath             string
+	// VersioningStrategy is the top-level "versioning-strategy" key: how
+	// a release bumps the version, "" when the key is left out, which
+	// version.Next reads as version.StrategyDefault. A component overrides
+	// it through its own "versioning-strategy" key.
+	VersioningStrategy version.Strategy
+	HiddenTypes        []string
+	FallbackType       string
+	TokenEnv           string
+	Files              []File
+	ChangelogPath      string
 	// ChangelogSource is the top-level "changelog-source" key: which
 	// commits become changelog entries. See the ChangelogSource*
 	// constants. A component overrides it through its own
@@ -296,7 +302,8 @@ type Config struct {
 
 // Component is one entry of the "components" key: a name mapped to a path
 // and optional overrides of the top-level initial-version,
-// bump-minor-pre-major, bump-patch-for-minor-pre-major, hidden-types, files, major-tag and
+// bump-minor-pre-major, bump-patch-for-minor-pre-major, versioning-strategy,
+// hidden-types, files, major-tag and
 // changelog-source, plus its own tag-prefix and changelog path. A nil
 // field was left out of release-me.yaml and falls back to the top-level
 // value, the same left-out-versus-zero-value distinction Load applies to
@@ -307,6 +314,7 @@ type Component struct {
 	InitialVersion            *string
 	BumpMinorPreMajor         *bool
 	BumpPatchForMinorPreMajor *bool
+	VersioningStrategy        *version.Strategy
 	HiddenTypes               *[]string
 	Files                     *[]File
 	MajorTag                  *bool
@@ -339,6 +347,7 @@ type ResolvedComponent struct {
 	InitialVersion            string
 	BumpMinorPreMajor         bool
 	BumpPatchForMinorPreMajor bool
+	VersioningStrategy        version.Strategy
 	HiddenTypes               []string
 	Files                     []File
 	MajorTag                  bool
@@ -363,6 +372,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			InitialVersion:            cfg.InitialVersion,
 			BumpMinorPreMajor:         cfg.BumpMinorPreMajor,
 			BumpPatchForMinorPreMajor: cfg.BumpPatchForMinorPreMajor,
+			VersioningStrategy:        cfg.VersioningStrategy,
 			HiddenTypes:               cfg.HiddenTypes,
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
@@ -392,6 +402,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			InitialVersion:            cfg.InitialVersion,
 			BumpMinorPreMajor:         cfg.BumpMinorPreMajor,
 			BumpPatchForMinorPreMajor: cfg.BumpPatchForMinorPreMajor,
+			VersioningStrategy:        cfg.VersioningStrategy,
 			HiddenTypes:               cfg.HiddenTypes,
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
@@ -405,6 +416,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.BumpPatchForMinorPreMajor != nil {
 			rc.BumpPatchForMinorPreMajor = *c.BumpPatchForMinorPreMajor
+		}
+		if c.VersioningStrategy != nil {
+			rc.VersioningStrategy = *c.VersioningStrategy
 		}
 		if c.HiddenTypes != nil {
 			rc.HiddenTypes = *c.HiddenTypes
@@ -429,6 +443,7 @@ func (rc ResolvedComponent) Rules() version.Rules {
 		InitialVersion:            rc.InitialVersion,
 		BumpMinorPreMajor:         rc.BumpMinorPreMajor,
 		BumpPatchForMinorPreMajor: rc.BumpPatchForMinorPreMajor,
+		Strategy:                  rc.VersioningStrategy,
 	}
 }
 
@@ -439,6 +454,7 @@ func (cfg Config) Rules() version.Rules {
 		InitialVersion:            cfg.InitialVersion,
 		BumpMinorPreMajor:         cfg.BumpMinorPreMajor,
 		BumpPatchForMinorPreMajor: cfg.BumpPatchForMinorPreMajor,
+		Strategy:                  cfg.VersioningStrategy,
 	}
 }
 
@@ -499,6 +515,7 @@ type raw struct {
 	InitialVersion            *string    `yaml:"initial-version"`
 	BumpMinorPreMajor         *bool      `yaml:"bump-minor-pre-major"`
 	BumpPatchForMinorPreMajor *bool      `yaml:"bump-patch-for-minor-pre-major"`
+	VersioningStrategy        *string    `yaml:"versioning-strategy"`
 	HiddenTypes               *[]string  `yaml:"hidden-types"`
 	FallbackType              *string    `yaml:"fallback-type"`
 	TokenEnv                  *string    `yaml:"token-env"`
@@ -530,6 +547,7 @@ type rawComponent struct {
 	InitialVersion            *string    `yaml:"initial-version"`
 	BumpMinorPreMajor         *bool      `yaml:"bump-minor-pre-major"`
 	BumpPatchForMinorPreMajor *bool      `yaml:"bump-patch-for-minor-pre-major"`
+	VersioningStrategy        *string    `yaml:"versioning-strategy"`
 	HiddenTypes               *[]string  `yaml:"hidden-types"`
 	Files                     *[]rawFile `yaml:"files"`
 	MajorTag                  *bool      `yaml:"major-tag"`
@@ -610,6 +628,13 @@ func Load(path string) (cfg Config, err error) {
 	if r.BumpPatchForMinorPreMajor != nil {
 		cfg.BumpPatchForMinorPreMajor = *r.BumpPatchForMinorPreMajor
 	}
+	if r.VersioningStrategy != nil {
+		strategy, err := parseStrategy(*r.VersioningStrategy)
+		if err != nil {
+			return Config{}, fmt.Errorf("config: parse %s: %w", path, err)
+		}
+		cfg.VersioningStrategy = strategy
+	}
 	if r.HiddenTypes != nil {
 		cfg.HiddenTypes = *r.HiddenTypes
 	}
@@ -688,6 +713,12 @@ func Load(path string) (cfg Config, err error) {
 		if !validVersioning[cfg.Versioning] {
 			return Config{}, fmt.Errorf("config: parse %s: versioning %q is not independent, locked or linked", path, *r.Versioning)
 		}
+	}
+	if cfg.VersioningStrategy == version.StrategyServicePack && cfg.Versioning != VersioningIndependent {
+		return Config{}, fmt.Errorf(
+			"config: parse %s: versioning-strategy service-pack applies to versioning independent only, "+
+				"a %s family shares one version line", path, cfg.Versioning,
+		)
 	}
 	if cfg.Versioning == VersioningLocked {
 		cfg.ReleasePullRequest = ReleasePullRequestShared
@@ -823,6 +854,14 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 				return nil, fmt.Errorf("config: parse %s: component %s: changelog %q %w", path, name, *rc.Changelog, err)
 			}
 		}
+		var strategy *version.Strategy
+		if rc.VersioningStrategy != nil {
+			s, err := parseStrategy(*rc.VersioningStrategy)
+			if err != nil {
+				return nil, fmt.Errorf("config: parse %s: component %s: %w", path, name, err)
+			}
+			strategy = &s
+		}
 		if rc.ChangelogSource != nil && !slices.Contains(changelogSources, *rc.ChangelogSource) {
 			return nil, fmt.Errorf(
 				"config: parse %s: component %s: changelog-source %q is none of %s",
@@ -833,7 +872,8 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 		c := Component{
 			Name: name, Path: *rc.Path, InitialVersion: rc.InitialVersion,
 			BumpMinorPreMajor: rc.BumpMinorPreMajor, BumpPatchForMinorPreMajor: rc.BumpPatchForMinorPreMajor,
-			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag,
+			VersioningStrategy: strategy,
+			HiddenTypes:        rc.HiddenTypes, MajorTag: rc.MajorTag,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
 		}
 		if rc.Files != nil {
@@ -846,6 +886,20 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 		components = append(components, c)
 	}
 	return components, nil
+}
+
+// parseStrategy reads a "versioning-strategy" value, rejecting one that
+// names no version.Strategy.
+func parseStrategy(value string) (version.Strategy, error) {
+	s := version.Strategy(value)
+	if !slices.Contains(version.Strategies, s) {
+		names := make([]string, len(version.Strategies))
+		for i, v := range version.Strategies {
+			names[i] = string(v)
+		}
+		return "", fmt.Errorf("versioning-strategy %q is none of %s", value, strings.Join(names, ", "))
+	}
+	return s, nil
 }
 
 // ValidateComponentName rejects a component name release-me cannot carry
