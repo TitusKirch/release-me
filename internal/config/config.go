@@ -8,7 +8,8 @@
 // prerelease-types, author, major-tag, versioning, signoff,
 // release-pull-request-title, release-pull-request-shared-title,
 // draft-until-assets-attach, skip-github-release, comment-mention,
-// delete-release-branch, workspaces, always-link-local and components.
+// delete-release-branch, workspaces, always-link-local, exclude-paths and
+// components.
 package config
 
 import (
@@ -407,6 +408,11 @@ type Config struct {
 	// package anyway, through a local protocol or a range the local
 	// version satisfies, see workspace.Options.
 	AlwaysLinkLocal bool
+	// ExcludePaths is the top-level "exclude-paths" key: paths, relative to
+	// the repository root and cleaned, whose changes never count for the
+	// implicit main component. Only a repository without "components"
+	// carries it; a configured component has its own "exclude-paths".
+	ExcludePaths []string
 	// Components is the "components" key, in the order release-me.yaml
 	// declares them, or nil when the key is absent: a repository without
 	// it is one component at the repository root, as Resolve reports.
@@ -417,7 +423,7 @@ type Config struct {
 // and optional overrides of the top-level initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, hidden-types, files,
 // major-tag, changelog-source and skip-github-release, plus its own
-// tag-prefix and changelog path. A nil
+// tag-prefix, changelog path and exclude-paths. A nil
 // field was left out of release-me.yaml and falls back to the top-level
 // value, the same left-out-versus-zero-value distinction Load applies to
 // the top level itself.
@@ -439,6 +445,11 @@ type Component struct {
 	// Changelog is the component's "changelog" key, nil when it was left
 	// out and the component keeps the derived "<path>/CHANGELOG.md".
 	Changelog *string
+	// ExcludePaths is the component's "exclude-paths" key: paths inside
+	// Path, relative to the repository root and cleaned, whose changes never
+	// count for the component. There is no top-level fallback, a path names
+	// one component's files.
+	ExcludePaths []string
 }
 
 // ResolvedComponent is one component ready for a command to release: its
@@ -480,6 +491,9 @@ type ResolvedComponent struct {
 	// SkipGitHubRelease is true when release tags this component without
 	// creating a GitHub release for the tag.
 	SkipGitHubRelease bool
+	// ExcludePaths are the paths inside Path whose changes never count for
+	// the component, see history.Counts.
+	ExcludePaths []string
 }
 
 // Resolve returns the components a command should loop over, in
@@ -505,6 +519,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			ChangelogSource:           cfg.ChangelogSource,
 			ChangelogStyle:            cfg.ChangelogStyle,
 			SkipGitHubRelease:         cfg.SkipGitHubRelease,
+			ExcludePaths:              cfg.ExcludePaths,
 		}}
 	}
 
@@ -537,6 +552,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			ChangelogSource:           cfg.ChangelogSource,
 			ChangelogStyle:            cfg.ChangelogStyle,
 			SkipGitHubRelease:         cfg.SkipGitHubRelease,
+			ExcludePaths:              c.ExcludePaths,
 		}
 		if c.InitialVersion != nil {
 			rc.InitialVersion = *c.InitialVersion
@@ -709,6 +725,7 @@ type raw struct {
 	Workspaces                    *[]string  `yaml:"workspaces"`
 	DeleteReleaseBranch           *bool      `yaml:"delete-release-branch"`
 	AlwaysLinkLocal               *bool      `yaml:"always-link-local"`
+	ExcludePaths                  *[]string  `yaml:"exclude-paths"`
 	// PreReleaseTypes is decoded as a node, like Components, so its
 	// entries keep release-me.yaml's order.
 	PreReleaseTypes yaml.Node `yaml:"prerelease-types"`
@@ -735,6 +752,7 @@ type rawComponent struct {
 	SkipGitHubRelease         *bool      `yaml:"skip-github-release"`
 	TagPrefix                 *string    `yaml:"tag-prefix"`
 	Changelog                 *string    `yaml:"changelog"`
+	ExcludePaths              *[]string  `yaml:"exclude-paths"`
 }
 
 // Default is the configuration applied when release-me.yaml is absent.
@@ -1040,6 +1058,17 @@ func Load(path string) (cfg Config, err error) {
 	if r.DeleteReleaseBranch != nil {
 		cfg.DeleteReleaseBranch = *r.DeleteReleaseBranch
 	}
+	if r.ExcludePaths != nil {
+		if r.Components.Kind != 0 {
+			return Config{}, fmt.Errorf("config: parse %s: exclude-paths: a configured component carries its own "+
+				"exclude-paths, the top-level key applies only without components", path)
+		}
+		exclude, err := cleanExcludePaths(".", *r.ExcludePaths)
+		if err != nil {
+			return Config{}, fmt.Errorf("config: parse %s: %w", path, err)
+		}
+		cfg.ExcludePaths = exclude
+	}
 	if r.Components.Kind != 0 {
 		components, err := decodeComponents(path, &r.Components)
 		if err != nil {
@@ -1225,8 +1254,18 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 		if stdpath.Clean(componentPath) == "." {
 			componentPath = "."
 		}
+
+		var exclude []string
+		if rc.ExcludePaths != nil {
+			exclude, err = cleanExcludePaths(stdpath.Clean(componentPath), *rc.ExcludePaths)
+			if err != nil {
+				return nil, fmt.Errorf("config: parse %s: component %s: %w", path, name, err)
+			}
+		}
+
 		c := Component{
-			Name: name, Path: componentPath, InitialVersion: rc.InitialVersion,
+			ExcludePaths: exclude,
+			Name:         name, Path: componentPath, InitialVersion: rc.InitialVersion,
 			BumpMinorPreMajor: rc.BumpMinorPreMajor, BumpPatchForMinorPreMajor: rc.BumpPatchForMinorPreMajor,
 			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag, ChangelogType: rc.ChangelogType,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
@@ -1275,6 +1314,32 @@ func ValidateComponentName(name string) error {
 // an ASCII letter or digit, "-", "_" or ".".
 func isComponentNameRune(r rune) bool {
 	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.'
+}
+
+// cleanExcludePaths cleans every "exclude-paths" entry of the component at
+// componentPath and rejects one that is not a path nested inside it,
+// relative to the repository root: an entry outside the component excludes
+// nothing, and one equal to it would exclude every change.
+func cleanExcludePaths(componentPath string, paths []string) ([]string, error) {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		clean := stdpath.Clean(p)
+		switch {
+		case p == "":
+			return nil, errors.New("exclude-paths: an entry is empty")
+		case stdpath.IsAbs(p) || strings.Contains(p, "\\"):
+			return nil, fmt.Errorf("exclude-paths: %q is not a relative path with forward slashes", p)
+		case clean == "." || clean == ".." || strings.HasPrefix(clean, "../"):
+			return nil, fmt.Errorf("exclude-paths: %q is not a path inside the repository", p)
+		case clean == componentPath || componentPath != "." && !strings.HasPrefix(clean, componentPath+"/"):
+			return nil, fmt.Errorf("exclude-paths: %q is not nested inside the component path %q, "+
+				"the path is relative to the repository root", p, componentPath)
+		}
+		if !slices.Contains(out, clean) {
+			out = append(out, clean)
+		}
+	}
+	return out, nil
 }
 
 // validateComponentPaths rejects two components whose paths overlap: equal,
