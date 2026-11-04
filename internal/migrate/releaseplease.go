@@ -21,6 +21,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
+	"github.com/ostendorf-cloud/release-me/internal/version"
 	"github.com/ostendorf-cloud/release-me/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
@@ -66,7 +67,8 @@ var packageKeys = append([]string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
 	"initial-version", "extra-files", "skip-changelog", "version-file", "exclude-paths",
-	"changelog-type", "include-commit-authors", "changelog-host", "prerelease-type", "prerelease",
+	"changelog-type", "release-as", "include-commit-authors", "changelog-host", "prerelease-type",
+	"prerelease",
 }, releaseFlagKeys()...)
 
 // releaseFlag is a boolean release-please package setting release-me reads
@@ -291,6 +293,21 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			tags = append(tags, ExpectedTag{Component: components[i].name, Tag: components[i].tagPrefix + v})
 		}
 	}
+	dropShippedReleaseAs(packages, components, versions, warn)
+	if versioning != "" {
+		// A linked or locked family shares one version: release-me takes
+		// release-as only at the top level there, so only a value every
+		// component carries survives.
+		if slices.ContainsFunc(components, func(c component) bool { return c.releaseAs != components[0].releaseAs }) {
+			for i := range components {
+				if components[i].releaseAs != "" {
+					warn("package %s: release-as: release-me forces a %s family's one version at the top level only, "+
+						"and the packages force different ones, left out", components[i].path, versioning)
+					components[i].releaseAs = ""
+				}
+			}
+		}
+	}
 
 	opts := topLevel{
 		versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, extra: extra, style: st,
@@ -366,6 +383,9 @@ type component struct {
 	excludePaths []string
 	// skipChangelog is release-please's skip-changelog.
 	skipChangelog bool
+	// releaseAs is release-please's release-as, release-me's too, ""
+	// when it is left out or cannot carry over.
+	releaseAs string
 }
 
 // file is one release-me "files" entry.
@@ -382,7 +402,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	var (
 		releaseType, packageName, componentName, separator, changelogPath string
 		initialVersion, changelogType, changelogHost, preReleaseType      string
-		versionFileName                                                   string
+		versionFileName, releaseAs                                        string
 		preRelease, skipChangelog                                         bool
 		includeComponent, includeV                                        = true, true
 		bumpMinor, bumpPatchForMinor, includeAuthors                      bool
@@ -398,7 +418,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"changelog-type": &changelogType, "include-commit-authors": &includeAuthors,
 		"changelog-host":  &changelogHost,
 		"prerelease-type": &preReleaseType, "prerelease": &preRelease,
-		"skip-changelog": &skipChangelog,
+		"skip-changelog": &skipChangelog, "release-as": &releaseAs,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -467,6 +487,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		bumpMinorPreMajor:         bumpMinor,
 		bumpPatchForMinorPreMajor: bumpPatchForMinor,
 		preReleaseType:            preReleaseType,
+		releaseAs:                 translateReleaseAs(p.path, releaseAs, warn),
 		initialVersion:            initialVersion,
 		changelogType:             changelogType,
 		includeCommitAuthors:      includeAuthors,
@@ -691,6 +712,43 @@ func translateExcludePaths(pkgPath string, raw json.RawMessage, warn func(string
 		}
 	}
 	return out, nil
+}
+
+// translateReleaseAs vets a release-please release-as value the way
+// release-me.yaml's release-as key is: one that does not parse as a
+// version, or a pre-release, release-me refuses, so it is warned about and
+// left out.
+func translateReleaseAs(pkgPath, releaseAs string, warn func(string, ...any)) string {
+	if releaseAs == "" {
+		return ""
+	}
+	if _, err := version.ParseForced(releaseAs, version.Semver{}, false, false); err != nil {
+		warn("package %s: release-as %s: the value %v, left out", pkgPath, releaseAs, err)
+		return ""
+	}
+	return releaseAs
+}
+
+// dropShippedReleaseAs leaves out every component's release-as that is not
+// greater than the version .release-please-manifest.json records for its
+// package: release-please already released it, and release-me would only
+// warn about it on every run.
+func dropShippedReleaseAs(packages []rpPackage, components []component, versions map[string]string, warn func(string, ...any)) {
+	for i, p := range packages {
+		manifest, ok := versions[p.path]
+		if !ok || components[i].releaseAs == "" {
+			continue
+		}
+		last, ok := version.ParseTag("v" + manifest)
+		if !ok {
+			continue
+		}
+		if _, err := version.ParseForced(components[i].releaseAs, last, true, false); err != nil {
+			warn("package %s: release-as %s: already released, the manifest records %s, left out",
+				p.path, components[i].releaseAs, manifest)
+			components[i].releaseAs = ""
+		}
+	}
 }
 
 // translateExtraFiles carries over the extra-files entries an updater can
@@ -1162,8 +1220,8 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 
 	// A pre-major rule carried by every component is written once, at the
-	// top level, instead of repeated per component. So are changelog-type
-	// and skip-changelog every component carries alike.
+	// top level, instead of repeated per component. So are changelog-type,
+	// skip-changelog and a release-as value every component carries alike.
 	shared := sharedRules{
 		bumpMinorPreMajor: !slices.ContainsFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }),
 		bumpPatchForMinorPreMajor: !slices.ContainsFunc(components, func(c component) bool {
@@ -1173,6 +1231,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 			return c.changelogType != config.ChangelogTypeGitHub
 		}),
 		skipChangelog: !slices.ContainsFunc(components, func(c component) bool { return !c.skipChangelog }),
+	}
+	if !slices.ContainsFunc(components, func(c component) bool { return c.releaseAs != components[0].releaseAs }) {
+		shared.releaseAs = components[0].releaseAs
 	}
 	if shared.bumpMinorPreMajor {
 		add(doc, "bump-minor-pre-major", boolean(true))
@@ -1185,6 +1246,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if shared.skipChangelog {
 		add(doc, "skip-changelog", boolean(true))
+	}
+	if shared.releaseAs != "" {
+		add(doc, "release-as", scalar(shared.releaseAs))
 	}
 	// A release flag every component carries with the same value, other
 	// than release-me's default, is written once at the top level too.
@@ -1238,20 +1302,23 @@ func render(components []component, top topLevel) ([]byte, error) {
 
 // sharedRules names the per-component settings every component carries
 // alike, which render writes once at the top level instead of repeating
-// per component: the pre-major rules, changelog-type and skip-changelog.
+// per component: the pre-major rules, changelog-type, skip-changelog and
+// release-as.
 type sharedRules struct {
 	bumpMinorPreMajor         bool
 	bumpPatchForMinorPreMajor bool
 	changelogType             bool
 	skipChangelog             bool
+	// releaseAs is "" when the components differ or none carries one.
+	releaseAs string
 }
 
 // addSettings writes the settings release-me reads per component or at the
 // top level alike: initial-version, bump-minor-pre-major,
-// bump-patch-for-minor-pre-major, changelog-type, skip-changelog, the
-// release flags and files. A setting shared names is left out, the top
-// level already carries it; a release flag is also left out where it is
-// release-me's default.
+// bump-patch-for-minor-pre-major, changelog-type, skip-changelog,
+// release-as, the release flags and files. A setting shared names is left
+// out, the top level already carries it; a release flag is also left out
+// where it is release-me's default.
 func addSettings(
 	m *yaml.Node, c component, shared sharedRules, topFlags map[string]bool, add func(*yaml.Node, string, *yaml.Node),
 ) {
@@ -1269,6 +1336,9 @@ func addSettings(
 	}
 	if c.skipChangelog && !shared.skipChangelog {
 		add(m, "skip-changelog", boolean(true))
+	}
+	if c.releaseAs != "" && shared.releaseAs == "" {
+		add(m, "release-as", scalar(c.releaseAs))
 	}
 	for _, flag := range releaseFlags {
 		if value := c.flags[flag.key]; !topFlags[flag.key] && value != flag.def {
