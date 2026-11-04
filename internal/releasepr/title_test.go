@@ -214,3 +214,38 @@ func TestUnmarkedLegacyTitlesPreferTheirDefaultShape(t *testing.T) {
 		})
 	}
 }
+
+func TestTitleMetadataIgnoresPreservedFreeText(t *testing.T) {
+	t.Parallel()
+	old := "build(${component}): ship ${version} after 2.0.0"
+	quoted := "<!-- release-me-title-pattern: build(${component}): ship 1.2.3 after ${version} -->"
+	for _, tc := range []struct{ name, prefix, suffix string }{
+		{name: "notes with no guide", prefix: "```release-me-notes\n" + quoted + "\n```\n"},
+		{name: "version block", prefix: "```release-me-version\n" + quoted + "\n```\n"},
+		{name: "notes in a framed body", prefix: "Team header\n```release-me-notes\n" + quoted + "\n```\n", suffix: "Team footer\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			actual, err := releasepr.NewTitlePattern(old, releasepr.TitlePerComponent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := tc.prefix + "Release v1.2.3\n" + tc.suffix + releasepr.TitlePatternMarker(actual, releasepr.TitlePerComponent)
+			got, ok := releasepr.BodyTitlePattern(body, releasepr.TitlePerComponent)
+			if !ok || got.String() != old {
+				t.Fatalf("pattern = %q,%v", got.String(), ok)
+			}
+			configured, err := releasepr.TitlePatterns("", releasepr.TitlePerComponent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			values, _, ok := releasepr.ParseAny(releasepr.ReadPatterns(configured, body, releasepr.TitlePerComponent), "build(api): ship 1.2.3 after 2.0.0")
+			if !ok || values.Version != "1.2.3" {
+				t.Fatalf("version = %+v,%v", values, ok)
+			}
+			if p, ok := releasepr.BodyTitlePattern(tc.prefix, releasepr.TitlePerComponent); ok {
+				t.Fatalf("quoted-only marker = %q", p.String())
+			}
+		})
+	}
+}
