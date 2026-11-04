@@ -177,9 +177,86 @@ func TestCountsAttributesACommitThroughItsFilesAndItsFooter(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			for name, path := range components {
-				if got := history.Counts(tc.paths, tc.named, name, path); got != tc.want[name] {
+				if got := history.Counts(tc.paths, tc.named, name, path, nil); got != tc.want[name] {
 					t.Errorf("Counts(%q, %q, %q, %q) = %v, want %v", tc.paths, tc.named, name, path, got, tc.want[name])
 				}
+			}
+		})
+	}
+}
+
+func TestCountsLeavesOutACommitThatChangedOnlyExcludedPaths(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		paths   []string
+		named   []string
+		path    string
+		exclude []string
+		want    bool
+	}{
+		{
+			name:    "a commit changing only an excluded subpath counts for none",
+			paths:   []string{"packages/duxt/docs/layout.md", "packages/duxt/docs/props.md"},
+			path:    "packages/duxt",
+			exclude: []string{"packages/duxt/docs"},
+			want:    false,
+		},
+		{
+			name:    "a commit changing an excluded subpath and a file outside it counts",
+			paths:   []string{"packages/duxt/docs/layout.md", "packages/duxt/src/layout.ts"},
+			path:    "packages/duxt",
+			exclude: []string{"packages/duxt/docs"},
+			want:    true,
+		},
+		{
+			name:    "an excluded path matches a file named like it as a separate file",
+			paths:   []string{"packages/duxt/docs-site.ts"},
+			path:    "packages/duxt",
+			exclude: []string{"packages/duxt/docs"},
+			want:    true,
+		},
+		{
+			name:    "an excluded file counts for none",
+			paths:   []string{"packages/duxt/package-lock.json"},
+			path:    "packages/duxt",
+			exclude: []string{"packages/duxt/package-lock.json"},
+			want:    false,
+		},
+		{
+			name:    "a commit naming the component counts whatever it changed",
+			paths:   []string{"packages/duxt/docs/layout.md"},
+			named:   []string{"duxt"},
+			path:    "packages/duxt",
+			exclude: []string{"packages/duxt/docs"},
+			want:    true,
+		},
+		{
+			name:    "the root component leaves out its excluded paths",
+			paths:   []string{"packages/api/handler.go"},
+			path:    ".",
+			exclude: []string{"packages"},
+			want:    false,
+		},
+		{
+			name:    "the root component counts a commit outside its excluded paths",
+			paths:   []string{"packages/api/handler.go", "README.md"},
+			path:    ".",
+			exclude: []string{"packages"},
+			want:    true,
+		},
+		{
+			name:    "an empty commit still counts for a component with excluded paths",
+			path:    ".",
+			exclude: []string{"packages"},
+			want:    true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := history.Counts(tc.paths, tc.named, "duxt", tc.path, tc.exclude); got != tc.want {
+				t.Fatalf("Counts(%q, %q, %q, %q, %q) = %v, want %v", tc.paths, tc.named, "duxt", tc.path, tc.exclude, got, tc.want)
 			}
 		})
 	}

@@ -41,41 +41,49 @@ func Touches(ctx context.Context, dir, sha string) ([]string, error) {
 }
 
 // Belongs reports whether any of paths, the shape Touches returns, falls
-// under componentPath: equal to it, or nested inside it. componentPath "."
-// is the sentinel for the component at the repository root and matches
-// every path, including an empty list.
-func Belongs(paths []string, componentPath string) bool {
-	if componentPath == "." {
+// under componentPath, equal to it or nested inside it, and outside every
+// path in exclude, the component's "exclude-paths". componentPath "." is
+// the sentinel for the component at the repository root and matches every
+// path, including an empty list, unless exclude names one: then it matches
+// every path outside exclude.
+func Belongs(paths []string, componentPath string, exclude ...string) bool {
+	if componentPath == "." && len(exclude) == 0 {
 		return true
 	}
-	prefix := componentPath + "/"
 	for _, p := range paths {
-		if p == componentPath || strings.HasPrefix(p, prefix) {
+		if within(p, componentPath) && !slices.ContainsFunc(exclude, func(x string) bool { return within(p, x) }) {
 			return true
 		}
 	}
 	return false
 }
 
+// within reports whether path is dir itself or nested inside it. dir "."
+// holds every path.
+func within(path, dir string) bool {
+	return dir == "." || path == dir || strings.HasPrefix(path, dir+"/")
+}
+
 // Counts reports whether a commit counts for the component name at
-// componentPath. paths are the files the commit changed, the shape Touches
-// returns, and named every component name its "Release-Component" footers
-// name, as written: a name no component carries stays in named and
-// matches none.
+// componentPath, whose "exclude-paths" are exclude. paths are the files
+// the commit changed, the shape Touches returns, and named every component
+// name its "Release-Component" footers name, as written: a name no
+// component carries stays in named and matches none.
 //
 // A commit named for the component counts for it, whatever files it
-// changed. Otherwise a commit that changed files counts through Belongs.
-// A commit that changed none counts for every component when it carries
-// no footer, the way release-please treats an empty commit, and only for
-// the components its footers name when it does, so an empty commit whose
-// footers name only unknown components counts for none. componentPath "."
+// changed. Otherwise a commit that changed files counts through Belongs,
+// so one that changed only excluded files counts for none. A commit that
+// changed none counts for every component when it carries no footer, the
+// way release-please treats an empty commit, and only for the components
+// its footers name when it does, so an empty commit whose footers name only
+// unknown components counts for none. componentPath "." without exclude
 // matches every commit, as in Belongs.
-func Counts(paths, named []string, name, componentPath string) bool {
-	if componentPath == "." || slices.Contains(named, name) {
+func Counts(paths, named []string, name, componentPath string, exclude []string) bool {
+	if slices.Contains(named, name) || componentPath == "." && len(exclude) == 0 {
 		return true
 	}
 	if len(paths) == 0 {
 		return len(named) == 0
 	}
-	return Belongs(paths, componentPath)
+	return Belongs(paths, componentPath, exclude...)
 }
