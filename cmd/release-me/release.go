@@ -146,7 +146,11 @@ func assembleEntries(
 	ctx context.Context, f forge.Forge, owner, repoName string, raw []history.Entry, fallbackType, source string, subs subCommitReader,
 ) ([]version.Change, []changelog.Entry, error) {
 	if source == config.ChangelogSourceAll {
-		return assembleAllEntries(ctx, f, owner, repoName, raw, fallbackType)
+		changes, entries, err := assembleAllEntries(ctx, f, owner, repoName, raw, fallbackType)
+		if err != nil {
+			return nil, nil, err
+		}
+		return changes, linkEntries(f, owner, repoName, entries), nil
 	}
 
 	changes := make([]version.Change, 0, len(raw))
@@ -160,7 +164,34 @@ func assembleEntries(
 		changes = append(changes, c...)
 		entries = append(entries, en...)
 	}
-	return changes, entries, nil
+	return changes, linkEntries(f, owner, repoName, entries), nil
+}
+
+// linkEntries fills in the web address of every entry's commit and issue
+// references, sub entries included, through the forge, which builds them
+// without a request. An entry without a commit keeps CommitURL "".
+func linkEntries(f forge.Forge, owner, repoName string, entries []changelog.Entry) []changelog.Entry {
+	for i := range entries {
+		e := &entries[i]
+		if e.CommitSHA != "" {
+			e.CommitURL = f.CommitURL(owner, repoName, e.CommitSHA)
+		}
+		for j := range e.Issues {
+			e.Issues[j].URL = f.IssueURL(owner, repoName, e.Issues[j].Number)
+		}
+		e.SubEntries = linkEntries(f, owner, repoName, e.SubEntries)
+	}
+	return entries
+}
+
+// issues turns the issue numbers text closes into changelog issue
+// references, their URLs left for linkEntries.
+func issues(text string) []changelog.Issue {
+	var out []changelog.Issue
+	for _, n := range conventional.IssueReferences(text) {
+		out = append(out, changelog.Issue{Number: n})
+	}
+	return out
 }
 
 // processEntry resolves one history entry into zero or more changes and
@@ -176,7 +207,7 @@ func processEntry(
 		switch {
 		case err == nil:
 			if override := conventional.ParseOverride(pr.Body); override.Present {
-				c, en := overrideEntries(override, e.PullRequestNumber, pr.URL, pullRequestAuthor(pr, e), fallbackType)
+				c, en := overrideEntries(override, e, pr, pullRequestAuthor(pr, e), fallbackType)
 				return c, en, nil
 			}
 			text, url, author = pullRequestText(e, pr.Title, pr.Body), pr.URL, pullRequestAuthor(pr, e)
@@ -203,6 +234,8 @@ func processEntry(
 		PullRequestNumber: e.PullRequestNumber,
 		URL:               url,
 		Author:            author,
+		CommitSHA:         e.SHA,
+		Issues:            issues(text),
 	}
 
 	if source == config.ChangelogSourceNested && e.PullRequestNumber > 0 {
@@ -238,6 +271,7 @@ func nestedSubEntries(ctx context.Context, subs subCommitReader, sha, fallbackTy
 		changes = append(changes, version.Change{Type: msg.Type, Breaking: msg.Breaking, ReleaseAs: msg.ReleaseAs})
 		entries = append(entries, changelog.Entry{
 			Type: msg.Type, Scope: msg.Scope, Description: msg.Description, Breaking: msg.Breaking,
+			CommitSHA: s.SHA, Issues: issues(entryText(s)),
 		})
 	}
 	return changes, entries, nil
@@ -278,7 +312,7 @@ func assembleAllEntries(ctx context.Context, f forge.Forge, owner, repoName stri
 		switch {
 		case err == nil:
 			if override := conventional.ParseOverride(pr.Body); override.Present {
-				c, en := overrideEntries(override, e.PullRequestNumber, pr.URL, pullRequestAuthor(pr, e), fallbackType)
+				c, en := overrideEntries(override, e, pr, pullRequestAuthor(pr, e), fallbackType)
 				changes = append(changes, c...)
 				entries = append(entries, en...)
 				continue
@@ -310,7 +344,8 @@ func assembleAllEntries(ctx context.Context, f forge.Forge, owner, repoName stri
 // parseCommit parses one commit's own subject and body as a conventional
 // commit, attributing it to the given pull request number and URL, 0 and
 // "" for a commit belonging to none. Its text is the commit's own, so the
-// commit's author is credited, not the pull request's.
+// commit's author is credited, not the pull request's, and it links its
+// own commit.
 func parseCommit(e history.Entry, fallbackType string, number int, url string) (version.Change, changelog.Entry) {
 	msg := conventional.Parse(entryText(e), fallbackType)
 	return version.Change{Type: msg.Type, Breaking: msg.Breaking, ReleaseAs: msg.ReleaseAs}, changelog.Entry{
@@ -321,6 +356,8 @@ func parseCommit(e history.Entry, fallbackType string, number int, url string) (
 		PullRequestNumber: number,
 		URL:               url,
 		Author:            e.AuthorName,
+		CommitSHA:         e.SHA,
+		Issues:            issues(entryText(e)),
 	}
 }
 
@@ -346,9 +383,12 @@ func warnRefusedReleaseAs(logger *slog.Logger, who string, refused []version.Ref
 	}
 }
 
-// overrideEntries parses one change and one changelog entry per line of an
-// override block, all naming the same pull request and crediting author.
-func overrideEntries(override conventional.Override, number int, url, author, fallbackType string) ([]version.Change, []changelog.Entry) {
+// overrideEntries parses one change and one changelog entry per line of
+// pr's override block, all naming pr, crediting author, linking e's
+// commit, the one that brought pr in, and referencing the issues pr's
+// body closes.
+func overrideEntries(override conventional.Override, e history.Entry, pr forge.PullRequest, author, fallbackType string) ([]version.Change, []changelog.Entry) {
+	number, url := e.PullRequestNumber, pr.URL
 	changes := make([]version.Change, 0, len(override.Entries))
 	entries := make([]changelog.Entry, 0, len(override.Entries))
 	for _, line := range override.Entries {
@@ -362,6 +402,8 @@ func overrideEntries(override conventional.Override, number int, url, author, fa
 			PullRequestNumber: number,
 			URL:               url,
 			Author:            author,
+			CommitSHA:         e.SHA,
+			Issues:            issues(pr.Body),
 		})
 	}
 	return changes, entries
