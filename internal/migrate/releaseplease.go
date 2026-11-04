@@ -169,8 +169,8 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	}
 
 	if len(packages) > 1 && slices.ContainsFunc(packages, func(p rpPackage) bool { return p.path == "." }) {
-		warn("package .: release-me components cannot overlap, so a root package beside other packages " +
-			"needs a path of its own, the directory holding its source, before release-me.yaml loads")
+		warn("package .: release-please counted every commit for the root package, release-me's root " +
+			"component counts only the files outside the other components' paths")
 	}
 
 	versioning, err := translatePlugins(topValues["plugins"], components, warn)
