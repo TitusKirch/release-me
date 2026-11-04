@@ -76,8 +76,8 @@ hidden type, the changelog carries one explicit line,
 `- Version bump without user facing changes.`, instead of an empty heading. With
 [`changelog-type: github`](configuration.md#changelog-type), the section under the heading is
 the release notes GitHub generates instead, the same in the changelog file, the body and the
-release. The guide never reaches the changelog file or the GitHub release. A shared release pull request's title and
-body name every component it releases: see
+release. The guide never reaches the changelog file or the GitHub release. A shared release pull
+request's title and body name every component it releases: see
 [shared release pull request](versioning-modes.md#shared-release-pull-request).
 
 ## Pre-releases
