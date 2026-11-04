@@ -298,7 +298,7 @@ func TestRunLockedDoesNotDraftASecondReleaseWhenTheLabelSwapFailedAfterTheFirstD
 		{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
 	}
 
-	_, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, true, false, discardLogger())
+	_, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, true, false, discardLogger())
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("first RunLocked() error = %v, want it to wrap %v", err, wantErr)
 	}
@@ -307,7 +307,7 @@ func TestRunLockedDoesNotDraftASecondReleaseWhenTheLabelSwapFailedAfterTheFirstD
 	}
 
 	f.SetLabelsErr = nil
-	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, true, false, discardLogger())
+	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, true, false, discardLogger())
 	if err != nil {
 		t.Fatalf("second RunLocked() error = %v", err)
 	}
@@ -443,7 +443,7 @@ func TestRunLockedDoesNotResumeATaggedPullRequestWhenDraftUntilAssetsAttachIsOff
 		{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
 	}
 
-	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger())
+	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, false, false, discardLogger())
 	if err != nil {
 		t.Fatalf("RunLocked() error = %v", err)
 	}
@@ -807,7 +807,7 @@ func TestRunLockedTagsAndReleasesEveryComponentFromOneMergedPullRequest(t *testi
 		{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
 	}
 
-	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger())
+	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, false, false, discardLogger())
 	if err != nil {
 		t.Fatalf("RunLocked() error = %v", err)
 	}
@@ -867,7 +867,7 @@ func TestRunLockedDraftsEveryReleaseWhenDraftUntilAssetsAttachIsOn(t *testing.T)
 		{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
 	}
 
-	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, true, false, discardLogger())
+	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, true, false, discardLogger())
 	if err != nil {
 		t.Fatalf("RunLocked() error = %v", err)
 	}
@@ -893,7 +893,7 @@ func TestRunLockedDryRunWritesNothing(t *testing.T) {
 		{Name: "b", Branch: "release-me/main", TagPrefix: "b/v"},
 	}
 
-	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, true, discardLogger())
+	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, false, true, discardLogger())
 	if err != nil {
 		t.Fatalf("RunLocked() error = %v", err)
 	}
@@ -927,7 +927,7 @@ func TestRunLockedResumesOnlyTheComponentWhoseReleaseIsStillADraft(t *testing.T)
 		{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
 	}
 
-	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, true, false, discardLogger())
+	results, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, true, false, discardLogger())
 	if err != nil {
 		t.Fatalf("RunLocked() error = %v", err)
 	}
@@ -1014,7 +1014,7 @@ func TestRunSharedTagsAndReleasesEveryComponentAtItsOwnVersion(t *testing.T) {
 		{Name: "docs", Branch: "release-me/main", TagPrefix: "docs/v", Multi: true},
 	}
 
-	results, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger())
+	results, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, false, false, discardLogger())
 	if err != nil {
 		t.Fatalf("RunShared() error = %v", err)
 	}
@@ -1064,7 +1064,7 @@ func TestRunSharedRejectsATitleNamingAnUnconfiguredComponent(t *testing.T) {
 	}
 	comps := []release.Component{{Name: "api", Branch: "release-me/main", TagPrefix: "api/v", Multi: true}}
 
-	_, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger())
+	_, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, false, false, discardLogger())
 	if err == nil || !strings.Contains(err.Error(), "component mobile is not configured") {
 		t.Fatalf("RunShared() error = %v, want it to name the unconfigured component", err)
 	}
@@ -1090,7 +1090,7 @@ func TestRunSharedResumesADraftLeftByAnEarlierRun(t *testing.T) {
 		{Name: "web", Branch: "release-me/main", TagPrefix: "web/v", Multi: true},
 	}
 
-	results, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, true, false, discardLogger())
+	results, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, true, false, discardLogger())
 	if err != nil {
 		t.Fatalf("RunShared() error = %v", err)
 	}
@@ -1146,7 +1146,7 @@ func TestRunSharedReleasesTheSameBodiesWhicheverLayoutThePullRequestCarries(t *t
 				{Name: "api", Branch: "release-me/main", TagPrefix: "api/v", Multi: true},
 				{Name: "web", Branch: "release-me/main", TagPrefix: "web/v", Multi: true},
 			}
-			if _, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger()); err != nil {
+			if _, err := release.RunShared(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, false, false, discardLogger()); err != nil {
 				t.Fatalf("RunShared() error = %v", err)
 			}
 			var got []string
@@ -1187,7 +1187,7 @@ func TestRunLockedReleasesTheSameBodiesWhicheverLayoutThePullRequestCarries(t *t
 				{Name: "a", Branch: "release-me/main", TagPrefix: "a/v", Multi: true},
 				{Name: "b", Branch: "release-me/main", TagPrefix: "b/v", Multi: true},
 			}
-			if _, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, testLabels, false, false, discardLogger()); err != nil {
+			if _, err := release.RunLocked(context.Background(), f, "owner", "repo", "release-me/main", comps, nil, testLabels, false, false, discardLogger()); err != nil {
 				t.Fatalf("RunLocked() error = %v", err)
 			}
 			var got []string
