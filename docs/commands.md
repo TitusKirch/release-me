@@ -162,7 +162,10 @@ component name cannot hold becomes `-`, with a warning, and two packages ending 
 name are an error. Its tags and
 changelog stay where release-please put them, through `tag-prefix` and `changelog`, so
 release-me continues from the existing tags and changelogs. A single root package with plain
-`vX.Y.Z` tags becomes the implicit `main` component instead. It also carries over:
+`vX.Y.Z` tags becomes the implicit `main` component instead, and a root package beside other
+packages becomes a [root component](configuration.md#root-component), with a warning: it owns
+only the files outside the other components' paths, where release-please's root package
+counted every commit. It also carries over:
 
 - `bump-minor-pre-major` and `initial-version`;
 - the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package where that
@@ -184,7 +187,8 @@ key and what to do instead, as are the differences a reader should know about. I
 up the tag each package's manifest version was released under and warns about a missing one,
 since release-me would start that component over at its initial version. The translation is
 loaded the way every other command loads `release-me.yaml` before it is printed. One
-release-me refuses, such as a root package beside other packages, whose paths overlap, is
+release-me refuses, such as a package nested inside another below the root, whose paths
+overlap, is
 printed on stderr after the warnings and the reason, to correct by hand.
 Exits 0 with warnings, 1 when the files cannot be read or translated or the translation does not
 load.
