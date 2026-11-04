@@ -93,6 +93,10 @@ human wants the collapsed look kept. Every release pull request body also opens 
 collapsed "How this release works" guide release-please never rendered: `migrate` leaves
 `release-pull-request-guide` out, add `release-pull-request-guide: false` only when the human
 wants the body without it.
+`migrate` carries `pull-request-title-pattern` and
+`group-pull-request-title-pattern` over as `release-pull-request-title` and
+`release-pull-request-shared-title`; one it left out lacked a placeholder release-me reads the
+title back with, and the row offers the default title or a pattern carrying them.
 
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
