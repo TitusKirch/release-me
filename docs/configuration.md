@@ -195,9 +195,15 @@ The mention prefix a comment on the release pull request names to issue a `relea
 
 ## `workspaces`
 
-The package managers whose manifests link components to each other, default none: `node`,
-an npm, pnpm or yarn workspace, read from each component's `<path>/package.json`. A
-component without that manifest is no member of the workspace.
+The package managers whose manifests link components to each other, default none:
+
+- `node`, an npm, pnpm or yarn workspace, read from each component's `<path>/package.json`;
+- `maven`, a Maven multi-module build, read from each component's `<path>/pom.xml`.
+
+A component without that manifest is no member of the workspace. Without a component at path
+`.`, the manifest at the repository root, such as a Maven aggregator `pom.xml`, is read too:
+its dependencies on a released component move, `<dependencyManagement>` included, but it
+releases nothing itself.
 
 ```yaml
 release-pull-request: shared
@@ -221,9 +227,19 @@ becomes `workspace:~1.3.0`, while one naming no single version, such as `workspa
 component's own version moves through its `files` as always. `next` and `changelog` report a
 component's own changes only: the dependents join the release at `pr`.
 
-The dependency objects must open on a line of their own and declare one dependency per line,
-the layout npm, pnpm and yarn write; `pr` fails naming the file and the dependency otherwise.
-Lockfiles are not updated.
+For `node`, the dependency objects must open on a line of their own and declare one
+dependency per line, the layout npm, pnpm and yarn write; `pr` fails naming the file and the
+dependency otherwise.
+
+For `maven`, a module is named `<groupId>:<artifactId>`, its `groupId` inherited from its
+`<parent>` where it sets none. It links through its `<parent>`, its `<dependencies>` and its
+`<dependencyManagement>`, a `${project.groupId}` read as its own group; a build plugin's
+dependencies do not link. The `<version>` text moves, in a profile's dependencies too, and
+every other byte stays. A version given through a property, `${core.version}`, or as a range,
+`[1.0,2.0)`, stays as written and still releases the dependent. A module's own `<version>` is
+not moved by `workspaces`, only by its `files`.
+
+Lockfiles, such as `package-lock.json` or `pnpm-lock.yaml`, are not updated.
 
 A dependent releases together with its dependency, so `workspaces` needs `components` and
 one release pull request for all of them, `release-pull-request: shared` or
