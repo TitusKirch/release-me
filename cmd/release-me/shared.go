@@ -93,13 +93,15 @@ func doPRShared(
 			needsSweep = needsSweep || !comp.ForceTagCreation
 		}
 		if needsSweep {
-			own, err := remoteBranches(ctx, dir, "release-me/*")
-			if err != nil {
-				return fmt.Errorf("release-me: shared release pull request: list legacy branches: %w", err)
-			}
+			// A legacy per-component branch is checked whether or not it
+			// still exists: delete-release-branch removes it once its pull
+			// request is released, and the forge still lists the closed
+			// pull requests of a deleted head branch, so the deletion can
+			// neither hide an unpublished deferred-tag draft nor let pr
+			// open a second pull request for its version.
 			for _, comp := range all {
 				legacy := config.PerComponentBranch(comp.Name)
-				if legacy == branch || !own[legacy] {
+				if legacy == branch {
 					continue
 				}
 				deferred, err := mergedPendingRelease(ctx, f, owner, repoName, legacy, cfg, logger)

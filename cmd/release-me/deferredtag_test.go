@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"os/exec"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
@@ -14,13 +15,17 @@ import (
 
 func TestRunRetriesAnUnpublishedDeferredTagWithoutAnotherReleasePR(t *testing.T) {
 	for _, tc := range []struct {
-		name, config string
-		legacy       bool
+		name, config    string
+		legacy, deleted bool
 	}{
 		{name: "single"},
 		{name: "shared", config: "release-pull-request: shared\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n"},
 		{name: "locked", config: "versioning: locked\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n"},
 		{name: "legacy per-component draft after switching to shared", config: "components:\n  api:\n    path: api\n  web:\n    path: web\n", legacy: true},
+		{
+			name:   "legacy per-component draft whose branch is gone after switching to shared",
+			config: "components:\n  api:\n    path: api\n  web:\n    path: web\n", legacy: true, deleted: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, remote := newPRRepo(t)
@@ -36,7 +41,7 @@ func TestRunRetriesAnUnpublishedDeferredTagWithoutAnotherReleasePR(t *testing.T)
 			writeFiles(t, dir, "feat: export reports", map[string]string{"api/export.go": "package api\n"})
 			cfg.ForceTagCreation = false
 			cfg.DraftUntilAssetsAttach = true
-			f := newFake()
+			f := newPRFake(remote)
 			var out bytes.Buffer
 			if err := doRun(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
 				t.Fatal(err)
@@ -62,6 +67,14 @@ func TestRunRetriesAnUnpublishedDeferredTagWithoutAnotherReleasePR(t *testing.T)
 			if tc.legacy {
 				cfg.ReleasePullRequest = config.ReleasePullRequestShared
 			}
+			if tc.deleted {
+				// GitHub's own "Automatically delete head branches" may have
+				// removed the legacy branch: its closed pull request still
+				// keeps pr from opening another one for the same version.
+				if out, err := exec.CommandContext(t.Context(), "git", "--git-dir", remote, "update-ref", "-d", "refs/heads/"+created.Head).CombinedOutput(); err != nil {
+					t.Fatalf("delete %s: %v: %s", created.Head, err, out)
+				}
+			}
 			for retry := 0; retry < 2; retry++ {
 				out.Reset()
 				if err := doRun(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
@@ -70,7 +83,7 @@ func TestRunRetriesAnUnpublishedDeferredTagWithoutAnotherReleasePR(t *testing.T)
 				if len(f.CreatedPullRequests) != 1 || len(f.CreatedReleases) != releases || len(f.CreatedTags) != 0 {
 					t.Fatalf("retry duplicated work: PRs=%+v releases=%+v tags=%+v", f.CreatedPullRequests, f.CreatedReleases, f.CreatedTags)
 				}
-				if !bytes.Contains(out.Bytes(), []byte("released-tag:")) {
+				if !tc.deleted && !bytes.Contains(out.Bytes(), []byte("released-tag:")) {
 					t.Fatalf("draft not resumed: %s", out.String())
 				}
 			}
