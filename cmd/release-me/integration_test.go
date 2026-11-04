@@ -140,6 +140,72 @@ func TestRunNextAppliesTheConfiguredVersioningStrategy(t *testing.T) {
 	}
 }
 
+func TestRunNextCountsServicePacksOfTheLastVersion(t *testing.T) {
+	dir := newRepo(t)
+	writeConfig(t, dir, "versioning-strategy: service-pack\n")
+	commitEntry(t, dir, "chore: initial commit")
+	runGit(t, dir, "tag", "v1.2.3")
+
+	next := func() string {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"next"}, &stdout, &stderr); code != 0 {
+			t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+		}
+		return stdout.String()
+	}
+
+	commitEntry(t, dir, "fix: close the connection pool on shutdown")
+	if got, want := next(), "1.2.3-sp.1 (fix, service-pack)\n"; got != want {
+		t.Fatalf("first service pack: stdout = %q, want %q", got, want)
+	}
+	runGit(t, dir, "tag", "v1.2.3-sp.1")
+	if got := next(); got != "" {
+		t.Fatalf("after the first service pack: stdout = %q, want empty, its changes already shipped", got)
+	}
+	commitEntry(t, dir, "feat: retry a failed health check")
+	if got, want := next(), "1.2.3-sp.2 (feat, service-pack)\n"; got != want {
+		t.Fatalf("second service pack: stdout = %q, want %q", got, want)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"changelog"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("changelog exit code = %d, stderr: %s", code, stderr.String())
+	}
+	if out := stdout.String(); !strings.Contains(out, "retry a failed health check") || strings.Contains(out, "connection pool") {
+		t.Fatalf("changelog = %q, want only the entries since the first service pack", out)
+	}
+}
+
+func TestRunNextBumpsByADependencyUpdateWithDependencyManifest(t *testing.T) {
+	cases := []struct {
+		name    string
+		subject string
+		want    string
+	}{
+		{name: "dependabot major update", subject: "chore(deps): bump react from 18.3.1 to 19.0.0", want: "1.0.0 (dependency react major update)\n"},
+		{name: "renovate minor update", subject: "chore(deps): update dependency vite to v5.4.0", want: "0.2.0 (dependency vite minor update)\n"},
+		{name: "an ordinary chore", subject: "chore: tidy up", want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := newRepo(t)
+			writeConfig(t, dir, "versioning-strategy: dependency-manifest\n")
+			commitEntry(t, dir, "chore: initial commit")
+			tagRepo(t, dir)
+			commitEntry(t, dir, tc.subject)
+
+			var stdout, stderr bytes.Buffer
+			if code := run([]string{"next"}, &stdout, &stderr); code != 0 {
+				t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tc.want {
+				t.Fatalf("stdout = %q, want %q", stdout.String(), tc.want)
+			}
+		})
+	}
+}
+
 func TestRunNextAppliesAComponentsOwnVersioningStrategy(t *testing.T) {
 	dir := newRepo(t)
 	writeConfig(t, dir, `versioning-strategy: always-bump-minor
