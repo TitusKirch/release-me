@@ -277,6 +277,14 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			content: "components:\n  frontend:\n    path: frontend\n    versioning-strategy: always-bump-build\n",
 		},
 		{
+			name:    "rejects a service pack for a linked family",
+			content: "versioning: linked\nversioning-strategy: service-pack\ncomponents:\n  api:\n    path: api\n",
+		},
+		{
+			name:    "rejects a service pack for a locked family",
+			content: "versioning: locked\nversioning-strategy: service-pack\ncomponents:\n  api:\n    path: api\n",
+		},
+		{
 			name:    "rejects an unknown changelog source on a component",
 			content: "components:\n  frontend:\n    path: frontend\n    changelog-source: rebase\n",
 		},
