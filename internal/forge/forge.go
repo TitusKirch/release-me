@@ -137,4 +137,11 @@ type Forge interface {
 	// built from owner, repo and the refs alone, never read from the
 	// forge, so it makes no request and works before head exists.
 	CompareURL(owner, repo, base, head string) string
+
+	// GenerateReleaseNotes returns the release notes the forge itself
+	// writes for a release tagged tag on the commit target, covering the
+	// changes since previousTag, "" to let the forge pick the previous
+	// release. tag need not exist yet. The forge renders the notes as
+	// Markdown; nothing is created or stored.
+	GenerateReleaseNotes(ctx context.Context, owner, repo, tag, previousTag, target string) (string, error)
 }
