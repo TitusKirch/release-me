@@ -257,6 +257,7 @@ func doPRComponent(
 		Alpha:  cfg.Labels.Alpha,
 		Beta:   cfg.Labels.Beta,
 		Rc:     cfg.Labels.Rc,
+		Others: otherPreReleaseLabelNames(cfg.Labels),
 	}
 	body := releasepr.Body(versionStr, tag, guideLabels, notes, versionOverride, section)
 
@@ -457,6 +458,7 @@ func doPRLocked(
 		Alpha:  cfg.Labels.Alpha,
 		Beta:   cfg.Labels.Beta,
 		Rc:     cfg.Labels.Rc,
+		Others: otherPreReleaseLabelNames(cfg.Labels),
 	}
 	body := releasepr.Body(versionStr, strings.Join(tags, ", "), guideLabels, notes, versionOverride, section)
 
