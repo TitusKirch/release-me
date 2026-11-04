@@ -192,6 +192,61 @@ func TestFromReleasePleaseMapsSeparatePullRequestsToReleasePullRequest(t *testin
 	}
 }
 
+func TestFromReleasePleaseCarriesOverBumpPatchForMinorPreMajor(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		configJSON string
+		wantTop    bool
+		wantComps  []bool
+	}{
+		{
+			name: "a top-level default every package inherits is written once at the top level",
+			configJSON: `{"bump-patch-for-minor-pre-major": true, "release-type": "go",
+			  "packages": {"web": {"component": "web"}, "api": {"component": "api"}}}`,
+			wantTop:   true,
+			wantComps: []bool{true, true},
+		},
+		{
+			name: "a package's own value stays on its component",
+			configJSON: `{"release-type": "go", "packages": {
+			  "web": {"component": "web", "bump-patch-for-minor-pre-major": true}, "api": {"component": "api"}}}`,
+			wantComps: []bool{true, false},
+		},
+		{
+			name:       "a single root package carries it at the top level",
+			configJSON: `{"packages": {".": {"release-type": "go", "bump-patch-for-minor-pre-major": true}}}`,
+			wantTop:    true,
+			wantComps:  []bool{true},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := migrate.FromReleasePlease([]byte(tc.configJSON), nil, files(nil))
+			if err != nil {
+				t.Fatalf("FromReleasePlease() error = %v", err)
+			}
+			cfg := load(t, got.YAML)
+			if cfg.BumpPatchForMinorPreMajor != tc.wantTop {
+				t.Fatalf("BumpPatchForMinorPreMajor = %v, want %v\n%s", cfg.BumpPatchForMinorPreMajor, tc.wantTop, got.YAML)
+			}
+			var comps []bool
+			for _, c := range cfg.Resolve() {
+				comps = append(comps, c.BumpPatchForMinorPreMajor)
+			}
+			if !reflect.DeepEqual(comps, tc.wantComps) {
+				t.Fatalf("components = %v, want %v\n%s", comps, tc.wantComps, got.YAML)
+			}
+			for _, w := range got.Warnings {
+				if strings.Contains(w, "bump-patch-for-minor-pre-major") {
+					t.Fatalf("Warnings = %q, want none for bump-patch-for-minor-pre-major, it carries over", got.Warnings)
+				}
+			}
+		})
+	}
+}
+
 func TestFromReleasePleaseKeepsARootPackageWithPlainTagsImplicit(t *testing.T) {
 	t.Parallel()
 	configJSON := `{"packages": {".": {"release-type": "node", "include-component-in-tag": false}}}`
