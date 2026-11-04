@@ -12,7 +12,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 )
 
-func TestBodyLeavesTheGuideOutWithoutGuideLabels(t *testing.T) {
+func TestBodyLeavesTheGuideOutWhenTheGuideIsNotShown(t *testing.T) {
 	t.Parallel()
 	section := "## v1.2.3 (2026-01-02)\n\n### Features\n\n- add the thing\n"
 	cases := []struct {
@@ -41,7 +41,7 @@ func TestBodyLeavesTheGuideOutWithoutGuideLabels(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := releasepr.Body("1.2.3", "v1.2.3", nil, tc.notes, tc.versionOverride, section)
+			got := releasepr.Body("1.2.3", "v1.2.3", releasepr.Guide{}, tc.notes, tc.versionOverride, section)
 			if got != tc.want {
 				t.Fatalf("Body() = %q, want %q", got, tc.want)
 			}
@@ -49,7 +49,7 @@ func TestBodyLeavesTheGuideOutWithoutGuideLabels(t *testing.T) {
 	}
 }
 
-func TestSharedBodyLeavesTheGuideOutWithoutGuideLabels(t *testing.T) {
+func TestSharedBodyLeavesTheGuideOutWhenTheGuideIsNotShown(t *testing.T) {
 	t.Parallel()
 	releases := []releasepr.Release{
 		{Name: "api", Version: "1.3.0", Tag: "api/v1.3.0"},
@@ -58,7 +58,7 @@ func TestSharedBodyLeavesTheGuideOutWithoutGuideLabels(t *testing.T) {
 	section := "## api\n\n### v1.3.0 (2026-03-14)\n\n#### Features\n\n- add the export endpoint\n\n" +
 		"## web\n\n### v0.4.1 (2026-03-14)\n\n#### Bug Fixes\n\n- fix the login redirect\n"
 
-	got := releasepr.SharedBody(releases, nil, true, "", "", section)
+	got := releasepr.SharedBody(releases, releasepr.Guide{}, true, "", "", section)
 
 	want := "Release api v1.3.0, web v0.4.1\n\n" +
 		"<details>\n<summary>Changelog</summary>\n\n" + strings.TrimRight(section, "\n") + "\n\n</details>\n"
@@ -69,9 +69,9 @@ func TestSharedBodyLeavesTheGuideOutWithoutGuideLabels(t *testing.T) {
 
 // guideBodies is a release pull request body of every kind pr renders, a
 // single component, a shared one and a locked family in every layout, each
-// carrying notes and a version override, rendered with guide, nil for
-// "release-pull-request-guide: false".
-func guideBodies(guide *releasepr.GuideLabels) map[string]string {
+// carrying notes and a version override, rendered with guide, the zero
+// Guide for "release-pull-request-guide: false".
+func guideBodies(guide releasepr.Guide) map[string]string {
 	single := "## [v1.4.0](https://github.com/owner/repo/compare/v1.3.2...v1.4.0) (2026-10-29)\n\n" +
 		"### Features\n\n- add the export endpoint (#41)\n"
 	bodies := map[string]string{
@@ -131,8 +131,8 @@ func readBody(body string) readBack {
 
 func TestABodyReadsBackTheSameWithTheGuideOrWithout(t *testing.T) {
 	t.Parallel()
-	with := guideBodies(&testGuideLabels)
-	without := guideBodies(nil)
+	with := guideBodies(testGuide)
+	without := guideBodies(releasepr.Guide{})
 	for name, withBody := range with {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -153,8 +153,8 @@ func TestABodyReadsBackTheSameWithTheGuideOrWithout(t *testing.T) {
 
 func TestTheGuideIsTheOnlyPartTheKeyChanges(t *testing.T) {
 	t.Parallel()
-	with := guideBodies(&testGuideLabels)
-	without := guideBodies(nil)
+	with := guideBodies(testGuide)
+	without := guideBodies(releasepr.Guide{})
 	for name, withBody := range with {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

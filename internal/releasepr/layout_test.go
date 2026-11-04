@@ -269,12 +269,12 @@ func sharedPRBody(layout releasepr.Layout, notes string) string {
 	for _, c := range sharedComponents {
 		releases = append(releases, releasepr.Release{Name: c.Name, Version: c.Version, Tag: c.Name + "@v" + c.Version})
 	}
-	return releasepr.SharedBody(releases, &testGuideLabels, true, notes, "", releasepr.RenderComponents(layout, sharedComponents)+"\n")
+	return releasepr.SharedBody(releases, testGuide, true, notes, "", releasepr.RenderComponents(layout, sharedComponents)+"\n")
 }
 
-var testGuideLabels = releasepr.GuideLabels{
+var testGuide = releasepr.Guide{Show: true, Labels: releasepr.GuideLabels{
 	Tagged: "autorelease: tagged", Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc",
-}
+}}
 
 func TestEveryLayoutReadsBackTheSameComponentsAndDateFromAPullRequestBody(t *testing.T) {
 	t.Parallel()
@@ -305,7 +305,7 @@ func TestEveryLayoutReadsBackALockedFamilysDate(t *testing.T) {
 		t.Run(string(layout), func(t *testing.T) {
 			t.Parallel()
 			section := lockedHeading + "\n\n" + releasepr.RenderComponents(layout, lockedComponents) + "\n"
-			body := releasepr.Body("0.3.0", "api/v0.3.0, web/v0.3.0", &testGuideLabels, "", "", section)
+			body := releasepr.Body("0.3.0", "api/v0.3.0, web/v0.3.0", testGuide, "", "", section)
 			date, ok := releasepr.ExtractDate(body)
 			if !ok || !date.Equal(time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)) {
 				t.Fatalf("ExtractDate() = (%v, %v), want 2026-01-02", date, ok)

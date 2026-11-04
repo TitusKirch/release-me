@@ -1104,9 +1104,9 @@ func TestRunSharedResumesADraftLeftByAnEarlierRun(t *testing.T) {
 
 // guides is a release pull request body's guide as pr renders it, with
 // the default "release-pull-request-guide: true" and with false.
-var guides = map[string]*releasepr.GuideLabels{
-	"with the guide":    {Tagged: "release: tagged"},
-	"without the guide": nil,
+var guides = map[string]releasepr.Guide{
+	"with the guide":    {Show: true, Labels: releasepr.GuideLabels{Tagged: "release: tagged"}},
+	"without the guide": {},
 }
 
 // layoutComponents is a shared release pull request's components, each
