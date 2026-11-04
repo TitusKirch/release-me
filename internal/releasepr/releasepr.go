@@ -128,7 +128,7 @@ func guideBlock(tag string, labels GuideLabels, perComponentVersion bool) string
 	fmt.Fprintf(&b, "- Merging this pull request tags `%s`, creates the release and moves the label to `%s`. "+
 		"With `major-tag` enabled, the moving major tag follows a stable release.\n", tag, labels.Tagged)
 	b.WriteString("- Release notes: add a fenced block with the info string `release-me-notes` anywhere in this body. " +
-		"It is rendered above the entries in the changelog file and in the release and survives updates.\n")
+		"It is rendered above the changelog in the GitHub release, never in the changelog file, and survives updates.\n")
 	if perComponentVersion {
 		b.WriteString("- Force the next version of a component: add a fenced block with the info string " +
 			"`release-me-version` containing one `<component> X.Y.Z` line per component anywhere in this body, " +

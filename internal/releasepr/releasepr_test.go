@@ -47,7 +47,7 @@ func guideText(tag string, labels releasepr.GuideLabels) string {
 		"- Merging this pull request tags `" + tag + "`, creates the release and moves the label to `" + labels.Tagged + "`. " +
 		"With `major-tag` enabled, the moving major tag follows a stable release.\n" +
 		"- Release notes: add a fenced block with the info string `release-me-notes` anywhere in this body. " +
-		"It is rendered above the entries in the changelog file and in the release and survives updates.\n" +
+		"It is rendered above the changelog in the GitHub release, never in the changelog file, and survives updates.\n" +
 		"- Force the next version: add a fenced block with the info string `release-me-version` " +
 		"containing `X.Y.Z` anywhere in this body, or comment the configured mention followed by " +
 		"`release-as X.Y.Z`. It wins outright over the computed bump, pre-release label included, " +
