@@ -323,6 +323,25 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 					"only web/pom.xml is carried over, add each module's pom.xml under files",
 			},
 		},
+		{
+			name:      "simple bumps version.txt",
+			settings:  `"release-type": "simple"`,
+			repo:      map[string]string{"web/version.txt": "2.0.0\n"},
+			wantFiles: []config.File{{Path: "web/version.txt", Updater: "plain"}},
+		},
+		{
+			name:      "simple bumps the version-file it names",
+			settings:  `"release-type": "simple", "version-file": "VERSION"`,
+			repo:      map[string]string{"web/VERSION": "2.0.0\n"},
+			wantFiles: []config.File{{Path: "web/VERSION", Updater: "plain"}},
+		},
+		{
+			name:     "simple warns about a version file that does not exist",
+			settings: `"release-type": "simple"`,
+			wantWarnings: []string{
+				"package web: release-type simple: web/version.txt does not exist, left out of files",
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
