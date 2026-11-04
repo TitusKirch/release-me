@@ -58,31 +58,49 @@ version.
 
 How a release bumps the version, default `default`:
 
-| Value | Bump of a release |
+| Value | Version of a release |
 | --- | --- |
-| `default` | By its highest change: major for a breaking change, minor for a `feat`, patch for a `fix`, `perf` or `revert`. |
-| `always-bump-patch` | Always the patch, whatever its changes are. |
-| `always-bump-minor` | Always the minor. |
-| `always-bump-major` | Always the major. |
+| `default` | Bumped by its highest change: major for a breaking change, minor for a `feat`, patch for a `fix`, `perf` or `revert`. |
+| `always-bump-patch` | The patch bumped, whatever its changes are. |
+| `always-bump-minor` | The minor bumped. |
+| `always-bump-major` | The major bumped. |
+| `service-pack` | A service pack of the last version, `X.Y.Z-sp.N`. |
+| `dependency-manifest` | Bumped as `default`, and at least as far as a dependency update among its changes. |
 
 The changes still decide whether there is a release at all: a range of only hidden types, a
-`chore` alone for one, releases nothing under any strategy. A
-[Release-As footer](overrides.md#release-as-footer), a
+`chore` alone for one, releases nothing under any strategy but `dependency-manifest`, where a
+dependency update counts. A [Release-As footer](overrides.md#release-as-footer), a
 [comment command](overrides.md#comment-commands) and `initial-version` for a first release win
 over the strategy, the same as over the default bump. `bump-minor-pre-major` and
-`bump-patch-for-minor-pre-major` apply to `default` only: an always-bump strategy bumps the
-part it names below `1.0.0` too, as in release-please. `next` names the strategy in its
-reason, `1.3.0 (fix, always-bump-minor)`. Any other value is a configuration error. A
-component overrides it through its own `versioning-strategy` key; a `locked` or `linked`
-family computes its one shared version with the top-level value.
+`bump-patch-for-minor-pre-major` apply to `default` and `dependency-manifest` only: an
+always-bump strategy bumps the part it names below `1.0.0` too, as in release-please. `next`
+names the strategy in its reason, `1.3.0 (fix, always-bump-minor)`. Any other value is a
+configuration error. A component overrides it through its own `versioning-strategy` key; a
+`locked` or `linked` family computes its one shared version with the top-level value.
 
 The key is release-please's `versioning`, renamed because release-me's own
 [`versioning`](#versioning) already names how a family's versions relate. release-please's
-`service-pack` and `dependency-manifest` strategies have no counterpart: both are Java
-specific. `service-pack` releases Maven service pack versions such as `1.2.3-sp.1`, which
-semver, and with it release-me, reads as a pre-release below `1.2.3`; `dependency-manifest`
-bumps by the dependency changes a Java manifest records, which release-me does not read.
-`release-me migrate release-please` warns about either by name.
+`service-pack` and `dependency-manifest` are Java specific; release-me carries over what each
+means for any repository:
+
+- `service-pack` ships a maintenance release of the last version without moving it:
+  `1.2.3-sp.1`, then `1.2.3-sp.2`, `N` counting up from the last `sp` tag of `1.2.3`, the
+  counter a [pre-release](commands.md#pre-releases) type keeps. Each service pack collects the
+  entries since the previous one, and there is no release until a change since it bumps the
+  version. Semver orders `1.2.3-sp.1` below `1.2.3`, so release-me treats it as the pre-release
+  it is to semver: the GitHub release is a pre-release, the major tag stays, and the next
+  stable tag still counts from `1.2.3`. A pre-release label on its release pull request
+  replaces `sp` with that type, `1.2.3-rc.1`. It applies with `versioning: independent` only;
+  `linked` and `locked` refuse it, since a family shares one version line.
+- `dependency-manifest` raises the bump to the largest dependency update among the changes,
+  whatever their type, so `chore(deps): bump react from 18.3.1 to 19.0.0` releases a major
+  one. release-please reads the update from a Java manifest; release-me reads it from the
+  title Dependabot and Renovate give the change: Dependabot's `bump <name> from <old> to <new>`
+  bumps by the highest part that changed, Renovate's `update dependency <name> to v<new>` and
+  `update module <name> to v<new>`, which name no old version, by the new version's shape, as
+  release-please does: `X.0.0` major, `X.Y.0` minor, anything else patch. The reason names the
+  dependency, `2.0.0 (dependency react major update)`. The changelog entry keeps its own
+  type, so a hidden `chore` stays hidden.
 
 ## `hidden-types`
 

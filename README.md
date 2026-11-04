@@ -145,7 +145,7 @@ files:
 | `bump-minor-pre-major` | Turns a major bump into a minor one below `1.0.0`. | `false` | No |
 | `bump-patch-for-minor-pre-major` | Turns a minor bump into a patch one below `1.0.0`. | `false` | No |
 | `release-as` | Forces the next version while it is greater than the last tag. | none | No |
-| `versioning-strategy` | How a release bumps the version: `default` or `always-bump-patch`/`-minor`/`-major`. | `default` | No |
+| `versioning-strategy` | How a release bumps the version: `default`, `always-bump-patch`/`-minor`/`-major`, `service-pack` or `dependency-manifest`. | `default` | No |
 | `hidden-types` | Entry types hidden from the changelog. | `chore, docs, ci, style, refactor, test, build, other` | No |
 | `changelog-sentence-case` | Upper cases the first letter of every changelog entry. | `false` | No |
 | `changelog-authors` | Credits each changelog entry's author after its description. | `false` | No |
