@@ -73,6 +73,11 @@ type CreateReleaseCall struct {
 	Prerelease, Draft            bool
 }
 
+// GenerateReleaseNotesCall records one call to GenerateReleaseNotes.
+type GenerateReleaseNotesCall struct {
+	Owner, Repo, Tag, PreviousTag, Target string
+}
+
 // CreateCommentCall records one call to CreateComment.
 type CreateCommentCall struct {
 	Owner, Repo string
@@ -112,6 +117,16 @@ type Fake struct {
 	// DefaultBranchErr, when set, is returned by DefaultBranch instead of
 	// DefaultBranchName.
 	DefaultBranchErr error
+
+	// ReleaseNotes maps a tag to the notes GenerateReleaseNotes returns
+	// for it, unless ReleaseNotesErr is set.
+	ReleaseNotes map[string]string
+
+	// ReleaseNotesErr, when set, is returned by GenerateReleaseNotes.
+	ReleaseNotesErr error
+
+	// GeneratedReleaseNotes records every GenerateReleaseNotes call.
+	GeneratedReleaseNotes []GenerateReleaseNotesCall
 
 	// MergeCommits maps a pull request number to the SHA MergeCommit
 	// returns for it.
@@ -342,6 +357,22 @@ func (f *Fake) CreateComment(_ context.Context, owner, repo string, number int, 
 // has: "https://github.com/<owner>/<repo>/compare/<base>...<head>".
 func (f *Fake) CompareURL(owner, repo, base, head string) string {
 	return "https://github.com/" + owner + "/" + repo + "/compare/" + base + "..." + head
+}
+
+// GenerateReleaseNotes implements forge.Forge: ReleaseNotes for tag,
+// or ReleaseNotesErr when it is set. A tag without configured notes gets
+// GitHub's shape for a release with no pull request in it.
+func (f *Fake) GenerateReleaseNotes(_ context.Context, owner, repo, tag, previousTag, target string) (string, error) {
+	f.GeneratedReleaseNotes = append(f.GeneratedReleaseNotes, GenerateReleaseNotesCall{
+		Owner: owner, Repo: repo, Tag: tag, PreviousTag: previousTag, Target: target,
+	})
+	if f.ReleaseNotesErr != nil {
+		return "", f.ReleaseNotesErr
+	}
+	if notes, ok := f.ReleaseNotes[tag]; ok {
+		return notes, nil
+	}
+	return "**Full Changelog**: " + f.CompareURL(owner, repo, previousTag, tag), nil
 }
 
 func (f *Fake) setPRLabels(number int, labels []string) {

@@ -307,6 +307,21 @@ func (f *Forge) CompareURL(owner, repo, base, head string) string {
 	return fmt.Sprintf("%s/%s/%s/compare/%s...%s", webURL(f.client.BaseURL()), owner, repo, base, head)
 }
 
+// GenerateReleaseNotes implements forge.Forge through GitHub's
+// "generate release notes" endpoint, the notes GitHub's own release form
+// fills in: it reads, never writes, though it is a POST.
+func (f *Forge) GenerateReleaseNotes(ctx context.Context, owner, repo, tag, previousTag, target string) (string, error) {
+	req := gogithub.GenerateNotesRequest{TagName: tag, TargetCommitish: &target}
+	if previousTag != "" {
+		req.PreviousTagName = &previousTag
+	}
+	notes, _, err := f.client.Repositories.GenerateReleaseNotes(ctx, owner, repo, req)
+	if err != nil {
+		return "", fmt.Errorf("github: generate release notes for %s: %w", tag, err)
+	}
+	return notes.Body, nil
+}
+
 // webURL derives the web address a GitHub instance serves its pages on
 // from the address its REST API answers on: a GitHub Enterprise Server's
 // "https://<host>/api/v3/" serves its pages on "https://<host>", and an
