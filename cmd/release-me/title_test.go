@@ -226,3 +226,36 @@ func TestRecordedOverlappingTitlesReleaseTheirOriginalVersions(t *testing.T) {
 		}
 	}
 }
+
+// TestTitlePatternMarkerFollowsTheFooterAndStillReleases frames every kind
+// of release pull request body with a header and a footer under a custom
+// title pattern: the title pattern marker lands after the footer, outside
+// the frame, a custom date marker after it, and the merged pull request
+// still releases under the recorded pattern.
+func TestTitlePatternMarkerFollowsTheFooterAndStillReleases(t *testing.T) {
+	for _, family := range titleFamilies {
+		t.Run(family.name, func(t *testing.T) {
+			dir, origin, cfg := family.repo(t)
+			setTitlePattern(&cfg, family.pattern, family.sharedTitle)
+			cfg.ReleasePullRequestHeader, cfg.ReleasePullRequestFooter = testHeader, testFooter
+			cfg.ChangelogStyle.DateFormat = "%d.%m.%Y"
+			f := newPRFake(origin)
+			var stdout bytes.Buffer
+			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+				t.Fatalf("doPR() error = %v", err)
+			}
+			created := f.CreatedPullRequests[0]
+			footer := strings.Index(created.Body, testFooter)
+			marker := strings.Index(created.Body, "<!-- release-me-title-pattern: ")
+			date := strings.Index(created.Body, "<!-- release-me-date: ")
+			if footer < 0 || marker < footer+len(testFooter) || date < marker {
+				t.Fatalf("body = %q, want the footer, then the title pattern marker, then the date marker", created.Body)
+			}
+
+			// The default pattern is back on before the merge: release reads the
+			// recorded one.
+			setTitlePattern(&cfg, "", family.sharedTitle)
+			releaseMerged(t, dir, cfg, f, created.Title, created.Body, family.wantTags)
+		})
+	}
+}
