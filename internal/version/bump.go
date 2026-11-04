@@ -39,6 +39,10 @@ type Rules struct {
 	InitialVersion string
 	// BumpMinorPreMajor turns a major bump into a minor one below 1.0.0.
 	BumpMinorPreMajor bool
+	// BumpPatchForMinorPreMajor turns a minor bump, a feat, into a patch
+	// one below 1.0.0. A minor bump BumpMinorPreMajor lowered a breaking
+	// change to stays minor: a breaking change never ships as a patch.
+	BumpPatchForMinorPreMajor bool
 }
 
 // Result is the computed next version.
@@ -86,7 +90,13 @@ func Next(last Semver, lastOK bool, changes []Change, rules Rules) (result Resul
 			next = Semver{Major: last.Major + 1}
 		}
 	case BumpMinor:
-		next = Semver{Major: last.Major, Minor: last.Minor + 1}
+		if rules.BumpPatchForMinorPreMajor && last.Major < 1 {
+			next = Semver{Major: last.Major, Minor: last.Minor, Patch: last.Patch + 1}
+			bump = BumpPatch
+			reason += ", patch below 1.0.0"
+		} else {
+			next = Semver{Major: last.Major, Minor: last.Minor + 1}
+		}
 	case BumpPatch:
 		next = Semver{Major: last.Major, Minor: last.Minor, Patch: last.Patch + 1}
 	case BumpNone, BumpInitial, BumpForced:
