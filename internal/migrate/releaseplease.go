@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	stdpath "path"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -68,7 +69,7 @@ var packageKeys = append([]string{
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
 	"initial-version", "extra-files", "skip-changelog", "version-file", "exclude-paths",
 	"changelog-type", "release-as", "include-commit-authors", "changelog-host", "prerelease-type",
-	"prerelease",
+	"prerelease", "changelog-sections",
 }, releaseFlagKeys()...)
 
 // releaseFlag is a boolean release-please package setting release-me reads
@@ -386,6 +387,9 @@ type component struct {
 	// releaseAs is release-please's release-as, release-me's too, ""
 	// when it is left out or cannot carry over.
 	releaseAs string
+	// changelogSections is release-please's changelog-sections, nil when
+	// the package leaves the default sections.
+	changelogSections *[]config.ChangelogSection
 }
 
 // file is one release-me "files" entry.
@@ -573,6 +577,22 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	default:
 		warn("package %s: changelog-type %s: release-me knows default and github, left out", p.path, changelogType)
 		c.changelogType = ""
+	}
+
+	if raw, ok := p.settings["changelog-sections"]; ok {
+		var sections []struct {
+			Type    string `json:"type"`
+			Section string `json:"section"`
+			Hidden  bool   `json:"hidden"`
+		}
+		if err := json.Unmarshal(raw, &sections); err != nil {
+			return component{}, fmt.Errorf("migrate: package %s: changelog-sections: %w", p.path, err)
+		}
+		translated := make([]config.ChangelogSection, 0, len(sections))
+		for _, s := range sections {
+			translated = append(translated, config.ChangelogSection{Type: s.Type, Section: s.Section, Hidden: s.Hidden})
+		}
+		c.changelogSections = &translated
 	}
 
 	if raw, ok := p.settings["extra-files"]; ok {
@@ -1219,18 +1239,24 @@ func render(components []component, top topLevel) ([]byte, error) {
 		add(doc, "prerelease-types", types)
 	}
 
-	// A pre-major rule carried by every component is written once, at the
-	// top level, instead of repeated per component. So are changelog-type,
-	// skip-changelog and a release-as value every component carries alike.
+	// bump-minor-pre-major and bump-patch-for-minor-pre-major carried by
+	// every component are written once, at the top level, instead of
+	// repeated per component. So are a changelog-type, skip-changelog, a
+	// release-as value and a changelog-sections list every component
+	// carries alike.
 	shared := sharedRules{
-		bumpMinorPreMajor: !slices.ContainsFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }),
-		bumpPatchForMinorPreMajor: !slices.ContainsFunc(components, func(c component) bool {
+		bumpMinorPreMajor: slices.IndexFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }) == -1,
+		bumpPatchForMinorPreMajor: slices.IndexFunc(components, func(c component) bool {
 			return !c.bumpPatchForMinorPreMajor
-		}),
+		}) == -1,
 		changelogType: !slices.ContainsFunc(components, func(c component) bool {
 			return c.changelogType != config.ChangelogTypeGitHub
 		}),
 		skipChangelog: !slices.ContainsFunc(components, func(c component) bool { return !c.skipChangelog }),
+		changelogSections: components[0].changelogSections != nil &&
+			slices.IndexFunc(components, func(c component) bool {
+				return !reflect.DeepEqual(c.changelogSections, components[0].changelogSections)
+			}) == -1,
 	}
 	if !slices.ContainsFunc(components, func(c component) bool { return c.releaseAs != components[0].releaseAs }) {
 		shared.releaseAs = components[0].releaseAs
@@ -1249,6 +1275,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if shared.releaseAs != "" {
 		add(doc, "release-as", scalar(shared.releaseAs))
+	}
+	if shared.changelogSections {
+		add(doc, "changelog-sections", sectionsNode(*components[0].changelogSections, add))
 	}
 	// A release flag every component carries with the same value, other
 	// than release-me's default, is written once at the top level too.
@@ -1302,23 +1331,41 @@ func render(components []component, top topLevel) ([]byte, error) {
 
 // sharedRules names the per-component settings every component carries
 // alike, which render writes once at the top level instead of repeating
-// per component: the pre-major rules, changelog-type, skip-changelog and
-// release-as.
+// per component: the pre-major rules, changelog-type, skip-changelog,
+// release-as and changelog-sections.
 type sharedRules struct {
 	bumpMinorPreMajor         bool
 	bumpPatchForMinorPreMajor bool
 	changelogType             bool
 	skipChangelog             bool
 	// releaseAs is "" when the components differ or none carries one.
-	releaseAs string
+	releaseAs         string
+	changelogSections bool
+}
+
+// sectionsNode is a changelog-sections list, release-please's shape.
+func sectionsNode(sections []config.ChangelogSection, add func(*yaml.Node, string, *yaml.Node)) *yaml.Node {
+	list := &yaml.Node{Kind: yaml.SequenceNode}
+	for _, s := range sections {
+		entry := &yaml.Node{Kind: yaml.MappingNode}
+		add(entry, "type", scalar(s.Type))
+		if s.Section != "" {
+			add(entry, "section", scalar(s.Section))
+		}
+		if s.Hidden {
+			add(entry, "hidden", boolean(true))
+		}
+		list.Content = append(list.Content, entry)
+	}
+	return list
 }
 
 // addSettings writes the settings release-me reads per component or at the
 // top level alike: initial-version, bump-minor-pre-major,
 // bump-patch-for-minor-pre-major, changelog-type, skip-changelog,
-// release-as, the release flags and files. A setting shared names is left
-// out, the top level already carries it; a release flag is also left out
-// where it is release-me's default.
+// release-as, changelog-sections, the release flags and files. A setting
+// shared names is left out, the top level already carries it; a release
+// flag is also left out where it is release-me's default.
 func addSettings(
 	m *yaml.Node, c component, shared sharedRules, topFlags map[string]bool, add func(*yaml.Node, string, *yaml.Node),
 ) {
@@ -1339,6 +1386,9 @@ func addSettings(
 	}
 	if c.releaseAs != "" && shared.releaseAs == "" {
 		add(m, "release-as", scalar(c.releaseAs))
+	}
+	if c.changelogSections != nil && !shared.changelogSections {
+		add(m, "changelog-sections", sectionsNode(*c.changelogSections, add))
 	}
 	for _, flag := range releaseFlags {
 		if value := c.flags[flag.key]; !topFlags[flag.key] && value != flag.def {
