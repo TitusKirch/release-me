@@ -268,7 +268,11 @@ func (f *Forge) DeleteBranch(ctx context.Context, owner, repo, branch string) er
 }
 
 // referenceDoesNotExist reports whether err is GitHub's answer to deleting
-// a ref that is not there, as opposed to one it refuses to delete.
+// a ref that is not there, as opposed to one it refuses to delete. The
+// match depends on GitHub's wording, the only signal the 422 carries: if
+// that wording changes, an already deleted branch reads as a failed delete,
+// which the release command reports as a warning. It never makes a delete
+// happen that should not.
 func referenceDoesNotExist(err error) bool {
 	var errResp *gogithub.ErrorResponse
 	return errors.As(err, &errResp) && strings.Contains(strings.ToLower(errResp.Message), "reference does not exist")
