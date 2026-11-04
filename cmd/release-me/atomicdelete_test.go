@@ -34,7 +34,7 @@ func TestCleanupLeasesTheReleasedHeadAtDeletion(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir, cfg, head := mergedReleaseRepo(t, "", mainBranch)
 			remote := cleanupGitOutput(t, dir, "remote", "get-url", "--push", "origin")
-			f := mergedReleaseFake(mainBranch, "chore(main): release v1.3.0", head)
+			f := mergedReleaseBranchFake(mainBranch, "chore(main): release v1.3.0", head)
 			winner := ""
 			wrapped := interleavedCleanupForge{Forge: f, beforeDelete: func() {
 				if move {
