@@ -153,6 +153,17 @@ func withAuthorPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
 	return f
 }
 
+// withLinkedPullRequests returns newFake with responses configured for every
+// pull request in prs, keyed by number.
+func withLinkedPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
+	f := newFake()
+	f.Responses = map[int]forgetest.Response{}
+	for _, pr := range prs {
+		f.Responses[pr.Number] = forgetest.Response{PullRequest: pr}
+	}
+	return f
+}
+
 func TestDoPRRendersTheConfiguredChangelogStyle(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -238,7 +249,7 @@ func TestDoPRRendersTheConfiguredChangelogSections(t *testing.T) {
 }
 
 func TestDoPRLinksCommitsAndTheIssuesAnEntryCloses(t *testing.T) {
-	f := withAuthorPullRequests(forge.PullRequest{
+	f := withLinkedPullRequests(forge.PullRequest{
 		Number: 12, Title: "fix: handle the empty case", Body: "The parser no longer panics.\n\nCloses #7",
 		URL: "https://github.com/owner/repo/pull/12",
 	})
