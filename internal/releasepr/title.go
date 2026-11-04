@@ -219,12 +219,17 @@ func TitlePatternMarker(p TitlePattern, kind TitleKind) string {
 // TitlePatternMarker, compiled for kind. ok is false when body records none,
 // or one that does not compile for kind.
 func BodyTitlePattern(body string, kind TitleKind) (p TitlePattern, ok bool) {
-	m := titleMarker.FindStringSubmatch(body)
-	if m == nil {
-		return TitlePattern{}, false
+	fenced := append(notesBlock.FindAllStringIndex(body, -1), versionBlock.FindAllStringIndex(body, -1)...)
+	for _, loc := range titleMarker.FindAllStringSubmatchIndex(body, -1) {
+		if insideAny(loc[0], fenced) {
+			continue
+		}
+		p, err := NewTitlePattern(body[loc[2]:loc[3]], kind)
+		if err == nil {
+			return p, true
+		}
 	}
-	p, err := NewTitlePattern(m[1], kind)
-	return p, err == nil
+	return TitlePattern{}, false
 }
 
 // ReadPatterns returns the patterns release reads the title of a merged
