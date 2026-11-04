@@ -74,7 +74,7 @@ var packageKeys = []string{
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "extra-label", "separate-pull-requests", "$schema",
 	"bootstrap-sha", "last-release-sha", "pull-request-title-pattern", "group-pull-request-title-pattern",
-	"always-link-local",
+	"always-link-local", "signoff",
 }
 
 // FromReleasePlease translates release-please-config.json and
@@ -270,6 +270,17 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			}
 			if opts.sharedTitle, err = titlePattern(raw, "group-pull-request-title-pattern", kind, warn); err != nil {
 				return Result{}, err
+			}
+		}
+	}
+	if raw, ok := topValues["signoff"]; ok {
+		if err := json.Unmarshal(raw, &opts.signoff); err != nil {
+			return Result{}, fmt.Errorf("migrate: signoff: %w", err)
+		}
+		if opts.signoff != "" {
+			if err := releasepr.CheckSignoff(opts.signoff); err != nil {
+				warn("signoff: %q %v, left out", opts.signoff, err)
+				opts.signoff = ""
 			}
 		}
 	}
@@ -933,6 +944,7 @@ type topLevel struct {
 	workspaces  []string
 	// separateLinks writes always-link-local: false.
 	separateLinks bool
+	signoff       string
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -967,6 +979,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.separateLinks {
 		add(doc, "always-link-local", boolean(false))
+	}
+	if top.signoff != "" {
+		add(doc, "signoff", scalar(top.signoff))
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
 	add(labels, "pending", labelNode(top.pending))
