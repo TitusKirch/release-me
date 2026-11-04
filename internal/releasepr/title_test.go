@@ -175,7 +175,7 @@ func TestReadPatternsReadsThePatternTheBodyRecords(t *testing.T) {
 	for _, p := range patterns {
 		got = append(got, p.String())
 	}
-	want := []string{"ship(${component}): ${version}", releasepr.DefaultTitlePattern, "release ${component} ${version}"}
+	want := []string{"release ${component} ${version}", releasepr.DefaultTitlePattern, "ship(${component}): ${version}"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ReadPatterns() = %q, want %q", got, want)
 	}
@@ -186,5 +186,31 @@ func TestReadPatternsReadsThePatternTheBodyRecords(t *testing.T) {
 
 	if marker := releasepr.TitlePatternMarker(releasepr.DefaultTitle(releasepr.TitleShared), releasepr.TitleShared); marker != "" {
 		t.Fatalf("TitlePatternMarker(default) = %q, want none", marker)
+	}
+}
+
+func TestUnmarkedLegacyTitlesPreferTheirDefaultShape(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name              string
+		kind              releasepr.TitleKind
+		configured, title string
+		want              releasepr.TitleValues
+	}{
+		{name: "component", kind: releasepr.TitlePerComponent, configured: "chore(${component}): release v1.2.3-${version}", title: "chore(api): release v1.2.3-2.0.0", want: releasepr.TitleValues{Component: "api", Version: "1.2.3-2.0.0"}},
+		{name: "shared", kind: releasepr.TitleShared, configured: "chore: release api v1.3.0, ${releases}", title: "chore: release api v1.3.0, web v0.3.1", want: releasepr.TitleValues{Releases: []releasepr.TitleRelease{{Name: "api", Version: "1.3.0"}, {Name: "web", Version: "0.3.1"}}}},
+		{name: "locked", kind: releasepr.TitleLocked, configured: "chore: release v1.2.3-${version} (${components})", title: "chore: release v1.2.3-2.0.0 (api, web)", want: releasepr.TitleValues{Version: "1.2.3-2.0.0", Components: []string{"api", "web"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			configured, err := releasepr.TitlePatterns(tc.configured, tc.kind)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, _, ok := releasepr.ParseAny(releasepr.ReadPatterns(configured, "", tc.kind), tc.title)
+			if !ok || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("parsed = %+v,%v; want %+v", got, ok, tc.want)
+			}
+		})
 	}
 }
