@@ -3,8 +3,9 @@
 
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
-// changelog, changelog-source, labels, author, major-tag, versioning,
-// draft-until-assets-attach, comment-mention and components.
+// changelog, changelog-source, the changelog style keys ChangelogStyle
+// lists, labels, author, major-tag, versioning, draft-until-assets-attach,
+// comment-mention and components.
 package config
 
 import (
@@ -12,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	stdpath "path"
 	"slices"
@@ -188,6 +190,16 @@ type File struct {
 	Key     string
 }
 
+// ChangelogStyle is the top-level keys that shape how a changelog line
+// renders, the same for every component.
+type ChangelogStyle struct {
+	// Host is "changelog-host", "" by default: the web address every
+	// changelog link points at instead of the forge's own, such as a
+	// GitHub Enterprise Server's "https://github.example.com". No
+	// trailing slash.
+	Host string
+}
+
 // Labels is the "labels" key: the label names release-me expects on the
 // repository. Alpha, Beta and Rc select a pre-release type on the release
 // pull request; Pending and Tagged apply to every release, stable or not.
@@ -226,8 +238,12 @@ type Config struct {
 	// constants. A component overrides it through its own
 	// "changelog-source" key.
 	ChangelogSource string
-	Labels          Labels
-	Author          Author
+	// ChangelogStyle is the top-level keys that shape every changelog
+	// line. There is no per-component override: every component a shared
+	// release pull request carries renders alike.
+	ChangelogStyle ChangelogStyle
+	Labels         Labels
+	Author         Author
 	// MajorTag is the top-level "major-tag" key: when true, a stable
 	// release moves the major tag "vX" to the release commit. A component
 	// overrides it through its own "major-tag" key.
@@ -318,6 +334,8 @@ type ResolvedComponent struct {
 	// ChangelogSource is one of the ChangelogSource* constants: which
 	// commits become this component's changelog entries.
 	ChangelogSource string
+	// ChangelogStyle is the top level's, the same for every component.
+	ChangelogStyle ChangelogStyle
 }
 
 // Resolve returns the components a command should loop over, in
@@ -339,6 +357,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
 			ChangelogSource:   cfg.ChangelogSource,
+			ChangelogStyle:    cfg.ChangelogStyle,
 		}}
 	}
 
@@ -367,6 +386,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
 			ChangelogSource:   cfg.ChangelogSource,
+			ChangelogStyle:    cfg.ChangelogStyle,
 		}
 		if c.InitialVersion != nil {
 			rc.InitialVersion = *c.InitialVersion
@@ -453,14 +473,15 @@ type raw struct {
 	Files                    *[]rawFile `yaml:"files"`
 	Changelog                *string    `yaml:"changelog"`
 	ChangelogSource          *string    `yaml:"changelog-source"`
+	ChangelogHost            *string    `yaml:"changelog-host"`
 	Labels                   *rawLabels `yaml:"labels"`
 	Author                   *rawAuthor `yaml:"author"`
 	MajorTag                 *bool      `yaml:"major-tag"`
 	Versioning               *string    `yaml:"versioning"`
 	ReleasePullRequest       *string    `yaml:"release-pull-request"`
-	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
 	CommentMention           *string    `yaml:"comment-mention"`
+	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -576,6 +597,14 @@ func Load(path string) (cfg Config, err error) {
 			)
 		}
 		cfg.ChangelogSource = *r.ChangelogSource
+	}
+	if r.ChangelogHost != nil {
+		host, err := ValidateChangelogHost(*r.ChangelogHost)
+		if err != nil {
+			// The value is left out: it may carry credentials.
+			return Config{}, fmt.Errorf("config: parse %s: changelog-host %w", path, err)
+		}
+		cfg.ChangelogStyle.Host = host
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {
@@ -713,6 +742,29 @@ func decodeFiles(path string, raw []rawFile) ([]File, error) {
 		files = append(files, File{Path: rf.Path, Updater: name, Key: key})
 	}
 	return files, nil
+}
+
+// ValidateChangelogHost checks a "changelog-host" and returns it without a
+// trailing slash. It rejects anything but an absolute http or https
+// address with a host and nothing past its path: a query or a fragment
+// would end up in the middle of every link. It also rejects whitespace,
+// "(" and ")", which end a markdown link target early, so the changelog
+// heading's compare link would no longer read back. migrate calls it to
+// vet a release-please changelog-host.
+func ValidateChangelogHost(host string) (string, error) {
+	if strings.ContainsAny(host, " \t\n()") {
+		return "", errors.New("contains whitespace or a parenthesis, which break a changelog link")
+	}
+	u, err := url.Parse(host)
+	switch {
+	case err != nil:
+		return "", errors.New("does not parse as an address")
+	case u.Scheme != "http" && u.Scheme != "https", u.Host == "":
+		return "", errors.New("is not an absolute http or https address")
+	case u.RawQuery != "" || u.Fragment != "" || u.User != nil:
+		return "", errors.New("carries a query, a fragment or credentials")
+	}
+	return strings.TrimRight(host, "/"), nil
 }
 
 // decodeComponents converts the "components" mapping node into []Component,
