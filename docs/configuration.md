@@ -74,6 +74,23 @@ fails `pr`, naming the path and the key.
   const Version = "0.1.0" // release-me: version
   ```
 
+- `generic` reads release-please's version markers, so a file release-please bumped needs no
+  change. A line carrying `x-release-please-version` gets its first full version replaced; one
+  carrying `x-release-please-major`, `-minor` or `-patch` gets its first number replaced by
+  that part of the version. A block opened by `x-release-please-start-version` (or `-major`,
+  `-minor`, `-patch`) bumps every line up to and including the one carrying
+  `x-release-please-end`. The markers sit in any comment, which is how a Markdown file is
+  bumped. No `key`:
+
+  ```markdown
+  <!-- x-release-please-start-version -->
+  curl -fsSL https://example.com/notes/1.4.0/install.sh | sh
+  <!-- x-release-please-end -->
+  ```
+
+  The `date` and `version-date` scopes are an error, since an updater is given the version
+  only, not the release date. So are a file with no marker and a block that is never closed.
+
 - `helm` replaces a `Chart.yaml`'s top-level `version` field. No `key`:
 
   ```yaml
