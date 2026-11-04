@@ -671,6 +671,14 @@ including after switching per-component releases to a shared pull request. Publi
 draft creates the tag and unblocks `pr`; deleting the draft also unblocks it, so the next
 run can create the release again.
 
+## `include-v-in-release-name`
+
+Keeps the `v` before the version in the GitHub release's name, default `true`: `vX.Y.Z` for
+the implicit `main` component, `<name> vX.Y.Z` for a configured one. `false` names it
+`X.Y.Z` or `<name> X.Y.Z`. Only the release's name changes: the tag keeps its prefix, and the
+release pull request title, which `release` reads the version back from, keeps its `v`. A
+component overrides it through its own `include-v-in-release-name` key.
+
 ## `skip-github-release`
 
 Tags a merged release pull request without creating a GitHub release, default `false`, for a
@@ -811,8 +819,8 @@ component's `path` or lies outside it is a configuration error.
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `release-as` (only with `versioning: independent`),
 `hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
-`changelog-type`, `force-tag-creation`, `skip-github-release`, `skip-changelog` and
-`changelog`, plus its own
+`changelog-type`, `force-tag-creation`, `include-v-in-release-name`, `skip-github-release`,
+`skip-changelog` and `changelog`, plus its own
 [`exclude-paths`](#exclude-paths), which the top-level key cannot apply beside configured
 components. A key left out of a component falls back to the top-level setting above. A
 repository without `components` is one component named `main` at path `.`, tag prefix `v`,
