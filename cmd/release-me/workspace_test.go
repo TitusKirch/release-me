@@ -314,7 +314,7 @@ components:
 		t.Fatalf("config.Load() error = %v", err)
 	}
 
-	f := newFake()
+	f := newPRFake(origin)
 	var stdout bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 		t.Fatalf("doPR() error = %v", err)
@@ -444,7 +444,7 @@ components:
 			if err != nil {
 				t.Fatal(err)
 			}
-			f := newFake()
+			f := newPRFake(origin)
 			var out bytes.Buffer
 			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
 				t.Fatal(err)

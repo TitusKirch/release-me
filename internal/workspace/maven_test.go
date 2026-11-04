@@ -165,3 +165,33 @@ func TestParseIncludesProfileDependenciesInTheWorkspaceGraph(t *testing.T) {
 		})
 	}
 }
+
+func TestMavenProfileDependencyLinksBesideTheOtherManagers(t *testing.T) {
+	t.Parallel()
+	core, err := workspace.Parse(workspace.Maven, []byte(`<project><groupId>com.acme</groupId><artifactId>acme-core</artifactId><version>1.2.0</version></project>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, err := workspace.Parse(workspace.Maven, []byte(`<project><groupId>com.acme</groupId><artifactId>acme-api</artifactId>`+
+		`<version>0.4.0</version><profiles><profile><id>production</id><dependencies><dependency><groupId>com.acme</groupId>`+
+		`<artifactId>acme-core</artifactId><version>1.2.0</version></dependency></dependencies></profile></profiles></project>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cargoCore, err := workspace.Parse(workspace.Cargo, []byte("[package]\nname = \"acme-core\"\nversion = \"3.0.0\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := []workspace.Member{
+		{Component: "core", Manager: workspace.Maven, Package: core},
+		{Component: "api", Manager: workspace.Maven, Package: api},
+		{Component: "engine", Manager: workspace.Cargo, Package: cargoCore},
+	}
+	// LocalRangesOnly, always-link-local turned off, filters node ranges
+	// only, and a Cargo crate of the same name is no Maven module.
+	for _, opts := range []workspace.Options{{}, {LocalRangesOnly: true}} {
+		if got := workspace.Dependents(members, []string{"core"}, opts); !reflect.DeepEqual(got, []string{"api"}) {
+			t.Fatalf("Dependents() with %+v = %v, want api through its profile dependency", opts, got)
+		}
+	}
+}
