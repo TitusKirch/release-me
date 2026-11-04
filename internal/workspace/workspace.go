@@ -54,6 +54,8 @@ type Package struct {
 	Name         string
 	Version      string
 	Dependencies []Dependency
+	// WorkspaceAliases maps Cargo workspace dependency keys to renamed crates.
+	WorkspaceAliases map[string]string
 }
 
 // Dependency is one dependency a manifest declares: the name it depends on
@@ -61,6 +63,8 @@ type Package struct {
 type Dependency struct {
 	Name  string
 	Range string
+	// Workspace marks a Cargo dependency inherited from the workspace root.
+	Workspace bool
 }
 
 // Parse reads content, a manifest of manager.
@@ -115,11 +119,22 @@ func Links(members []Member) []Link {
 	var links []Link
 	for _, m := range members {
 		for _, dep := range m.Package.Dependencies {
+			name := dep.Name
+			if m.Manager == Cargo && dep.Workspace {
+				for _, root := range members {
+					if root.Manager == Cargo {
+						if crate, ok := root.Package.WorkspaceAliases[name]; ok {
+							name = crate
+							break
+						}
+					}
+				}
+			}
 			for _, target := range members {
-				if target.Component == m.Component || target.Manager != m.Manager || target.Package.Name != dep.Name {
+				if target.Component == m.Component || target.Manager != m.Manager || target.Package.Name != name {
 					continue
 				}
-				link := Link{Dependent: m.Component, Dependency: target.Component, Manager: m.Manager, Name: dep.Name}
+				link := Link{Dependent: m.Component, Dependency: target.Component, Manager: m.Manager, Name: name}
 				if !slices.Contains(links, link) {
 					links = append(links, link)
 				}

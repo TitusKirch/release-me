@@ -47,7 +47,7 @@ func TestParseReadsACargoTomlsPackageAndDependencies(t *testing.T) {
 		Name: "acme-cli", Version: "0.4.0",
 		Dependencies: []workspace.Dependency{
 			{Name: "acme-core", Range: "1.2.0"},
-			{Name: "acme-macros"},
+			{Name: "acme-macros", Workspace: true},
 			{Name: "clap", Range: "4.5"},
 			{Name: "serde", Range: "1.0"},
 			{Name: "acme-core", Range: "=1.2.0"},
@@ -156,6 +156,28 @@ func TestCargoArrayTablesEndPackageAndDependencyContexts(t *testing.T) {
 			links := workspace.Links(members)
 			if len(links) != 1 || links[0].Dependent != "cli" || links[0].Dependency != "core" {
 				t.Fatalf("links = %+v", links)
+			}
+		})
+	}
+}
+
+func TestCargoInheritedAliasesLinkToTheWorkspacePackage(t *testing.T) {
+	t.Parallel()
+	for _, decl := range []string{"[dependencies]\nengine = { workspace = true }\n", "[dependencies.engine]\nworkspace = true\n", "[dependencies]\nengine.workspace = true\n"} {
+		t.Run(decl, func(t *testing.T) {
+			t.Parallel()
+			root, err := workspace.Parse(workspace.Cargo, []byte("[workspace]\nmembers = [\"crates/*\"]\n[workspace.dependencies]\nengine = { package = \"core\", path = \"crates/core\", version = \"1.0.0\" }\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cli, err := workspace.Parse(workspace.Cargo, []byte("[package]\nname = \"cli\"\nversion = \"1.0.0\"\n"+decl))
+			if err != nil {
+				t.Fatal(err)
+			}
+			members := []workspace.Member{{Manager: workspace.Cargo, Package: root}, {Component: "core", Manager: workspace.Cargo, Package: workspace.Package{Name: "core", Version: "1.0.0"}}, {Component: "cli", Manager: workspace.Cargo, Package: cli}}
+			dependents := workspace.Dependents(members, []string{"core"})
+			if !reflect.DeepEqual(dependents, []string{"cli"}) {
+				t.Fatalf("dependents = %v, want cli", dependents)
 			}
 		})
 	}

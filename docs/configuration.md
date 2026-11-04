@@ -433,6 +433,10 @@ A dependent releases together with its dependency, so `workspaces` needs `compon
 one release pull request for all of them, `release-pull-request: shared` or
 `versioning: locked`; an unknown or repeated package manager is a configuration error too.
 
+Inherited `workspace = true` dependencies resolve renamed package aliases from the root
+workspace declarations. The root keeps the version requirement, and the child keeps its
+workspace declaration unchanged.
+
 ## `components`
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
