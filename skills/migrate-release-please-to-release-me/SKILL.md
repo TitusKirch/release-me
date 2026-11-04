@@ -91,6 +91,12 @@ release-please collapsed each package into a `<details>` block: `migrate` leaves
 `release-pull-request-layout` out, add `release-pull-request-layout: details` only when the
 human wants the collapsed look kept.
 
+A **root package** beside other packages, package `.`, translates to a root component with a
+warning: it owns only the files outside the other components' paths, where release-please's
+root package counted every commit, so a change inside a package no longer releases the root.
+Its row names the packages whose changes the root stops picking up, and the human accepts that
+reach.
+
 Done when the table has exactly one row per warning line, every row has an action, and with
 more than one component the human has chosen the versioning mode and the release pull
 requests.
