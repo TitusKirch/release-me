@@ -12,10 +12,12 @@ import (
 	"errors"
 	"fmt"
 	stdpath "path"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
+	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"gopkg.in/yaml.v3"
 )
 
@@ -327,23 +329,47 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 
 	// A version file the release type implies is carried over only where it
 	// exists: release-type falls back to node, and an entry for a file that
-	// is not there would fail the first release pull request.
-	versionFile := func(name, updater, key string) {
+	// is not there would fail the first release pull request. A lockfile is
+	// optional: release-please bumps it only where it exists and holds the
+	// package, so one that does not is left out without a warning.
+	versionFile := func(name, updaterName, key string, optional bool) {
 		path := stdpath.Join(p.path, name)
-		if _, err := readFile(path); err != nil {
-			warn("package %s: release-type %s: %s does not exist, left out of files", p.path, releaseType, path)
+		data, err := readFile(path)
+		if err != nil {
+			if !optional {
+				warn("package %s: release-type %s: %s does not exist, left out of files", p.path, releaseType, path)
+			}
 			return
 		}
-		c.files = append(c.files, file{path: path, updater: updater, key: key})
+		if optional {
+			if _, err := updater.Updaters[updaterName].Update(string(data), key, "0.0.0"); err != nil {
+				return
+			}
+		}
+		c.files = append(c.files, file{path: path, updater: updaterName, key: key})
 	}
 	switch releaseType {
 	case "node":
-		versionFile("package.json", "json", "version")
-		if _, err := readFile(stdpath.Join(p.path, "package-lock.json")); err == nil {
-			warn("package %s: package-lock.json: release-please bumped it, release-me does not", p.path)
+		versionFile("package.json", updater.JSON, "version", false)
+		versionFile("package-lock.json", updater.NpmLock, "", true)
+		versionFile("npm-shrinkwrap.json", updater.NpmLock, "", true)
+	case "rust":
+		manifest := stdpath.Join(p.path, "Cargo.toml")
+		crate := cargoPackageName(readFile, manifest)
+		if crate == "" {
+			warn("package %s: release-type rust: %s declares no [package] name and version, "+
+				"add the crates it releases under files", p.path, manifest)
+			break
+		}
+		versionFile("Cargo.toml", updater.TOML, "package.version", false)
+		versionFile("Cargo.lock", updater.CargoLock, crate, true)
+	case "ruby":
+		warn("package %s: release-type ruby: its version.rb is not carried over, add it under files", p.path)
+		if componentName != "" {
+			versionFile("Gemfile.lock", updater.GemfileLock, componentName, true)
 		}
 	case "helm":
-		versionFile("Chart.yaml", "helm", "")
+		versionFile("Chart.yaml", updater.Helm, "", false)
 	case "go":
 	default:
 		warn("package %s: release-type %s: the files it bumps are not carried over, add them under files", p.path, releaseType)
@@ -492,6 +518,46 @@ func packageJSONName(readFile ReadFile, path string) string {
 	}
 	return pkg.Name
 }
+
+// cargoPackageName reads the name of the crate a Cargo.toml's [package]
+// table declares together with a version of its own. It is "" when the
+// file, the table, the name or the version is missing: a virtual workspace
+// manifest declares no package, and a crate inheriting
+// "version.workspace = true" carries no version the toml updater can bump.
+func cargoPackageName(readFile ReadFile, path string) string {
+	data, err := readFile(path)
+	if err != nil {
+		return ""
+	}
+	inPackage, name, hasVersion := false, "", false
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			inPackage = line == "[package]"
+			continue
+		}
+		if !inPackage {
+			continue
+		}
+		if m := cargoName.FindStringSubmatch(line); m != nil {
+			name = m[1]
+		}
+		if cargoVersion.MatchString(line) {
+			hasVersion = true
+		}
+	}
+	if !hasVersion {
+		return ""
+	}
+	return name
+}
+
+// cargoName matches a Cargo.toml's "name = \"crate\"" line, cargoVersion
+// its "version = \"1.2.3\"" line.
+var (
+	cargoName    = regexp.MustCompile(`^name\s*=\s*"([^"]+)"`)
+	cargoVersion = regexp.MustCompile(`^version\s*=\s*"`)
+)
 
 // cleanPackagePath turns a release-please package path, "." or a path
 // that may carry a trailing slash, into release-me's form.
