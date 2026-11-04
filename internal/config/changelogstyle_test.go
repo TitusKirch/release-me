@@ -30,6 +30,11 @@ func TestLoadReadsTheChangelogStyleKeys(t *testing.T) {
 			want:    config.ChangelogStyle{Host: "https://github.example.com"},
 		},
 		{name: "changelog-date-format", content: "changelog-date-format: \"%d.%m.%Y\"\n", want: config.ChangelogStyle{DateFormat: "%d.%m.%Y"}},
+		{
+			name:    "changelog-commit-links and changelog-issue-references",
+			content: "changelog-commit-links: true\nchangelog-issue-references: true\n",
+			want:    config.ChangelogStyle{CommitLinks: true, IssueReferences: true},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -49,6 +54,7 @@ func TestResolveGivesEveryComponentTheTopLevelChangelogStyle(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, "changelog-sentence-case: true\nchangelog-authors: true\n"+
 		"changelog-host: https://github.example.com\nchangelog-date-format: \"%d.%m.%Y\"\n"+
+		"changelog-commit-links: true\nchangelog-issue-references: true\n"+
 		"components:\n  api:\n    path: api\n  web:\n    path: web\n")
 
 	cfg, err := config.Load(path)
@@ -72,6 +78,8 @@ func TestLoadRejectsAChangelogStyleKeyInsideAComponent(t *testing.T) {
 		{name: "changelog-authors", key: "changelog-authors: true\n"},
 		{name: "changelog-host", key: "changelog-host: https://github.example.com\n"},
 		{name: "changelog-date-format", key: "changelog-date-format: \"%Y\"\n"},
+		{name: "changelog-commit-links", key: "changelog-commit-links: true\n"},
+		{name: "changelog-issue-references", key: "changelog-issue-references: true\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

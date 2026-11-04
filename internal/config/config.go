@@ -229,6 +229,12 @@ type ChangelogStyle struct {
 	// "%Y-%m-%d": the strftime expression a version heading's date
 	// renders in.
 	DateFormat string
+	// CommitLinks is "changelog-commit-links", default false: link each
+	// entry's commit.
+	CommitLinks bool
+	// IssueReferences is "changelog-issue-references", default false:
+	// link the issues each entry closes.
+	IssueReferences bool
 }
 
 // ChangelogSection is one entry of the "changelog-sections" key: the entry
@@ -817,6 +823,8 @@ type raw struct {
 	ChangelogAuthors              *bool                  `yaml:"changelog-authors"`
 	ChangelogHost                 *string                `yaml:"changelog-host"`
 	ChangelogDateFormat           *string                `yaml:"changelog-date-format"`
+	ChangelogCommitLinks          *bool                  `yaml:"changelog-commit-links"`
+	ChangelogIssueRefs            *bool                  `yaml:"changelog-issue-references"`
 	ChangelogSections             *[]rawChangelogSection `yaml:"changelog-sections"`
 	Labels                        *rawLabels             `yaml:"labels"`
 	Author                        *rawAuthor             `yaml:"author"`
@@ -1058,6 +1066,12 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: changelog-date-format %q %w", path, *r.ChangelogDateFormat, err)
 		}
 		cfg.ChangelogStyle.DateFormat = *r.ChangelogDateFormat
+	}
+	if r.ChangelogCommitLinks != nil {
+		cfg.ChangelogStyle.CommitLinks = *r.ChangelogCommitLinks
+	}
+	if r.ChangelogIssueRefs != nil {
+		cfg.ChangelogStyle.IssueReferences = *r.ChangelogIssueRefs
 	}
 	if r.ChangelogSections != nil {
 		sections, err := decodeChangelogSections(*r.ChangelogSections)
