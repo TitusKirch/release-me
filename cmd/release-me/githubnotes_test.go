@@ -26,9 +26,9 @@ const generatedNotes = "## What's Changed\r\n" +
 	"* @octocat made their first contribution in https://github.com/owner/repo/pull/12\r\n\r\n" +
 	"**Full Changelog**: https://github.com/owner/repo/compare/v0.1.0...v0.2.0"
 
-// withPullRequests returns newFake with responses configured for every
+// withGeneratedPullRequests returns newFake with responses configured for every
 // pull request in prs, keyed by number.
-func withPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
+func withGeneratedPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
 	f := newFake()
 	f.Responses = map[int]forgetest.Response{}
 	for _, pr := range prs {
@@ -49,7 +49,7 @@ func TestDoPRRendersGitHubsGeneratedNotesWithChangelogTypeGitHub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.Load() error = %v", err)
 	}
-	f := withPullRequests(forge.PullRequest{Number: 12, Title: "feat: add the widget", URL: "https://github.com/owner/repo/pull/12"})
+	f := withGeneratedPullRequests(forge.PullRequest{Number: 12, Title: "feat: add the widget", URL: "https://github.com/owner/repo/pull/12"})
 	f.ReleaseNotes = map[string]string{"v0.2.0": generatedNotes}
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, io.Discard); err != nil {
 		t.Fatalf("doPR() error = %v", err)
