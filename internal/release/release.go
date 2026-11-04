@@ -330,7 +330,7 @@ func releaseShared(
 			tag := comp.TagPrefix + versionStr
 			result := Result{
 				PullRequestNumber: pr.Number, Name: comp.Name, Version: versionStr, Tag: tag,
-				Message: fmt.Sprintf("would tag and release %s", tag), HeadSHA: pr.HeadSHA,
+				Message: dryRunMessage(comp, tag), HeadSHA: pr.HeadSHA,
 			}
 			mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, versionStr, "", comp.MajorTag, dryRun)
 			if err != nil {
@@ -367,15 +367,14 @@ func releaseShared(
 			alreadyTagged = true
 		}
 
-		body := lockedReleaseBody(pr.Body, comp.Name)
-		if err := createRelease(ctx, f, owner, repoName, tag, name, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
-			return nil, fmt.Errorf("release: %s: component %s: pull request #%d: %w", who, comp.Name, pr.Number, err)
+		if !comp.SkipGitHubRelease {
+			body := lockedReleaseBody(pr.Body, comp.Name)
+			if err := createRelease(ctx, f, owner, repoName, tag, name, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
+				return nil, fmt.Errorf("release: %s: component %s: pull request #%d: %w", who, comp.Name, pr.Number, err)
+			}
 		}
 
-		message := fmt.Sprintf("tagged and released %s", tag)
-		if alreadyTagged {
-			message = fmt.Sprintf("already tagged %s", tag)
-		}
+		message := releasedMessage(comp, tag, alreadyTagged)
 
 		mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, versionStr, sha, comp.MajorTag, dryRun)
 		if err != nil {
@@ -417,6 +416,10 @@ type Component struct {
 	// releasepr.TitlePatterns, before the pattern the pull request body
 	// records and the default, see releasepr.ReadPatterns.
 	Titles []releasepr.TitlePattern
+	// SkipGitHubRelease is comp's resolved "skip-github-release" key: when
+	// true, a merged release pull request still gets its tag, major tag
+	// and label swap, but no GitHub release.
+	SkipGitHubRelease bool
 }
 
 // releaseName returns the name of comp's release at versionStr, "X.Y.Z"
@@ -654,7 +657,7 @@ func releaseOne(
 	if dryRun {
 		result := Result{
 			PullRequestNumber: pr.Number, Name: componentName, Version: versionStr, Tag: tag,
-			Message: fmt.Sprintf("would tag and release %s", tag), HeadSHA: pr.HeadSHA,
+			Message: dryRunMessage(comp, tag), HeadSHA: pr.HeadSHA,
 		}
 		mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, componentName, tagPrefix, versionStr, "", majorTagEnabled, dryRun)
 		if err != nil {
@@ -681,9 +684,11 @@ func releaseOne(
 		alreadyTagged = true
 	}
 
-	body := releasepr.ReleaseBody(pr.Body)
-	if err := createRelease(ctx, f, owner, repoName, tag, releaseName, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
-		return Result{}, fmt.Errorf("release: component %s: pull request #%d: %w", componentName, pr.Number, err)
+	if !comp.SkipGitHubRelease {
+		body := releasepr.ReleaseBody(pr.Body)
+		if err := createRelease(ctx, f, owner, repoName, tag, releaseName, body, ver.IsPreRelease(), draftUntilAssetsAttach); err != nil {
+			return Result{}, fmt.Errorf("release: component %s: pull request #%d: %w", componentName, pr.Number, err)
+		}
 	}
 
 	prLabels, err := f.Labels(ctx, owner, repoName, pr.Number)
@@ -700,10 +705,7 @@ func releaseOne(
 		return Result{}, fmt.Errorf("release: component %s: pull request #%d: set labels: %w", componentName, pr.Number, err)
 	}
 
-	message := fmt.Sprintf("tagged and released %s", tag)
-	if alreadyTagged {
-		message = fmt.Sprintf("already tagged %s", tag)
-	}
+	message := releasedMessage(comp, tag, alreadyTagged)
 
 	mtag, mmsg, err := applyMajorTag(ctx, f, owner, repoName, componentName, tagPrefix, versionStr, sha, majorTagEnabled, dryRun)
 	if err != nil {
@@ -714,6 +716,28 @@ func releaseOne(
 		PullRequestNumber: pr.Number, Name: componentName, Version: versionStr, Tag: tag, Skipped: alreadyTagged,
 		Message: message, MajorTag: mtag, MajorTagMessage: mmsg, HeadSHA: pr.HeadSHA,
 	}, nil
+}
+
+// releasedMessage reports what release did for comp at tag: already
+// tagged by an earlier run, tagged without a GitHub release, or tagged and
+// released.
+func releasedMessage(comp Component, tag string, alreadyTagged bool) string {
+	switch {
+	case alreadyTagged:
+		return fmt.Sprintf("already tagged %s", tag)
+	case comp.SkipGitHubRelease:
+		return fmt.Sprintf("tagged %s, GitHub release skipped", tag)
+	default:
+		return fmt.Sprintf("tagged and released %s", tag)
+	}
+}
+
+// dryRunMessage reports what release would do for comp at tag.
+func dryRunMessage(comp Component, tag string) string {
+	if comp.SkipGitHubRelease {
+		return fmt.Sprintf("would tag %s, GitHub release skipped", tag)
+	}
+	return fmt.Sprintf("would tag and release %s", tag)
 }
 
 // createRelease creates the release for tag, named name with body, a
