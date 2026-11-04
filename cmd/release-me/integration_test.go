@@ -90,6 +90,65 @@ func TestRunNextPrintsAMinorBumpForAFeature(t *testing.T) {
 	}
 }
 
+func TestRunNextAppliesTheConfiguredVersioningStrategy(t *testing.T) {
+	cases := []struct {
+		name   string
+		config string
+		want   string
+	}{
+		{name: "always bump patch at the top level", config: "versioning-strategy: always-bump-patch\n", want: "0.1.1 (feat, always-bump-patch)\n"},
+		{name: "always bump major at the top level", config: "versioning-strategy: always-bump-major\n", want: "1.0.0 (feat, always-bump-major)\n"},
+		{name: "the default strategy", config: "versioning-strategy: default\n", want: "0.2.0 (feat)\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := newRepo(t)
+			writeConfig(t, dir, tc.config)
+			commitEntry(t, dir, "chore: initial commit")
+			tagRepo(t, dir)
+			commitEntry(t, dir, "feat: add the changelog command")
+
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"next"}, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tc.want {
+				t.Fatalf("stdout = %q, want %q", stdout.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestRunNextAppliesAComponentsOwnVersioningStrategy(t *testing.T) {
+	dir := newRepo(t)
+	writeConfig(t, dir, `versioning-strategy: always-bump-minor
+components:
+  api:
+    path: api
+    versioning-strategy: always-bump-patch
+  web:
+    path: web
+`)
+	writeFiles(t, dir, "chore: scaffold", map[string]string{"api/main.go": "package main\n", "web/index.html": "<p>web</p>\n"})
+	runGit(t, dir, "tag", "api/v1.4.0")
+	runGit(t, dir, "tag", "web/v2.0.3")
+	writeFiles(t, dir, "fix: handle an empty request", map[string]string{"api/main.go": "package main // fixed\n"})
+	writeFiles(t, dir, "fix: escape the title", map[string]string{"web/index.html": "<p>web &amp; more</p>\n"})
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"next"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+	}
+	want := "api: 1.4.1 (fix, always-bump-patch)\nweb: 2.1.0 (fix, always-bump-minor)\n"
+	if stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+}
+
 func TestRunNextPrintsNothingWhenThereIsNothingToRelease(t *testing.T) {
 	dir := newRepo(t)
 	commitEntry(t, dir, "chore: initial commit")
