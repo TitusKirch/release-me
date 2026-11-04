@@ -253,6 +253,12 @@ counted every commit. It also carries over:
     warning asks to mark with `release-me: version` and list instead;
 - every `extra-files` entry of type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath, of
   type `xml` with a plain absolute xpath such as `/project/version`, and of type `pom`;
+- every `extra-files` entry that is a plain path or of type `generic` as a
+  [`generic`](configuration.md#files) entry, which reads the same `x-release-please-version`
+  markers, so the file needs no change. A plain `.json`, `.yaml`, `.yml` or `.toml` path also
+  gets its top-level `version` bumped, as release-please does. Each is carried over only where
+  the file exists and holds what it bumps; a `glob` entry is warned about, since release-me
+  lists its files;
 - `label` and `release-label` as the `pending` and `tagged` labels;
 - `prerelease-type` as a pre-release type selected by the label `release: <type>`: `alpha`,
   `beta` or `rc` stays on, any other name but `sp`, which `versioning-strategy: service-pack`

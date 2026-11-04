@@ -36,6 +36,8 @@ const (
 	Bazel  = "bazel"
 	Dart   = "dart"
 	Sfdx   = "sfdx"
+
+	Generic = "generic"
 )
 
 // Func is the shape every registered updater implements: given a file's
@@ -76,6 +78,8 @@ var Updaters = map[string]Entry{
 	Bazel:  {Update: ignoreKey(UpdateBazel)},
 	Dart:   {Update: ignoreKey(UpdateDart)},
 	Sfdx:   {Update: ignoreKey(UpdateSfdx)},
+
+	Generic: {Update: ignoreKey(UpdateGeneric)},
 }
 
 // ignoreKey adapts an updater that takes no key to the Func shape every
