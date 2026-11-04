@@ -17,9 +17,12 @@ import (
 )
 
 // FakeAuthor and FakeCommitter are the identities commitInto writes every
-// commit as, the ones GitHub gives a commit an app token creates through
-// its API: the app's bot account as the author, GitHub itself as the
-// committer that signs it.
+// commit as, the ones GitHub gives a commit a GitHub App installation
+// token creates through its API: the app's bot account as the author,
+// GitHub itself as the committer that signs it. They model that one
+// outcome only. A personal access token or an OAuth token gets the user
+// as author and committer and no signature at all; Fake.Unsigned models
+// the missing signature, nothing here models that identity.
 const (
 	FakeAuthor    = "release-me-app[bot] <123456+release-me-app[bot]@users.noreply.github.com>"
 	FakeCommitter = "GitHub <noreply@github.com>"
@@ -78,6 +81,12 @@ func commitInto(ctx context.Context, gitDir string, c forge.BranchCommit) (strin
 			old = current
 		}
 	}
+	// "update-ref <ref> <new> <old>" is a genuine compare-and-swap, so the
+	// lease here is atomic. That is strictly stronger than production:
+	// the GitHub implementation's moveBranch reads the ref and then forces
+	// the update, two requests with a window between them a concurrent
+	// writer can slip into. No test against this fake can exercise that
+	// window, so a green suite says nothing about it.
 	if _, err := g.run(ctx, nil, "update-ref", ref, sha, old); err != nil {
 		return "", fmt.Errorf("forgetest: update branch %s: expected %s: %w", c.Branch, old, errors.Join(forge.ErrBranchMoved, err))
 	}
