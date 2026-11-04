@@ -9,7 +9,19 @@ The version when no tag exists yet, default `0.1.0`.
 
 ## `bump-minor-pre-major`
 
-Turns a major bump into a minor one below `1.0.0`, default `false`.
+Turns a major bump into a minor one below `1.0.0`, default `false`. A component overrides it
+through its own `bump-minor-pre-major` key; a `locked` or `linked` family computes its one
+shared version with the top-level value.
+
+## `bump-patch-for-minor-pre-major`
+
+Turns a minor bump, a `feat`, into a patch one below `1.0.0`, default `false`, so `0.4.1` with a
+`feat` releases `0.4.2` instead of `0.5.0`. A breaking change is not affected: it still bumps
+the major, or the minor with `bump-minor-pre-major: true`, never only the patch. From `1.0.0`
+on, and for a component's first release, which gets `initial-version`, the key changes nothing.
+A component overrides it through its own `bump-patch-for-minor-pre-major` key; a `locked` or
+`linked` family computes its one shared version with the top-level value. `next` names the
+rule in its reason, `0.4.2 (feat, patch below 1.0.0)`.
 
 ## `hidden-types`
 
@@ -196,16 +208,16 @@ The mention prefix a comment on the release pull request names to issue a `relea
 ## `components`
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
-`hidden-types`, `files`, `major-tag`, `changelog-source` and `changelog`. A key left out of a
-component falls back to the top-level setting above. A repository without `components` is one
-component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the default
-shape a repository with no configuration at all already has. A configured component gets tag
-prefix `<name>/v`, branch `release-me/<name>`, or `release-me/main` when the release pull
-request is shared, changelog `<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A
-name holds ASCII letters, digits, `-`, `_` and `.` only, does not start with `.` or `-`, does
-not end with `.` or `.lock` and does not contain `..`; anything else is a configuration error
-naming the component and the character, since the name has to survive the tag prefix, the
-branch, the shared pull request title release reads back, the
+`bump-patch-for-minor-pre-major`, `hidden-types`, `files`, `major-tag`, `changelog-source` and
+`changelog`. A key left out of a component falls back to the top-level setting above. A
+repository without `components` is one component named `main` at path `.`, tag prefix `v`,
+branch `release-me/main`, the default shape a repository with no configuration at all already
+has. A configured component gets tag prefix `<name>/v`, branch `release-me/<name>`, or
+`release-me/main` when the release pull request is shared, changelog `<path>/CHANGELOG.md`, and
+a release title `<name> vX.Y.Z`. A name holds ASCII letters, digits, `-`, `_` and `.` only, does
+not start with `.` or `-`, does not end with `.` or `.lock` and does not contain `..`; anything
+else is a configuration error naming the component and the character, since the name has to
+survive the tag prefix, the branch, the shared pull request title release reads back, the
 [Release-Component footer](overrides.md#release-component-footer) and the compare link.
 
 `tag-prefix` replaces the derived prefix, for a component whose existing tags follow another
