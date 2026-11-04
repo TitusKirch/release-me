@@ -177,7 +177,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			"component counts only the files outside the other components' paths")
 	}
 
-	versioning, err := translatePlugins(topValues["plugins"], components, warn)
+	versioning, st, err := translatePlugins(topValues["plugins"], components, warn)
 	if err != nil {
 		return Result{}, err
 	}
@@ -216,7 +216,9 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		}
 	}
 
-	opts := topLevel{versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, extra: extra}
+	opts := topLevel{
+		versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, extra: extra, style: st,
+	}
 	out, err := render(components, opts)
 	if err != nil {
 		return Result{}, err
@@ -566,31 +568,52 @@ func xpathKey(xpath string) (string, bool) {
 	return strings.Join(names, "."), true
 }
 
-// translatePlugins maps release-please's linked-versions plugin to a
-// release-me versioning mode. It releases every component of its group at
-// the group's highest version, changed or not, which is release-me's
-// locked mode when the group is every component.
-func translatePlugins(raw json.RawMessage, components []component, warn func(string, ...any)) (string, error) {
+// style is the top-level changelog style keys the translation writes,
+// carried over from release-please's plugins and settings.
+type style struct {
+	sentenceCase bool
+}
+
+// translatePlugins maps release-please's plugins onto release-me. The
+// linked-versions plugin releases every component of its group at the
+// group's highest version, changed or not, which is release-me's locked
+// mode when the group is every component. The sentence-case plugin is
+// changelog-sentence-case.
+func translatePlugins(raw json.RawMessage, components []component, warn func(string, ...any)) (string, style, error) {
+	var st style
 	if raw == nil {
-		return "", nil
+		return "", st, nil
 	}
 	var plugins []json.RawMessage
 	if err := json.Unmarshal(raw, &plugins); err != nil {
-		return "", fmt.Errorf("migrate: plugins: %w", err)
+		return "", st, fmt.Errorf("migrate: plugins: %w", err)
 	}
 	versioning := ""
 	for _, p := range plugins {
 		var name string
 		if json.Unmarshal(p, &name) == nil {
+			if name == "sentence-case" {
+				st.sentenceCase = true
+				continue
+			}
 			warn("plugins: %s: no release-me equivalent, left out", name)
 			continue
 		}
 		var plugin struct {
-			Type       string   `json:"type"`
-			Components []string `json:"components"`
+			Type         string   `json:"type"`
+			Components   []string `json:"components"`
+			SpecialWords []string `json:"specialWords"`
 		}
 		if err := json.Unmarshal(p, &plugin); err != nil {
-			return "", fmt.Errorf("migrate: plugins: %w", err)
+			return "", st, fmt.Errorf("migrate: plugins: %w", err)
+		}
+		if plugin.Type == "sentence-case" {
+			st.sentenceCase = true
+			if len(plugin.SpecialWords) > 0 {
+				warn("plugins: sentence-case: specialWords: release-me keeps gRPC, npm and any first word "+
+					"already holding an upper case letter as written, %s left out", strings.Join(plugin.SpecialWords, ", "))
+			}
+			continue
 		}
 		if plugin.Type != "linked-versions" {
 			warn("plugins: %s: no release-me equivalent, left out", plugin.Type)
@@ -605,7 +628,7 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 		}
 		versioning = "locked"
 	}
-	return versioning, nil
+	return versioning, st, nil
 }
 
 // labels reads every name in a release-please comma separated label list.
@@ -735,6 +758,7 @@ type topLevel struct {
 	pending    []string
 	tagged     []string
 	extra      []string
+	style      style
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -764,6 +788,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 		add(labels, t, boolean(false))
 	}
 	add(doc, "labels", labels)
+	if top.style.sentenceCase {
+		add(doc, "changelog-sentence-case", boolean(true))
+	}
 
 	// A pre-major rule carried by every component is written once, at the
 	// top level, instead of repeated per component.
