@@ -234,7 +234,7 @@ func ofComponent(name string) string {
 // request, never an ordinary one; this is the same signal the labeled and
 // unlabeled workflow trigger already uses to tell the two apart.
 func isReleasePullRequest(prLabels []string, labels config.Labels) bool {
-	for _, l := range []string{labels.Pending, labels.Tagged, labels.Alpha, labels.Beta, labels.Rc} {
+	for _, l := range append([]string{labels.Pending, labels.Tagged}, labels.PreReleaseLabels()...) {
 		if l != "" && slices.Contains(prLabels, l) {
 			return true
 		}
