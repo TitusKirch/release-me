@@ -78,17 +78,19 @@ body name every component it releases: see
 
 ## Pre-releases
 
-A pre-release type label on the open release pull request, `release: alpha`, `release: beta`
-or `release: rc` by default, turns its next run into a pre-release: version `X.Y.Z-alpha.N`,
+A pre-release type label on the open release pull request, `release: alpha`, `release: beta` or
+`release: rc` by default, turns its next run into a pre-release: version `X.Y.Z-alpha.N`,
 `X.Y.Z-beta.N` or `X.Y.Z-rc.N`. `X.Y.Z` is the version a stable release would get from the
-entries since the last stable tag; pre-release tags never move that base. Exactly one of the
-three labels may be present at a time; two at once is an error naming both. A type whose label
-is set to `false`, or `""`, in `release-me.yaml` is turned off: release-me neither expects that
-label on the repository nor reads it from the pull request, and the guide in the pull request
-body leaves it out. A pull request that already carries the label of a type just turned off
-keeps it as an ordinary label: the next `pr` run returns the version to the stable `X.Y.Z`,
-and `release` leaves that label in place when it swaps `pending` for `tagged`. One name
-configured for two labels is a configuration error.
+entries since the last stable tag; pre-release tags never move that base. A
+[`prerelease-types`](configuration.md#prerelease-types) entry adds a type of any other name,
+`X.Y.Z-next.N` for `next`, selected by its own label, and behaving exactly like the three.
+Exactly one pre-release type label may be present at a time; two at once is an error naming
+both. A type whose label is set to `false`, or `""`, in `release-me.yaml` is turned off:
+release-me neither expects that label on the repository nor reads it from the pull request, and
+the guide in the pull request body leaves it out. A pull request that already carries the label
+of a type just turned off keeps it as an ordinary label: the next `pr` run returns the version
+to the stable `X.Y.Z`, and `release` leaves that label in place when it swaps `pending` for
+`tagged`. One name configured for two labels is a configuration error.
 
 `N` starts at `1` for a type and counts up from the highest `N` an earlier pre-release tag of
 that same type and base version already carries. Switching the label to a different type does
@@ -168,8 +170,13 @@ release-me continues from the existing tags and changelogs. A single root packag
 - the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package where that
   file exists, `node` being release-please's default type, and every `extra-files` entry of
   type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
-- `label` and `release-label` as the `pending` and `tagged` labels, with the pre-release types
-  turned off, since release-please has none;
+- `label` and `release-label` as the `pending` and `tagged` labels;
+- `prerelease-type` as a pre-release type selected by the label `release: <type>`: `alpha`,
+  `beta` or `rc` stays on, any other name becomes a
+  [`prerelease-types`](configuration.md#prerelease-types) entry, and every type no package names
+  is turned off. release-me cuts the pre-release while the release pull request carries that
+  label, not on every release, so this is warned about, as is `prerelease: true`, which has no
+  always-on counterpart;
 - a `linked-versions` plugin over every component as `versioning: locked`: both release every
   component at the family's version, changed or not;
 - `separate-pull-requests`, default `false` in release-please: more than one package without it,
