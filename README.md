@@ -173,6 +173,8 @@ files:
 | `release-pull-request-title` | Title pattern of a component's own release pull request. | `chore(${component}): release v${version}` | No |
 | `release-pull-request-shared-title` | Title pattern of the release pull request every component shares. | `chore: release ${releases}`, locked `chore: release v${version} (${components})` | No |
 | `release-pull-request-draft` | Opens every release pull request as a draft. | `false` | No |
+| `release-pull-request-header` | Free text above every release pull request body. | none | No |
+| `release-pull-request-footer` | Free text below every release pull request body. | none | No |
 | `signoff` | `Name <email>` the release commit carries a `Signed-off-by:` trailer for. | none | No |
 | `draft-until-assets-attach` | Drafts every release instead of publishing it immediately. | `false` | No |
 | `force-tag-creation` | Creates the tag before the release; `false` leaves it to the release's publish. | `true` | No |
