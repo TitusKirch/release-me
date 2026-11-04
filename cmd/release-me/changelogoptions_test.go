@@ -45,9 +45,9 @@ func prChangelog(t *testing.T, f *forgetest.Fake, configYAML string, build func(
 	return section, f.CreatedPullRequests[0].Body
 }
 
-// withPullRequests returns newFake with responses configured for every
+// withLinkedPullRequests returns newFake with responses configured for every
 // pull request in prs, keyed by number.
-func withPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
+func withLinkedPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
 	f := newFake()
 	f.Responses = map[int]forgetest.Response{}
 	for _, pr := range prs {
@@ -57,7 +57,7 @@ func withPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
 }
 
 func TestDoPRLinksCommitsAndTheIssuesAnEntryCloses(t *testing.T) {
-	f := withPullRequests(forge.PullRequest{
+	f := withLinkedPullRequests(forge.PullRequest{
 		Number: 12, Title: "fix: handle the empty case", Body: "The parser no longer panics.\n\nCloses #7",
 		URL: "https://github.com/owner/repo/pull/12",
 	})
