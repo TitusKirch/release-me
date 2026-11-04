@@ -165,9 +165,12 @@ release-me continues from the existing tags and changelogs. A single root packag
 `vX.Y.Z` tags becomes the implicit `main` component instead. It also carries over:
 
 - `bump-minor-pre-major` and `initial-version`;
-- the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package where that
-  file exists, `node` being release-please's default type, and every `extra-files` entry of
-  type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
+- the version file of a `node` (`package.json`), `maven` (`pom.xml`, its project version or
+  else its parent's) or `helm` (`Chart.yaml`) package where that file exists, `node` being
+  release-please's default type. A multi-module `pom.xml` is warned about, since
+  release-please bumped every `pom.xml` below the package;
+- every `extra-files` entry of type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath, of
+  type `xml` with a plain absolute xpath such as `/project/version`, and of type `pom`;
 - `label` and `release-label` as the `pending` and `tagged` labels, with the pre-release types
   turned off, since release-please has none;
 - a `linked-versions` plugin over every component as `versioning: locked`: both release every

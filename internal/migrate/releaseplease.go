@@ -12,10 +12,12 @@ import (
 	"errors"
 	"fmt"
 	stdpath "path"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
+	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"gopkg.in/yaml.v3"
 )
 
@@ -342,6 +344,8 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		if _, err := readFile(stdpath.Join(p.path, "package-lock.json")); err == nil {
 			warn("package %s: package-lock.json: release-please bumped it, release-me does not", p.path)
 		}
+	case "maven":
+		translatePom(&c, p.path, readFile, warn)
 	case "helm":
 		versionFile("Chart.yaml", "helm", "")
 	case "go":
@@ -359,8 +363,40 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	return c, nil
 }
 
+// translatePom carries a maven package's pom.xml over the way
+// release-please's pom.xml updater bumps it: the project's own version, or
+// its parent's where the project inherits its version. release-please bumps
+// every pom.xml below the package; release-me lists its files, so a
+// multi-module project is warned about, each module's pom.xml to be added
+// by hand.
+func translatePom(c *component, pkgPath string, readFile ReadFile, warn func(string, ...any)) {
+	path := stdpath.Join(pkgPath, "pom.xml")
+	data, err := readFile(path)
+	if err != nil {
+		warn("package %s: release-type maven: %s does not exist, left out of files", pkgPath, path)
+		return
+	}
+	key := ""
+	for _, k := range []string{"project.version", "project.parent.version"} {
+		if _, err := updater.UpdateXML(string(data), k, "0.0.0"); err == nil {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		warn("package %s: release-type maven: %s has no project or parent version, left out of files", pkgPath, path)
+		return
+	}
+	c.files = append(c.files, file{path: path, updater: updater.XML, key: key})
+	if strings.Contains(string(data), "<modules>") {
+		warn("package %s: release-type maven: release-please bumped every pom.xml below the package, "+
+			"only %s is carried over, add each module's pom.xml under files", pkgPath, path)
+	}
+}
+
 // translateExtraFiles carries over the extra-files entries a typed updater
-// can bump: json, yaml and toml files whose jsonpath is a plain dotted path.
+// can bump: json, yaml and toml files whose jsonpath is a plain dotted path,
+// xml files whose xpath is a plain absolute path, and pom files.
 func translateExtraFiles(pkgPath string, raw json.RawMessage, warn func(string, ...any)) ([]file, error) {
 	var entries []json.RawMessage
 	if err := json.Unmarshal(raw, &entries); err != nil {
@@ -378,19 +414,66 @@ func translateExtraFiles(pkgPath string, raw json.RawMessage, warn func(string, 
 			Type     string `json:"type"`
 			Path     string `json:"path"`
 			JSONPath string `json:"jsonpath"`
+			XPath    string `json:"xpath"`
 		}
 		if err := json.Unmarshal(e, &typed); err != nil {
 			return nil, fmt.Errorf("migrate: package %s: extra-files: %w", pkgPath, err)
 		}
-		key, ok := strings.CutPrefix(typed.JSONPath, "$.")
-		if !slices.Contains([]string{"json", "yaml", "toml"}, typed.Type) || !ok || strings.ContainsAny(key, "[]*") {
+		path := repoPath(pkgPath, typed.Path)
+		var (
+			key string
+			ok  bool
+		)
+		name := typed.Type
+		switch typed.Type {
+		case "json", "yaml", "toml":
+			key, ok = strings.CutPrefix(typed.JSONPath, "$.")
+			ok = ok && !strings.ContainsAny(key, "[]*")
+		case "xml":
+			key, ok = xpathKey(typed.XPath)
+		case "pom":
+			// release-please's pom type bumps the project's own version.
+			name, key, ok = updater.XML, "project.version", true
+		}
+		if !ok {
+			at := typed.JSONPath
+			if typed.XPath != "" {
+				at = typed.XPath
+			}
 			warn("package %s: extra-files: %s: type %q at %q has no typed updater, add it under files",
-				pkgPath, typed.Path, typed.Type, typed.JSONPath)
+				pkgPath, typed.Path, typed.Type, at)
 			continue
 		}
-		files = append(files, file{path: repoPath(pkgPath, typed.Path), updater: typed.Type, key: key})
+		files = append(files, file{path: path, updater: name, key: key})
 	}
 	return files, nil
+}
+
+// xpathStep matches one step of an absolute XPath the xml updater can
+// follow: an element name, with or without a namespace prefix, or the
+// namespace-blind *[local-name()="name"] form release-please's own pom.xml
+// updater uses.
+var xpathStep = regexp.MustCompile(`^(?:(?:[A-Za-z_][\w-]*:)?([A-Za-z_][\w-]*)|\*\[local-name\(\)\s*=\s*(?:"([A-Za-z_][\w-]*)"|'([A-Za-z_][\w-]*)')\])$`)
+
+// xpathKey turns an absolute XPath of plain element steps, such as
+// "/project/version", into the xml updater's dotted key, "project.version".
+// Any other XPath, one searching the whole document with "//", or one with
+// a predicate or an attribute, reports false.
+func xpathKey(xpath string) (string, bool) {
+	rest, ok := strings.CutPrefix(xpath, "/")
+	if !ok || rest == "" {
+		return "", false
+	}
+	steps := strings.Split(rest, "/")
+	names := make([]string, 0, len(steps))
+	for _, step := range steps {
+		m := xpathStep.FindStringSubmatch(step)
+		if m == nil {
+			return "", false
+		}
+		names = append(names, m[1]+m[2]+m[3])
+	}
+	return strings.Join(names, "."), true
 }
 
 // translatePlugins maps release-please's linked-versions plugin to a
