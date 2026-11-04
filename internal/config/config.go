@@ -1207,6 +1207,12 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: versioning %q is not independent, locked or linked", path, *r.Versioning)
 		}
 	}
+	if cfg.VersioningStrategy == version.StrategyServicePack && cfg.Versioning != VersioningIndependent {
+		return Config{}, fmt.Errorf(
+			"config: parse %s: versioning-strategy service-pack applies to versioning independent only, "+
+				"a %s family shares one version line", path, cfg.Versioning,
+		)
+	}
 	if cfg.Versioning == VersioningLocked {
 		cfg.ReleasePullRequest = ReleasePullRequestShared
 	}
