@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
+	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 	"gopkg.in/yaml.v3"
 )
 
@@ -66,7 +67,7 @@ var packageKeys = []string{
 // level and that this translation reads or deliberately leaves out.
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "separate-pull-requests", "$schema",
-	"bootstrap-sha", "last-release-sha",
+	"bootstrap-sha", "last-release-sha", "pull-request-header", "pull-request-footer",
 }
 
 // FromReleasePlease translates release-please-config.json and
@@ -208,7 +209,17 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		}
 	}
 
-	out, err := render(components, versioning, sharedPR, pending, tagged)
+	opts := topLevel{versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged}
+	for _, text := range []struct {
+		key string
+		dst *string
+	}{{"pull-request-header", &opts.header}, {"pull-request-footer", &opts.footer}} {
+		if *text.dst, err = frameText(topValues[text.key], text.key, warn); err != nil {
+			return Result{}, err
+		}
+	}
+
+	out, err := render(components, opts)
 	if err != nil {
 		return Result{}, err
 	}
@@ -435,6 +446,25 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 	return versioning, nil
 }
 
+// frameText reads release-please's pull-request-header or
+// pull-request-footer, carried over as release-pull-request-header or
+// release-pull-request-footer. A text release-me refuses, one carrying what
+// a body is read back by, is warned about and left out. "" when raw is nil.
+func frameText(raw json.RawMessage, key string, warn func(string, ...any)) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return "", fmt.Errorf("migrate: %s: %w", key, err)
+	}
+	if err := releasepr.CheckFrameText(text); err != nil {
+		warn("%s: %v, left out", key, err)
+		return "", nil
+	}
+	return text, nil
+}
+
 // label reads a release-please label key, a comma separated list. release-me
 // carries one label per role, so the first one is kept.
 func label(raw json.RawMessage, fallback, key string, warn func(string, ...any)) (string, error) {
@@ -509,26 +539,43 @@ func repoPath(pkgPath, file string) string {
 	return stdpath.Join(pkgPath, file)
 }
 
+// topLevel is every top-level release-me key the translation writes besides
+// the components.
+type topLevel struct {
+	versioning string
+	sharedPR   bool
+	pending    string
+	tagged     string
+	header     string
+	footer     string
+}
+
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
 // the implicit main component and needs no components key; everything else
 // is a components mapping in release-please's package order, carrying only
 // the keys whose value differs from what release-me would derive.
-func render(components []component, versioning string, sharedPR bool, pending, tagged string) ([]byte, error) {
+func render(components []component, top topLevel) ([]byte, error) {
 	doc := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(m *yaml.Node, key string, value *yaml.Node) {
 		m.Content = append(m.Content, scalar(key), value)
 	}
 
 	add(doc, "changelog-source", scalar("all"))
-	if versioning != "" {
-		add(doc, "versioning", scalar(versioning))
+	if top.versioning != "" {
+		add(doc, "versioning", scalar(top.versioning))
 	}
-	if sharedPR {
+	if top.sharedPR {
 		add(doc, "release-pull-request", scalar("shared"))
 	}
+	if top.header != "" {
+		add(doc, "release-pull-request-header", scalar(top.header))
+	}
+	if top.footer != "" {
+		add(doc, "release-pull-request-footer", scalar(top.footer))
+	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
-	add(labels, "pending", scalar(pending))
-	add(labels, "tagged", scalar(tagged))
+	add(labels, "pending", scalar(top.pending))
+	add(labels, "tagged", scalar(top.tagged))
 	for _, t := range []string{"alpha", "beta", "rc"} {
 		add(labels, t, boolean(false))
 	}
