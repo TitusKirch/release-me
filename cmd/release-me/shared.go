@@ -272,7 +272,7 @@ func sharedMembers(
 			if released && !ok && slices.Contains(dependents, fm.comp.Name) {
 				// A dependent joins the family's release at the family's
 				// version, the one version line linked shares.
-				rel, ok = release{version: familyResult, hiddenTypes: fm.comp.HiddenTypes}, true
+				rel, ok = release{version: familyResult, options: changelogOptions(fm.comp)}, true
 				if fm.ownHasTag {
 					rel.fromTag = fm.ownTag
 				}

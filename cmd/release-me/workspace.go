@@ -114,7 +114,7 @@ func dependencyRelease(ctx context.Context, dir string, comp config.ResolvedComp
 	// changes, which those rules are for, are none.
 	result, _, _ := version.Next(last, hasTag, []version.Change{{Type: "fix"}}, version.Rules{InitialVersion: comp.InitialVersion})
 	result.Reason = "workspace dependency"
-	return release{version: result, hiddenTypes: comp.HiddenTypes, fromTag: since}, nil
+	return release{version: result, options: changelogOptions(comp), fromTag: since}, nil
 }
 
 // workspaceUpdates returns the manifest updates and changelog entries that

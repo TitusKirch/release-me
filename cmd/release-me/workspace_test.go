@@ -139,6 +139,26 @@ func TestNodeWorkspaceReleasesADependentWithAPatchWhateverTheVersioningRules(t *
 	}
 }
 
+func TestNodeWorkspaceRendersADependentsEntriesWithItsChangelogOptions(t *testing.T) {
+	for _, head := range []string{"release-pull-request: shared\n", "versioning: linked\nrelease-pull-request: shared\n"} {
+		t.Run(head, func(t *testing.T) {
+			dir, origin, cfg := newNodeWorkspaceRepo(t, head+"workspaces: [node]\n"+
+				"changelog-sections:\n  - type: feat\n    section: New\n  - type: fix\n    section: Fixes\n")
+
+			f := newPRFake(origin)
+			var stdout bytes.Buffer
+			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+				t.Fatalf("doPR() error = %v", err)
+			}
+
+			got := showBareFile(t, origin, "release-me/main", "packages/ui/CHANGELOG.md")
+			if !strings.Contains(got, "### Fixes\n\n- **deps:** update @acme/core to ") || strings.Contains(got, "### Bug Fixes") {
+				t.Fatalf("packages/ui/CHANGELOG.md = %q, want the dependency entry under the configured Fixes section", got)
+			}
+		})
+	}
+}
+
 func TestNodeWorkspaceMovesDependenciesInALockedFamily(t *testing.T) {
 	dir, origin, cfg := newNodeWorkspaceRepo(t, "versioning: locked\nworkspaces: [node]\n")
 
