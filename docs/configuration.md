@@ -187,6 +187,14 @@ See [release](commands.md#release) for what `true` changes, and
 setting needs: `publish.yaml`'s own webhook-triggered asset step for `false`, `release.yaml`
 attaching and publishing the release itself for `true`.
 
+## `include-v-in-release-name`
+
+Keeps the `v` before the version in the GitHub release's name, default `true`: `vX.Y.Z` for
+the implicit `main` component, `<name> vX.Y.Z` for a configured one. `false` names it
+`X.Y.Z` or `<name> X.Y.Z`. Only the release's name changes: the tag keeps its prefix, and the
+release pull request title, which `release` reads the version back from, keeps its `v`. A
+component overrides it through its own `include-v-in-release-name` key.
+
 ## `comment-mention`
 
 The mention prefix a comment on the release pull request names to issue a `release-as` or
@@ -196,7 +204,8 @@ The mention prefix a comment on the release pull request names to issue a `relea
 ## `components`
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
-`hidden-types`, `files`, `major-tag`, `changelog-source` and `changelog`. A key left out of a
+`hidden-types`, `files`, `major-tag`, `changelog-source`, `include-v-in-release-name` and
+`changelog`. A key left out of a
 component falls back to the top-level setting above. A repository without `components` is one
 component named `main` at path `.`, tag prefix `v`, branch `release-me/main`, the default
 shape a repository with no configuration at all already has. A configured component gets tag

@@ -112,7 +112,9 @@ caller, such as a workflow step that still needs to attach binary assets, publis
 label swap removes `pending`, and the matching pre-release type label when the version carries
 one, replacing both with `tagged`. The implicit `main` component tags `vX.Y.Z` and names the
 release after the tag, today's shape; a configured component tags `<name>/vX.Y.Z`, or its
-`tag-prefix` followed by the version, and names the release `<name> vX.Y.Z`. A tag that already
+`tag-prefix` followed by the version, and names the release `<name> vX.Y.Z`, both without the
+`v` under [`include-v-in-release-name: false`](configuration.md#include-v-in-release-name). A
+tag that already
 exists, left over from an earlier, interrupted run, is not an error: the release and the label
 swap still happen, so the pull request does not stay pending forever, and the run reports it as
 already tagged.
@@ -165,6 +167,8 @@ release-me continues from the existing tags and changelogs. A single root packag
 `vX.Y.Z` tags becomes the implicit `main` component instead. It also carries over:
 
 - `bump-minor-pre-major` and `initial-version`;
+- `include-v-in-release-name`, at the top level when every package carries the same value, on
+  the component otherwise;
 - the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package where that
   file exists, `node` being release-please's default type, and every `extra-files` entry of
   type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
