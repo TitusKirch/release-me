@@ -212,6 +212,22 @@ A team that turns the guide off finds everything it says documented here:
 
 `migrate` leaves the key out, so a migrated repository keeps the guide.
 
+## `release-pull-request-draft`
+
+Opens every release pull request as a draft, default `false`:
+
+```yaml
+release-pull-request-draft: true
+```
+
+GitHub refuses to merge a draft until someone marks it ready for review, so a release needs
+that one deliberate click on top of the merge. The key applies when `pr` opens a release pull
+request; one already open keeps its state, draft or ready, through every update, and changing
+the key never converts it. `release` reads a merged draft exactly like any other pull request.
+GitHub offers drafts on public repositories and on private ones with a paid plan; where it
+does not, creating the pull request fails with the forge's error and `pr` reports it, the
+release branch already pushed.
+
 ## `draft-until-assets-attach`
 
 Drafts every release instead of publishing it immediately, default `false`. There is no
