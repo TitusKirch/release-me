@@ -3,8 +3,9 @@
 
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
-// changelog, changelog-source, labels, author, major-tag, versioning,
-// draft-until-assets-attach, comment-mention and components.
+// changelog, changelog-source, the changelog style keys ChangelogStyle
+// lists, labels, author, major-tag, versioning, draft-until-assets-attach,
+// comment-mention and components.
 package config
 
 import (
@@ -17,6 +18,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ostendorf-cloud/release-me/internal/changelog"
 	"github.com/ostendorf-cloud/release-me/internal/conventional"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"gopkg.in/yaml.v3"
@@ -188,6 +190,15 @@ type File struct {
 	Key     string
 }
 
+// ChangelogStyle is the top-level keys that shape how a changelog line
+// renders, the same for every component.
+type ChangelogStyle struct {
+	// DateFormat is "changelog-date-format", "" by default for
+	// "%Y-%m-%d": the strftime expression a version heading's date
+	// renders in.
+	DateFormat string
+}
+
 // Labels is the "labels" key: the label names release-me expects on the
 // repository. Alpha, Beta and Rc select a pre-release type on the release
 // pull request; Pending and Tagged apply to every release, stable or not.
@@ -226,8 +237,12 @@ type Config struct {
 	// constants. A component overrides it through its own
 	// "changelog-source" key.
 	ChangelogSource string
-	Labels          Labels
-	Author          Author
+	// ChangelogStyle is the top-level keys that shape every changelog
+	// line. There is no per-component override: every component a shared
+	// release pull request carries renders alike.
+	ChangelogStyle ChangelogStyle
+	Labels         Labels
+	Author         Author
 	// MajorTag is the top-level "major-tag" key: when true, a stable
 	// release moves the major tag "vX" to the release commit. A component
 	// overrides it through its own "major-tag" key.
@@ -318,6 +333,8 @@ type ResolvedComponent struct {
 	// ChangelogSource is one of the ChangelogSource* constants: which
 	// commits become this component's changelog entries.
 	ChangelogSource string
+	// ChangelogStyle is the top level's, the same for every component.
+	ChangelogStyle ChangelogStyle
 }
 
 // Resolve returns the components a command should loop over, in
@@ -339,6 +356,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
 			ChangelogSource:   cfg.ChangelogSource,
+			ChangelogStyle:    cfg.ChangelogStyle,
 		}}
 	}
 
@@ -367,6 +385,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
 			ChangelogSource:   cfg.ChangelogSource,
+			ChangelogStyle:    cfg.ChangelogStyle,
 		}
 		if c.InitialVersion != nil {
 			rc.InitialVersion = *c.InitialVersion
@@ -453,14 +472,15 @@ type raw struct {
 	Files                    *[]rawFile `yaml:"files"`
 	Changelog                *string    `yaml:"changelog"`
 	ChangelogSource          *string    `yaml:"changelog-source"`
+	ChangelogDateFormat      *string    `yaml:"changelog-date-format"`
 	Labels                   *rawLabels `yaml:"labels"`
 	Author                   *rawAuthor `yaml:"author"`
 	MajorTag                 *bool      `yaml:"major-tag"`
 	Versioning               *string    `yaml:"versioning"`
 	ReleasePullRequest       *string    `yaml:"release-pull-request"`
-	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
 	CommentMention           *string    `yaml:"comment-mention"`
+	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -576,6 +596,12 @@ func Load(path string) (cfg Config, err error) {
 			)
 		}
 		cfg.ChangelogSource = *r.ChangelogSource
+	}
+	if r.ChangelogDateFormat != nil {
+		if err := changelog.ValidateDateFormat(*r.ChangelogDateFormat); err != nil {
+			return Config{}, fmt.Errorf("config: parse %s: changelog-date-format %q %w", path, *r.ChangelogDateFormat, err)
+		}
+		cfg.ChangelogStyle.DateFormat = *r.ChangelogDateFormat
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {
