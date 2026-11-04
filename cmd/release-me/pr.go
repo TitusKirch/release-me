@@ -297,7 +297,7 @@ func doPRComponent(
 			return nil
 		}
 
-		if err := plan.write(ctx, cfg, f, owner, repoName, existing, comp.Branch, date, releasepr.CommitMessage(title, cfg.Signoff)); err != nil {
+		if err := plan.write(ctx, cfg, f, owner, repoName, existing, comp.Branch, date, releasepr.CommitMessage(title, cfg.Signoff), logger); err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
 
@@ -486,7 +486,7 @@ func doPRLocked(
 		releasepr.TitlePatternMarker(cfg.SharedTitlePatterns()[0], cfg.SharedTitleKind())) +
 		releasepr.DateMarker(date, cfg.ChangelogStyle.DateFormat)
 
-	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, "locked family", names, existing, plan, date, title, body, dryRun, stdout)
+	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, "locked family", names, existing, plan, date, title, body, logger, dryRun, stdout)
 }
 
 // publishSharedPR creates, updates or leaves alone the one release pull
@@ -497,7 +497,7 @@ func doPRLocked(
 // components names every component the pull request releases.
 func publishSharedPR(
 	ctx context.Context, cfg config.Config, f forge.Forge, owner, repoName, base, branch, who string, components []string,
-	existing *forge.PullRequest, plan *releasePlan, date time.Time, title, body string, dryRun bool, stdout io.Writer,
+	existing *forge.PullRequest, plan *releasePlan, date time.Time, title, body string, logger *slog.Logger, dryRun bool, stdout io.Writer,
 ) error {
 	switch {
 	case existing != nil && !plan.changed && body == existing.Body && title == existing.Title:
@@ -531,7 +531,7 @@ func publishSharedPR(
 			return nil
 		}
 
-		if err := plan.write(ctx, cfg, f, owner, repoName, existing, branch, date, releasepr.CommitMessage(title, cfg.Signoff)); err != nil {
+		if err := plan.write(ctx, cfg, f, owner, repoName, existing, branch, date, releasepr.CommitMessage(title, cfg.Signoff), logger); err != nil {
 			return fmt.Errorf("release-me: %s: %w", who, err)
 		}
 
@@ -1078,9 +1078,13 @@ func headingReadsBack(version, compareURL string) bool {
 
 // write commits the changelog update and the bumped files onto branch
 // through the forge's API, f.CommitBranch, never through a local commit
-// and push: the forge signs a commit it creates itself, so a ruleset
-// requiring signed commits accepts the release pull request, which a
-// local commit made with a token that has no signing key never satisfies.
+// and push: the forge signs a commit it creates itself, GitHub for a
+// GitHub App installation token only, so a ruleset requiring signed
+// commits accepts the release pull request, which a local commit made
+// with a token that has no signing key never satisfies. A commit the
+// forge left unsigned, the outcome of a personal access token, is
+// reported through logger by warnUnsigned, never an error: the branch
+// is already written and only a ruleset decides whether it matters.
 // The commit's parent is the commit the temporary worktree planned in p is
 // checked out at, dir's HEAD, the same one a local commit there would get,
 // and it carries exactly the content a local commit would: every
@@ -1092,6 +1096,7 @@ func headingReadsBack(version, compareURL string) bool {
 // leaves a commit with a custom author or committer unsigned.
 func (p *releasePlan) write(
 	ctx context.Context, cfg config.Config, f forge.Forge, owner, repoName string, existing *forge.PullRequest, branch string, date time.Time, commitMessage string,
+	logger *slog.Logger,
 ) error {
 	parent, err := gitOutput(ctx, p.tmp, "rev-parse", "HEAD")
 	if err != nil {
@@ -1135,13 +1140,40 @@ func (p *releasePlan) write(
 	if existing != nil {
 		commit.ExpectedHead = existing.HeadSHA
 	}
-	if _, err := f.CommitBranch(ctx, owner, repoName, commit); err != nil {
+	sha, err := f.CommitBranch(ctx, owner, repoName, commit)
+	if err != nil {
 		if existing != nil {
 			return fmt.Errorf("release-me: commit release branch %s for pull request #%d: %w", branch, existing.Number, err)
 		}
 		return fmt.Errorf("release-me: commit release branch %s: %w", branch, err)
 	}
+	warnUnsigned(ctx, f, owner, repoName, branch, sha, logger)
 	return nil
+}
+
+// warnUnsigned reads the signature the forge verified on sha, the commit
+// just written to branch, and logs a warning when it has none: GitHub
+// signs a commit created through its API only for a GitHub App
+// installation token, so a personal access token or an OAuth token
+// yields an unsigned one, and a ruleset requiring signed commits then
+// blocks the release pull request from merging. A signature that cannot
+// be read is a warning too, never an error, since the commit itself
+// landed.
+func warnUnsigned(ctx context.Context, f forge.Forge, owner, repoName, branch, sha string, logger *slog.Logger) {
+	sig, err := f.CommitSignature(ctx, owner, repoName, sha)
+	if err != nil {
+		logger.Warn("could not check whether the release commit is signed",
+			"branch", branch, "commit", sha, "error", err)
+		return
+	}
+	if sig.Verified {
+		logger.Debug("release commit is signed", "branch", branch, "commit", sha)
+		return
+	}
+	logger.Warn("the release commit is unsigned: the forge signs a commit it creates only for a GitHub App "+
+		"installation token, a user token such as a personal access token yields an unsigned one, and a "+
+		"ruleset requiring signed commits blocks the release pull request from merging",
+		"branch", branch, "commit", sha, "reason", sig.Reason)
 }
 
 // executableAt reports whether path is tracked as an executable file at
