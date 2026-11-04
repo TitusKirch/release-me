@@ -186,7 +186,7 @@ func doPRComponent(
 	}
 
 	if existing == nil {
-		pending, err := mergedPendingRelease(ctx, f, owner, repoName, comp.Branch, cfg.Labels.Pending, logger)
+		pending, err := mergedPendingRelease(ctx, f, owner, repoName, comp.Branch, cfg, logger)
 		if err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
@@ -368,7 +368,7 @@ func doPRLocked(
 	}
 
 	if existing == nil {
-		pending, err := mergedPendingRelease(ctx, f, owner, repoName, branch, cfg.Labels.Pending, logger)
+		pending, err := mergedPendingRelease(ctx, f, owner, repoName, branch, cfg, logger)
 		if err != nil {
 			return fmt.Errorf("release-me: locked family: %w", err)
 		}
@@ -593,7 +593,9 @@ func lockedPreReleaseEntries(
 }
 
 // mergedPendingRelease reports whether branch already carries a closed,
-// merged pull request still carrying every one of pendingLabels: a release already
+// merged pull request still carrying every one of the pending labels, or a
+// tagged release whose deferred tag is absent and whose release remains an
+// unpublished draft. The pending labels signal a release already
 // decided, not yet tagged. doRelease recognizes the exact same pull
 // request by the exact same signal to tag it, so as long as it still
 // carries the label, nothing else may release in its place.
@@ -608,15 +610,71 @@ func lockedPreReleaseEntries(
 // stays blind to that tag until the next checkout. Recognizing the
 // merged, still pending pull request directly, the same way doRelease
 // already does, needs no local git state at all.
-func mergedPendingRelease(ctx context.Context, f forge.Forge, owner, repoName, branch string, pendingLabels []string, logger *slog.Logger) (bool, error) {
+func mergedPendingRelease(ctx context.Context, f forge.Forge, owner, repoName, branch string, cfg config.Config, logger *slog.Logger) (bool, error) {
 	closed, err := f.PullRequests(ctx, owner, repoName, branch, "closed")
 	if err != nil {
 		return false, fmt.Errorf("list closed pull requests on %s: %w", branch, err)
 	}
 	for _, pr := range closed {
-		if pr.Merged && tagrelease.HasAll(pr.Labels, pendingLabels) {
+		if pr.Merged && cfg.DraftUntilAssetsAttach && tagrelease.HasAll(pr.Labels, cfg.Labels.Tagged) {
+			deferred, err := unpublishedDeferredRelease(ctx, f, owner, repoName, cfg, pr)
+			if err != nil {
+				return false, err
+			}
+			if deferred {
+				logger.Debug("merged release has an unpublished deferred tag, deferring to release", "head", branch, "number", pr.Number)
+				return true, nil
+			}
+		}
+		if pr.Merged && tagrelease.HasAll(pr.Labels, cfg.Labels.Pending) {
 			logger.Debug("merged pull request still pending, deferring to release",
 				"head", branch, "number", pr.Number)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// unpublishedDeferredRelease checks the version the merged PR actually
+// released, rather than the next version recomputed from a still-missing tag.
+func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoName string, cfg config.Config, pr forge.PullRequest) (bool, error) {
+	versions := map[string]string{}
+	for _, comp := range cfg.Resolve() {
+		if v, ok := tagrelease.VersionFromTitle(pr.Title, comp.Name); ok {
+			versions[comp.Name] = v
+		}
+	}
+	if titled, ok := tagrelease.ParseSharedTitle(pr.Title); ok {
+		for _, r := range titled {
+			versions[r.Name] = r.Version
+		}
+	}
+	if v, names, ok := tagrelease.VersionFromLockedTitle(pr.Title); ok {
+		for _, name := range names {
+			versions[name] = v
+		}
+	}
+	for _, comp := range cfg.Resolve() {
+		v := versions[comp.Name]
+		if comp.ForceTagCreation || v == "" {
+			continue
+		}
+		tag := comp.TagPrefix + v
+		exists, err := f.TagExists(ctx, owner, repoName, tag)
+		if err != nil {
+			return false, fmt.Errorf("component %s pull request #%d: check deferred tag %s: %w", comp.Name, pr.Number, tag, err)
+		}
+		if exists {
+			continue
+		}
+		rel, err := f.Release(ctx, owner, repoName, tag)
+		if errors.Is(err, forge.ErrReleaseNotFound) {
+			continue
+		}
+		if err != nil {
+			return false, fmt.Errorf("component %s pull request #%d: check deferred draft %s: %w", comp.Name, pr.Number, tag, err)
+		}
+		if rel.Draft {
 			return true, nil
 		}
 	}
