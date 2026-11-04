@@ -490,6 +490,8 @@ func TestReplyTemplatesNeverReTriggerTheMention(t *testing.T) {
 func TestIsReleasePullRequest(t *testing.T) {
 	t.Parallel()
 	labels := config.Default().Labels
+	labels.Extra = []string{"team: platform"}
+	labels.PreReleaseTypes = []config.PreReleaseType{{Type: "next", Label: "release: next"}}
 	cases := []struct {
 		name     string
 		prLabels []string
@@ -498,6 +500,8 @@ func TestIsReleasePullRequest(t *testing.T) {
 		{name: "pending", prLabels: []string{"release: pending"}, want: true},
 		{name: "tagged", prLabels: []string{"release: tagged"}, want: true},
 		{name: "alpha", prLabels: []string{"release: alpha"}, want: true},
+		{name: "a free pre-release type's label", prLabels: []string{"release: next"}, want: true},
+		{name: "an extra label alone", prLabels: []string{"team: platform"}, want: false},
 		{name: "none of the release labels", prLabels: []string{"bug"}, want: false},
 		{name: "no labels at all", prLabels: nil, want: false},
 	}
@@ -508,5 +512,17 @@ func TestIsReleasePullRequest(t *testing.T) {
 				t.Fatalf("isReleasePullRequest(%v) = %v, want %v", tc.prLabels, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestIsReleasePullRequestNeedsEveryPendingLabelOfAList(t *testing.T) {
+	t.Parallel()
+	labels := config.Default().Labels
+	labels.Pending = []string{"autorelease: pending", "release: pending"}
+	if isReleasePullRequest([]string{"autorelease: pending"}, labels) {
+		t.Fatal("isReleasePullRequest() = true for one of two pending labels, want false")
+	}
+	if !isReleasePullRequest([]string{"release: pending", "autorelease: pending"}, labels) {
+		t.Fatal("isReleasePullRequest() = false for both pending labels, want true")
 	}
 }

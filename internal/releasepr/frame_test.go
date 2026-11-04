@@ -41,7 +41,7 @@ func TestFrameNeverChangesWhatABodyReadsBack(t *testing.T) {
 	shared := "#### api\n\n## v1.3.0 (2026-03-14)\n\n### Features\n\n- add the export endpoint\n\n" +
 		"#### web\n\n## v0.4.1 (2026-03-14)\n\n### Bug Fixes\n\n- fix the login redirect\n"
 	releases := []releasepr.Release{{Name: "api", Version: "1.3.0", Tag: "api/v1.3.0"}, {Name: "web", Version: "0.4.1", Tag: "web/v0.4.1"}}
-	labels := releasepr.Guide{Show: true, Labels: releasepr.GuideLabels{Tagged: "release: tagged", Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc"}}
+	labels := releasepr.Guide{Show: true, Labels: releasepr.GuideLabels{Tagged: []string{"release: tagged"}, Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc"}}
 	bodies := map[string]string{
 		"single": releasepr.Body("1.2.3", "v1.2.3", labels, "Run the migration first.", "1.2.4", section),
 		"shared": releasepr.SharedBody(releases, labels, true, "Run the migration first.", "api 1.3.0", shared),

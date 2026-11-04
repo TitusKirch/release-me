@@ -129,7 +129,7 @@ func TestBodyRendersTheRealTagAndConfiguredLabelNames(t *testing.T) {
 func TestBodyListsAConfiguredPreReleaseTypeAfterRc(t *testing.T) {
 	t.Parallel()
 	labels := releasepr.GuideLabels{
-		Tagged: "release: tagged", Alpha: "release: alpha", Rc: "release: rc",
+		Tagged: []string{"release: tagged"}, Alpha: "release: alpha", Rc: "release: rc",
 		Others: []string{"release: next", "release: preview"},
 	}
 
@@ -141,10 +141,29 @@ func TestBodyListsAConfiguredPreReleaseTypeAfterRc(t *testing.T) {
 	}
 }
 
+func TestBodyNamesEveryTaggedLabelBesideTheFreePreReleaseTypes(t *testing.T) {
+	t.Parallel()
+	labels := releasepr.GuideLabels{
+		Tagged: []string{"autorelease: tagged", "release: tagged"}, Alpha: "release: alpha",
+		Others: []string{"release: next"},
+	}
+
+	got := releasepr.Body("0.4.0", "v0.4.0", releasepr.Guide{Show: true, Labels: labels}, "", "", "## v0.4.0\n")
+
+	for _, want := range []string{
+		"the labels to `autorelease: tagged` and `release: tagged`",
+		"`release: alpha` or `release: next`",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Body() = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
 func TestBodyLeavesAConfiguredPreReleaseTypeOutWithTheGuideOff(t *testing.T) {
 	t.Parallel()
 	labels := releasepr.GuideLabels{
-		Tagged: "release: tagged", Alpha: "release: alpha", Rc: "release: rc",
+		Tagged: []string{"release: tagged"}, Alpha: "release: alpha", Rc: "release: rc",
 		Others: []string{"release: next"},
 	}
 

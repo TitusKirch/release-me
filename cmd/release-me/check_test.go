@@ -91,7 +91,7 @@ func TestDoCheckReportsEveryMissingItem(t *testing.T) {
 		{
 			name: "reports a missing label of a configured prerelease type",
 			cfg: config.Config{Labels: config.Labels{
-				Pending: "release: pending", Tagged: "release: tagged",
+				Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"},
 				PreReleaseTypes: []config.PreReleaseType{{Type: "next", Label: "release: next"}},
 			}},
 			token:      "a-token",

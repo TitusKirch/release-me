@@ -1330,6 +1330,16 @@ func TestLoadRejectsAnInvalidPreReleaseType(t *testing.T) {
 			want:    `labels.rc and prerelease-types.next are both "release: rc"`,
 		},
 		{
+			name:    "rejects an extra label a prerelease type selects with",
+			content: "labels:\n  extra: [\"team: platform\", \"release: next\"]\nprerelease-types:\n  next: \"release: next\"\n",
+			want:    `labels.extra and prerelease-types.next are both "release: next"`,
+		},
+		{
+			name:    "rejects a pending label in a list a prerelease type selects with",
+			content: "labels:\n  pending: [\"autorelease: pending\", \"release: next\"]\nprerelease-types:\n  next: \"release: next\"\n",
+			want:    `labels.pending and prerelease-types.next are both "release: next"`,
+		},
+		{
 			name:    "rejects one label for two prerelease types",
 			content: "prerelease-types:\n  next: \"release: pre\"\n  preview: \"release: pre\"\n",
 			want:    `prerelease-types.next and prerelease-types.preview are both "release: pre"`,

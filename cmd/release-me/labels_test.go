@@ -26,8 +26,8 @@ func withLabelLists(cfg *config.Config, f *forgetest.Fake) {
 func TestLabelListsOpenTagAndReleaseEveryReleasePullRequest(t *testing.T) {
 	for _, family := range prFamilies {
 		t.Run(family.name, func(t *testing.T) {
-			dir, _, cfg := family.repo(t)
-			f := newFake()
+			dir, origin, cfg := family.repo(t)
+			f := newPRFake(origin)
 			withLabelLists(&cfg, f)
 			var stdout bytes.Buffer
 			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
@@ -63,7 +63,7 @@ func TestLabelListsOpenTagAndReleaseEveryReleasePullRequest(t *testing.T) {
 
 func TestDoPRAddsBackOnlyThePendingLabelAReleasePullRequestLost(t *testing.T) {
 	dir, origin, cfg := newSingleComponentRepo(t)
-	f := newFake()
+	f := newPRFake(origin)
 	withLabelLists(&cfg, f)
 	var first bytes.Buffer
 	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &first); err != nil {
@@ -86,8 +86,8 @@ func TestDoPRAddsBackOnlyThePendingLabelAReleasePullRequestLost(t *testing.T) {
 }
 
 func TestDoPRRefusesToStartWhileAnExtraLabelIsMissing(t *testing.T) {
-	dir, _, cfg := newSingleComponentRepo(t)
-	f := newFake()
+	dir, origin, cfg := newSingleComponentRepo(t)
+	f := newPRFake(origin)
 	withLabelLists(&cfg, f)
 	f.RepoLabels = f.RepoLabels[:len(f.RepoLabels)-1]
 	var stdout bytes.Buffer
