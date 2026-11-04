@@ -326,7 +326,7 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 			wantFiles: []config.File{{Path: "web/MODULE.bazel", Updater: "bazel"}},
 		},
 		{
-			name:     "php bumps composer.json's version and warns about a VERSION file",
+			name:     "php bumps composer.json's version and a VERSION file",
 			settings: `"release-type": "php"`,
 			repo: map[string]string{
 				"web/composer.json": "{\n  \"name\": \"acme/notes\",\n  \"version\": \"1.4.0\"\n}\n",
@@ -334,9 +334,18 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 			},
 			wantFiles: []config.File{
 				{Path: "web/composer.json", Updater: "json", Key: "version"},
+				{Path: "web/VERSION", Updater: "plain"},
 			},
-			wantWarnings: []string{
-				"package web: VERSION: release-please bumped it, release-me does not",
+		},
+		{
+			name:     "php leaves out a VERSION file holding more than the version",
+			settings: `"release-type": "php"`,
+			repo: map[string]string{
+				"web/composer.json": "{\n  \"name\": \"acme/notes\",\n  \"version\": \"1.4.0\"\n}\n",
+				"web/VERSION":       "notes 1.4.0, built 2026-10-30\n",
+			},
+			wantFiles: []config.File{
+				{Path: "web/composer.json", Updater: "json", Key: "version"},
 			},
 		},
 		{

@@ -500,9 +500,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		// release-please bumps composer.json's version only where it has
 		// one, and a VERSION file only where it exists.
 		versionFile("composer.json", updater.JSON, "version", true)
-		if _, err := readFile(stdpath.Join(p.path, "VERSION")); err == nil {
-			warn("package %s: VERSION: release-please bumped it, release-me does not", p.path)
-		}
+		versionFile("VERSION", updater.Plain, "", true)
 	case "dart":
 		versionFile("pubspec.yaml", updater.Dart, "", false)
 	case "expo":

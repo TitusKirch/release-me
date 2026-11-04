@@ -246,8 +246,8 @@ counted every commit. It also carries over:
     `mix.exs`; `r`: `DESCRIPTION`, the changelog defaulting to `NEWS.md`;
   - `ocaml`: the `.opam` and `.opam.locked` file named after the package, `dune-project` and
     `esy.json`, with a warning that any other `.opam` file is not searched for;
-  - `bazel`: its `version-file`, default `MODULE.bazel`; `php`: `composer.json`, with a
-    warning for a `VERSION` file;
+  - `bazel`: its `version-file`, default `MODULE.bazel`; `php`: `composer.json` and a
+    `VERSION` file through `plain`;
   - `dart`: `pubspec.yaml`; `sfdx`: `sfdx-project.json`; `helm`: `Chart.yaml`;
   - `terraform-module` and `krm-blueprint` searched the package for their files, which a
     warning asks to mark with `release-me: version` and list instead;
