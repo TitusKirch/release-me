@@ -105,8 +105,8 @@ func releaseFlagKeys() []string {
 // level and that this translation reads or deliberately leaves out.
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "extra-label", "separate-pull-requests", "$schema",
-	"bootstrap-sha", "last-release-sha", "pull-request-title-pattern", "group-pull-request-title-pattern",
-	"always-link-local", "signoff",
+	"bootstrap-sha", "last-release-sha", "draft-pull-request", "pull-request-title-pattern",
+	"group-pull-request-title-pattern", "always-link-local", "signoff",
 }
 
 // unsupportedReasons explains a release-please key the translation leaves
@@ -345,6 +345,11 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 				warn("signoff: %q %v, left out", opts.signoff, err)
 				opts.signoff = ""
 			}
+		}
+	}
+	if raw, ok := topValues["draft-pull-request"]; ok {
+		if err := json.Unmarshal(raw, &opts.draft); err != nil {
+			return Result{}, fmt.Errorf("migrate: draft-pull-request: %w", err)
 		}
 	}
 
@@ -1297,6 +1302,7 @@ type topLevel struct {
 	// separateLinks writes always-link-local: false.
 	separateLinks bool
 	signoff       string
+	draft         bool
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1334,6 +1340,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.signoff != "" {
 		add(doc, "signoff", scalar(top.signoff))
+	}
+	if top.draft {
+		add(doc, "release-pull-request-draft", boolean(true))
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
 	add(labels, "pending", labelNode(top.pending))
