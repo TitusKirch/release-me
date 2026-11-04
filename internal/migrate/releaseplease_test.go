@@ -397,6 +397,41 @@ func TestFromReleasePleaseFindsTheExpectedTagForAManifestKeyWrittenWithDotSlash(
 	}
 }
 
+func TestFromReleasePleaseCarriesARootPackageBesideOthersOver(t *testing.T) {
+	t.Parallel()
+	configJSON := `{
+	  "include-component-in-tag": false,
+	  "packages": {
+	    ".": {},
+	    "packages/web": {"component": "web", "include-component-in-tag": true}
+	  }
+	}`
+	read := files(map[string]string{
+		"package.json":              `{"name": "acme", "version": "1.2.0"}`,
+		"packages/web/package.json": `{"name": "@acme/web", "version": "0.4.0"}`,
+	})
+
+	got, err := migrate.FromReleasePlease([]byte(configJSON), []byte(`{".": "1.2.0", "packages/web": "0.4.0"}`), read)
+	if err != nil {
+		t.Fatalf("FromReleasePlease() error = %v", err)
+	}
+
+	cfg := load(t, got.YAML)
+	resolved := cfg.Resolve()
+	if len(resolved) != 2 || resolved[0].Name != "acme" || resolved[0].Path != "." || resolved[0].TagPrefix != "v" {
+		t.Fatalf("Resolve() = %+v, want the root package as component acme at \".\", tagged v", resolved)
+	}
+	rootWarning := "package .: release-please counted every commit for the root package, release-me's root " +
+		"component counts only the files outside the other components' paths"
+	if !slices.Contains(got.Warnings, rootWarning) {
+		t.Fatalf("Warnings = %q, want the root package's narrower reach named", got.Warnings)
+	}
+	want := []migrate.ExpectedTag{{Component: "acme", Tag: "v1.2.0"}, {Component: "web", Tag: "web-v0.4.0"}}
+	if !reflect.DeepEqual(got.Tags, want) {
+		t.Fatalf("Tags = %+v, want %+v", got.Tags, want)
+	}
+}
+
 func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 	t.Parallel()
 	configJSON := `{
