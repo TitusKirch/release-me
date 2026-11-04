@@ -12,7 +12,9 @@ changed or not: one release pull request, branch `release-me/main`, with one cha
 per component, each updating its own `CHANGELOG.md`. The body carries the family's version
 heading once, then every component's sections, laid out by
 [the layout key](configuration.md#release-pull-request-layout). Its title names the version and
-every component it covers, `chore: release vX.Y.Z (a, b, c)`. On merge, every component is
+every component it covers, `chore: release vX.Y.Z (a, b, c)`, or what
+[`release-pull-request-shared-title`](configuration.md#release-pull-request-shared-title)
+renders. On merge, every component is
 tagged `<name>/vX.Y.Z` with the same version and released the same way an independent component
 is. `locked` always releases the whole family, so `--component` naming one of them is a usage
 error for `next`, `changelog`, `pr`, `release` and `run` alike.
@@ -74,7 +76,9 @@ each update their own `key` in it. Two `independent` components bumping the same
 file, or both a `marker` or `helm` file, inherited top-level `files` included, are a
 configuration error, since one would overwrite the other's version; `locked` and `linked`
 write the one family version there and allow it. The title names every component and its
-version, in `release-me.yaml`'s order, `chore: release api v1.3.0, web v0.3.1`, the same as
+version, in `release-me.yaml`'s order, `chore: release api v1.3.0, web v0.3.1` unless
+[`release-pull-request-shared-title`](configuration.md#release-pull-request-shared-title) sets
+another pattern, the same as
 release-please's grouped pull request names the packages in its body. GitHub caps a title at
 256 characters, so how many components fit depends on their names and versions, about eight
 with 20-character names: `pr` refuses a longer title before it pushes or writes anything,
