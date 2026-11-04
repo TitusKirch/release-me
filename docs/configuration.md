@@ -54,6 +54,36 @@ does. In `independent`, a component's own `release-as` key replaces the top-leve
 component only. `linked` and `locked` refuse a component's own key, since the family shares one
 version.
 
+## `versioning-strategy`
+
+How a release bumps the version, default `default`:
+
+| Value | Bump of a release |
+| --- | --- |
+| `default` | By its highest change: major for a breaking change, minor for a `feat`, patch for a `fix`, `perf` or `revert`. |
+| `always-bump-patch` | Always the patch, whatever its changes are. |
+| `always-bump-minor` | Always the minor. |
+| `always-bump-major` | Always the major. |
+
+The changes still decide whether there is a release at all: a range of only hidden types, a
+`chore` alone for one, releases nothing under any strategy. A
+[Release-As footer](overrides.md#release-as-footer), a
+[comment command](overrides.md#comment-commands) and `initial-version` for a first release win
+over the strategy, the same as over the default bump. `bump-minor-pre-major` and
+`bump-patch-for-minor-pre-major` apply to `default` only: an always-bump strategy bumps the
+part it names below `1.0.0` too, as in release-please. `next` names the strategy in its
+reason, `1.3.0 (fix, always-bump-minor)`. Any other value is a configuration error. A
+component overrides it through its own `versioning-strategy` key; a `locked` or `linked`
+family computes its one shared version with the top-level value.
+
+The key is release-please's `versioning`, renamed because release-me's own
+[`versioning`](#versioning) already names how a family's versions relate. release-please's
+`service-pack` and `dependency-manifest` strategies have no counterpart: both are Java
+specific. `service-pack` releases Maven service pack versions such as `1.2.3-sp.1`, which
+semver, and with it release-me, reads as a pre-release below `1.2.3`; `dependency-manifest`
+bumps by the dependency changes a Java manifest records, which release-me does not read.
+`release-me migrate release-please` warns about either by name.
+
 ## `hidden-types`
 
 Hides entries of these types from the changelog, default `chore`, `docs`, `ci`, `style`,
@@ -893,9 +923,9 @@ component's `path` or lies outside it is a configuration error.
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `release-as` (only with `versioning: independent`),
-`hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
-`changelog-type`, `force-tag-creation`, `include-v-in-release-name`, `skip-github-release`,
-`draft`, `skip-changelog` and `changelog`, plus its own
+`versioning-strategy`, `hidden-types`, `changelog-sections`, `files`, `major-tag`,
+`changelog-source`, `changelog-type`, `force-tag-creation`, `include-v-in-release-name`,
+`skip-github-release`, `draft`, `skip-changelog` and `changelog`, plus its own
 [`exclude-paths`](#exclude-paths), which the top-level key cannot apply beside configured
 components. A key left out of a component falls back to the top-level setting above. A
 repository without `components` is one component named `main` at path `.`, tag prefix `v`,

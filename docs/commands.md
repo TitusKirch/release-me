@@ -210,6 +210,9 @@ only the files outside the other components' paths, where release-please's root 
 counted every commit. It also carries over:
 
 - `bump-minor-pre-major`, `bump-patch-for-minor-pre-major` and `initial-version`;
+- `versioning` as `versioning-strategy` for `always-bump-patch`, `always-bump-minor` and
+  `always-bump-major`; the Java specific `service-pack` and `dependency-manifest` are warned
+  about;
 - `force-tag-creation`, at the top level when every package carries the same value, on the
   component otherwise. When absent, release-me's default `true` is kept, rather than
   release-please's `false`; without drafts both create the tag during the release run;
