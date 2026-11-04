@@ -46,9 +46,9 @@ func TestEveryReleasePullRequestBodyCarriesTheGuideOnlyWhileTheKeyIsOn(t *testin
 				name = family.name + "/guide-off"
 			}
 			t.Run(name, func(t *testing.T) {
-				dir, _, cfg := family.repo(t)
+				dir, origin, cfg := family.repo(t)
 				cfg.ReleasePullRequestGuide = guide
-				f := newFake()
+				f := newPRFake(origin)
 				var stdout bytes.Buffer
 				if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
 					t.Fatalf("doPR() error = %v", err)
@@ -90,7 +90,7 @@ func TestRerunAddsOrDropsTheGuideWhenTheKeyChanges(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				dir, origin, cfg := family.repo(t)
 				cfg.ReleasePullRequestGuide = opened
-				f := newFake()
+				f := newPRFake(origin)
 				var first bytes.Buffer
 				if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &first); err != nil {
 					t.Fatalf("doPR() first run error = %v", err)
@@ -176,7 +176,7 @@ func TestDoCommentWorksOnABodyWithoutTheGuide(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, origin, cfg := tc.repo(t)
 			cfg.ReleasePullRequestGuide = false
-			f := newFake()
+			f := newPRFake(origin)
 			var first bytes.Buffer
 			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &first); err != nil {
 				t.Fatalf("doPR() first run error = %v", err)
