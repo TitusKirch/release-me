@@ -167,9 +167,12 @@ release-me continues from the existing tags and changelogs. A single root packag
 `vX.Y.Z` tags becomes the implicit `main` component instead. It also carries over:
 
 - `bump-minor-pre-major`, `bump-patch-for-minor-pre-major` and `initial-version`;
-- the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package where that
-  file exists, `node` being release-please's default type, and every `extra-files` entry of
-  type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
+- the version file of a `node` (`package.json`), `rust` (`Cargo.toml`) or `helm`
+  (`Chart.yaml`) package where that file exists, `node` being release-please's default type, and
+  every `extra-files` entry of type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
+- the lockfile release-please bumps beside it where it exists and holds the package:
+  `package-lock.json` and `npm-shrinkwrap.json` for `node`, `Cargo.lock` for `rust`, and
+  `Gemfile.lock` for `ruby`, keyed by the crate or gem name;
 - every `extra-files` entry that is a plain path or of type `generic` as a
   [`generic`](configuration.md#files) entry, which reads the same `x-release-please-version`
   markers, so the file needs no change. A plain `.json`, `.yaml`, `.yml` or `.toml` path also
