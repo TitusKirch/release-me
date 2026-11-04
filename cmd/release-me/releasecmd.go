@@ -109,6 +109,11 @@ func doReleasePerComponent(
 		if err != nil {
 			return fmt.Errorf("release-me: %w", err)
 		}
+		// Deleting the branch keeps the draft resume path: tagrelease.Run finds
+		// a merged, tagged pull request to resume by its head branch, and
+		// GitHub's head filter still matches a merged pull request whose
+		// branch is gone, confirmed live against this repository. Unlike the
+		// shared sweep, nothing here first checks that the branch exists.
 		released.add(comp.Branch, results)
 		for _, r := range results {
 			any = true
@@ -146,6 +151,8 @@ func doReleaseLocked(
 	if err != nil {
 		return fmt.Errorf("release-me: %w", err)
 	}
+	// As in doReleasePerComponent: resuming a draft finds the pull request
+	// by its head branch, which matches it after the branch is deleted too.
 	released.add(branch, results)
 
 	multi := len(resolved) > 1
@@ -180,6 +187,10 @@ func doReleaseLocked(
 // find there, unless "draft-until-assets-attach" is on: the sweep is the
 // only thing that resumes a leftover's unpublished draft after a failed
 // publish, and it only looks while the branch exists, so the branch stays.
+// The per-component and locked paths need no such guard: they look the
+// pull request up by its head branch without checking the branch first,
+// and that lookup still finds it once the branch is deleted. Only the
+// sweep's own "git ls-remote" check depends on the branch.
 func doReleaseShared(
 	ctx context.Context, dir string, cfg config.Config, owner, repoName string, f forge.Forge, labels tagrelease.Labels,
 	dryRun bool, logger *slog.Logger, stdout io.Writer, released releasedBranches,
