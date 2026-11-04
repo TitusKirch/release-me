@@ -168,7 +168,8 @@ release-me continues from the existing tags and changelogs. A single root packag
 - the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package where that
   file exists, `node` being release-please's default type, and every `extra-files` entry of
   type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;
-- `label` and `release-label` as the `pending` and `tagged` labels, with the pre-release types
+- `label`, `release-label` and `extra-label` as the `pending`, `tagged` and `extra` labels,
+  every label of each comma separated list, with the pre-release types
   turned off, since release-please has none;
 - a `linked-versions` plugin over every component as `versioning: locked`: both release every
   component at the family's version, changed or not;
