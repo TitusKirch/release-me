@@ -13,7 +13,7 @@ import (
 
 func TestSelectPreReleaseType(t *testing.T) {
 	t.Parallel()
-	lbl := config.Labels{Pending: "release: pending", Tagged: "release: tagged", Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc"}
+	lbl := config.Labels{Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"}, Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc"}
 
 	cases := []struct {
 		name     string
@@ -123,7 +123,7 @@ func TestPreReleaseVersionSharesTheCounterAcrossTheFamily(t *testing.T) {
 
 func TestSelectPreReleaseTypeIgnoresATypeConfiguredEmpty(t *testing.T) {
 	t.Parallel()
-	lbl := config.Labels{Pending: "release: pending", Tagged: "release: tagged", Rc: "release: rc"}
+	lbl := config.Labels{Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"}, Rc: "release: rc"}
 
 	// A label named like a turned-off type is an ordinary label, not a
 	// pre-release request, and a second label beside rc is no conflict.

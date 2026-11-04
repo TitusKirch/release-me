@@ -34,7 +34,7 @@ func TestTitle(t *testing.T) {
 // configuration, the shape every test that does not exercise a custom
 // configuration uses.
 var testLabels = releasepr.GuideLabels{
-	Tagged: "release: tagged",
+	Tagged: []string{"release: tagged"},
 	Alpha:  "release: alpha",
 	Beta:   "release: beta",
 	Rc:     "release: rc",
@@ -44,7 +44,7 @@ var testLabels = releasepr.GuideLabels{
 // labels, the shape every test asserting its exact content builds on.
 func guideText(tag string, labels releasepr.GuideLabels) string {
 	return "<details>\n<summary>How this release works</summary>\n\n" +
-		"- Merging this pull request tags `" + tag + "`, creates the release and moves the label to `" + labels.Tagged + "`. " +
+		"- Merging this pull request tags `" + tag + "`, creates the release and moves the label to `" + labels.Tagged[0] + "`. " +
 		"With `major-tag` enabled, the moving major tag follows a stable release.\n" +
 		"- Release notes: add a fenced block with the info string `release-me-notes` anywhere in this body. " +
 		"It is rendered above the changelog in the GitHub release, never in the changelog file, and survives updates.\n" +
@@ -106,7 +106,7 @@ func TestBodyRendersTheVersionGuideNotesAndChangelog(t *testing.T) {
 func TestBodyRendersTheRealTagAndConfiguredLabelNames(t *testing.T) {
 	t.Parallel()
 	labels := releasepr.GuideLabels{
-		Tagged: "status: released",
+		Tagged: []string{"status: released"},
 		Alpha:  "pre: alpha",
 		Beta:   "pre: beta",
 		Rc:     "pre: rc",
@@ -328,17 +328,17 @@ func TestBodyNamesOnlyTheEnabledPreReleaseLabels(t *testing.T) {
 	}{
 		{
 			name:   "two of three",
-			labels: releasepr.GuideLabels{Tagged: "release: tagged", Beta: "pre: beta", Rc: "pre: rc"},
+			labels: releasepr.GuideLabels{Tagged: []string{"release: tagged"}, Beta: "pre: beta", Rc: "pre: rc"},
 			want:   "add the label `pre: beta` or `pre: rc`.",
 		},
 		{
 			name:   "one",
-			labels: releasepr.GuideLabels{Tagged: "release: tagged", Rc: "pre: rc"},
+			labels: releasepr.GuideLabels{Tagged: []string{"release: tagged"}, Rc: "pre: rc"},
 			want:   "add the label `pre: rc`.",
 		},
 		{
 			name:    "none",
-			labels:  releasepr.GuideLabels{Tagged: "release: tagged"},
+			labels:  releasepr.GuideLabels{Tagged: []string{"release: tagged"}},
 			wantNot: "Pre-release:",
 		},
 	}

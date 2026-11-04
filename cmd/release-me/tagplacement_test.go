@@ -56,7 +56,7 @@ func TestATaggedMergeCommitKeepsTheReleasedPullRequestOutOfTheNextRelease(t *tes
 	mergeSHA := headSHA(t, dir)
 
 	comp := tagrelease.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v"}
-	labels := tagrelease.Labels{Pending: "release: pending", Tagged: "release: tagged"}
+	labels := tagrelease.Labels{Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"}}
 	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v0.2.0", Labels: []string{"release: pending"}, Merged: true}
 	f := &forgetest.Fake{
 		ListResponses: []forgetest.ListResponse{{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}}},
@@ -116,7 +116,7 @@ func TestATaggedSquashCommitKeepsTheReleasedPullRequestOutOfTheNextRelease(t *te
 	landedSHA := headSHA(t, dir)
 
 	comp := tagrelease.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v"}
-	labels := tagrelease.Labels{Pending: "release: pending", Tagged: "release: tagged"}
+	labels := tagrelease.Labels{Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"}}
 	pr := forge.PullRequest{Number: 9, Title: "chore(main): release v0.2.0", Labels: []string{"release: pending"}, Merged: true}
 	f := &forgetest.Fake{
 		ListResponses: []forgetest.ListResponse{{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{pr}}},
@@ -184,7 +184,7 @@ func TestAComponentWithoutANewReleaseIsUnaffectedByAnotherComponentsRelease(t *t
 		}
 	}
 	backendComp := tagrelease.Component{Name: backendRC.Name, Branch: backendRC.Branch, TagPrefix: backendRC.TagPrefix, Multi: backendRC.Multi}
-	labels := tagrelease.Labels{Pending: "release: pending", Tagged: "release: tagged"}
+	labels := tagrelease.Labels{Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"}}
 
 	mergePullRequest(t, dir, 8, "backend-release-8", map[string]string{
 		"backend/CHANGELOG.md": "## v0.1.0 (2026-01-02)\n\n### Features\n\n- add the endpoint\n",

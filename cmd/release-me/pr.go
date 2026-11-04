@@ -294,7 +294,7 @@ func doPRComponent(
 		}
 
 		if existing == nil {
-			created, err := f.CreatePullRequest(ctx, owner, repoName, base, comp.Branch, title, body, []string{cfg.Labels.Pending})
+			created, err := f.CreatePullRequest(ctx, owner, repoName, base, comp.Branch, title, body, cfg.Labels.Opened())
 			if err != nil {
 				return fmt.Errorf(
 					"release-me: component %s: create release pull request: pushed branch %s but the pull request failed: %w",
@@ -498,7 +498,7 @@ func publishSharedPR(
 		}
 
 		if existing == nil {
-			created, err := f.CreatePullRequest(ctx, owner, repoName, base, branch, title, body, []string{cfg.Labels.Pending})
+			created, err := f.CreatePullRequest(ctx, owner, repoName, base, branch, title, body, cfg.Labels.Opened())
 			if err != nil {
 				return fmt.Errorf(
 					"release-me: %s: create release pull request: pushed branch %s but the pull request failed: %w", who, branch, err,
@@ -555,7 +555,7 @@ func lockedPreReleaseEntries(
 }
 
 // mergedPendingRelease reports whether branch already carries a closed,
-// merged pull request still labeled pendingLabel: a release already
+// merged pull request still carrying every one of pendingLabels: a release already
 // decided, not yet tagged. doRelease recognizes the exact same pull
 // request by the exact same signal to tag it, so as long as it still
 // carries the label, nothing else may release in its place.
@@ -570,13 +570,13 @@ func lockedPreReleaseEntries(
 // stays blind to that tag until the next checkout. Recognizing the
 // merged, still pending pull request directly, the same way doRelease
 // already does, needs no local git state at all.
-func mergedPendingRelease(ctx context.Context, f forge.Forge, owner, repoName, branch, pendingLabel string, logger *slog.Logger) (bool, error) {
+func mergedPendingRelease(ctx context.Context, f forge.Forge, owner, repoName, branch string, pendingLabels []string, logger *slog.Logger) (bool, error) {
 	closed, err := f.PullRequests(ctx, owner, repoName, branch, "closed")
 	if err != nil {
 		return false, fmt.Errorf("list closed pull requests on %s: %w", branch, err)
 	}
 	for _, pr := range closed {
-		if pr.Merged && slices.Contains(pr.Labels, pendingLabel) {
+		if pr.Merged && tagrelease.HasAll(pr.Labels, pendingLabels) {
 			logger.Debug("merged pull request still pending, deferring to release",
 				"head", branch, "number", pr.Number)
 			return true, nil
@@ -605,14 +605,20 @@ func resolveBaseBranch(ctx context.Context, f forge.Forge, dir, owner, repoName 
 	return fallback, nil
 }
 
-// ensurePendingLabel adds the pending label to a pull request when it is
-// not already carrying it, never replacing the labels it has.
-func ensurePendingLabel(ctx context.Context, f forge.Forge, owner, repoName string, number int, currentLabels []string, pending string) error {
-	if slices.Contains(currentLabels, pending) {
+// ensurePendingLabel adds every pending label a pull request does not carry
+// yet, never replacing the labels it has.
+func ensurePendingLabel(ctx context.Context, f forge.Forge, owner, repoName string, number int, currentLabels, pending []string) error {
+	var missing []string
+	for _, l := range pending {
+		if !slices.Contains(currentLabels, l) {
+			missing = append(missing, l)
+		}
+	}
+	if len(missing) == 0 {
 		return nil
 	}
-	if err := f.AddLabels(ctx, owner, repoName, number, []string{pending}); err != nil {
-		return fmt.Errorf("release-me: add label %q to release pull request #%d: %w", pending, number, err)
+	if err := f.AddLabels(ctx, owner, repoName, number, missing); err != nil {
+		return fmt.Errorf("release-me: add label(s) %q to release pull request #%d: %w", missing, number, err)
 	}
 	return nil
 }

@@ -60,7 +60,7 @@ var mainComponent = release.Component{Name: "main", Branch: "release-me/main", T
 // testLabels are the labels release.Run reads and writes in a test that
 // does not exercise a pre-release.
 var testLabels = release.Labels{
-	Pending: "release: pending", Tagged: "release: tagged",
+	Pending: []string{"release: pending"}, Tagged: []string{"release: tagged"},
 	Alpha: "release: alpha", Beta: "release: beta", Rc: "release: rc",
 }
 
@@ -1105,7 +1105,7 @@ func TestRunSharedResumesADraftLeftByAnEarlierRun(t *testing.T) {
 // guides is a release pull request body's guide as pr renders it, with
 // the default "release-pull-request-guide: true" and with false.
 var guides = map[string]releasepr.Guide{
-	"with the guide":    {Show: true, Labels: releasepr.GuideLabels{Tagged: "release: tagged"}},
+	"with the guide":    {Show: true, Labels: releasepr.GuideLabels{Tagged: []string{"release: tagged"}}},
 	"without the guide": {},
 }
 
