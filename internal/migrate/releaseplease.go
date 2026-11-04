@@ -59,7 +59,7 @@ type rpPackage struct {
 var packageKeys = []string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
-	"initial-version", "extra-files",
+	"initial-version", "extra-files", "include-commit-authors",
 }
 
 // topLevelKeys are the release-please settings that only exist at the top
@@ -177,6 +177,14 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	if err != nil {
 		return Result{}, err
 	}
+	var st style
+	// release-me credits authors for every component or for none.
+	switch authors := slices.IndexFunc(components, func(c component) bool { return !c.includeCommitAuthors }) == -1; {
+	case authors:
+		st.authors = true
+	case slices.ContainsFunc(components, func(c component) bool { return c.includeCommitAuthors }):
+		warn("include-commit-authors: release-me credits authors for every component or none, left out")
+	}
 	// release-please groups every package into one release pull request
 	// unless separate-pull-requests is true; release-me's own default is one
 	// per component, so the grouped default is written out. locked always
@@ -208,11 +216,17 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		}
 	}
 
-	out, err := render(components, versioning, sharedPR, pending, tagged)
+	out, err := render(components, versioning, st, sharedPR, pending, tagged)
 	if err != nil {
 		return Result{}, err
 	}
 	return Result{YAML: out, Warnings: warnings, Tags: tags}, nil
+}
+
+// style is the top-level changelog style keys the translation writes,
+// carried over from release-please's settings.
+type style struct {
+	authors bool
 }
 
 // component is one translated release-please package.
@@ -228,6 +242,8 @@ type component struct {
 	bumpMinorPreMajor bool
 	initialVersion    string
 	files             []file
+	// includeCommitAuthors is release-please's include-commit-authors.
+	includeCommitAuthors bool
 }
 
 // file is one release-me "files" entry.
@@ -244,7 +260,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	var (
 		releaseType, packageName, componentName, separator, changelogPath, initialVersion string
 		includeComponent, includeV                                                        = true, true
-		bumpMinor, bumpPatchForMinor                                                      bool
+		bumpMinor, bumpPatchForMinor, includeAuthors                                      bool
 	)
 	separator = "-"
 	changelogPath = "CHANGELOG.md"
@@ -253,6 +269,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"tag-separator": &separator, "changelog-path": &changelogPath, "initial-version": &initialVersion,
 		"include-component-in-tag": &includeComponent, "include-v-in-tag": &includeV,
 		"bump-minor-pre-major": &bumpMinor, "bump-patch-for-minor-pre-major": &bumpPatchForMinor,
+		"include-commit-authors": &includeAuthors,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -316,13 +333,14 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	}
 
 	c := component{
-		name:              name,
-		rpName:            rpName,
-		path:              p.path,
-		tagPrefix:         prefix,
-		changelog:         repoPath(p.path, changelogPath),
-		bumpMinorPreMajor: bumpMinor,
-		initialVersion:    initialVersion,
+		name:                 name,
+		rpName:               rpName,
+		path:                 p.path,
+		tagPrefix:            prefix,
+		changelog:            repoPath(p.path, changelogPath),
+		bumpMinorPreMajor:    bumpMinor,
+		initialVersion:       initialVersion,
+		includeCommitAuthors: includeAuthors,
 	}
 
 	// A version file the release type implies is carried over only where it
@@ -513,7 +531,7 @@ func repoPath(pkgPath, file string) string {
 // the implicit main component and needs no components key; everything else
 // is a components mapping in release-please's package order, carrying only
 // the keys whose value differs from what release-me would derive.
-func render(components []component, versioning string, sharedPR bool, pending, tagged string) ([]byte, error) {
+func render(components []component, versioning string, st style, sharedPR bool, pending, tagged string) ([]byte, error) {
 	doc := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(m *yaml.Node, key string, value *yaml.Node) {
 		m.Content = append(m.Content, scalar(key), value)
@@ -533,6 +551,9 @@ func render(components []component, versioning string, sharedPR bool, pending, t
 		add(labels, t, boolean(false))
 	}
 	add(doc, "labels", labels)
+	if st.authors {
+		add(doc, "changelog-authors", boolean(true))
+	}
 
 	// bump-minor-pre-major carried by every component is written once, at
 	// the top level, instead of repeated per component.
