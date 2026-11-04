@@ -343,8 +343,8 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 			content: "components:\n  app:\n    path: app\n  web:\n    path: app/web\n",
 		},
 		{
-			name:    "rejects a root component alongside another",
-			content: "components:\n  main:\n    path: .\n  frontend:\n    path: frontend\n",
+			name:    "rejects two root components",
+			content: "components:\n  main:\n    path: .\n  site:\n    path: ./\n    tag-prefix: site@v\n    changelog: SITE.md\n",
 		},
 		{name: "rejects an empty tag prefix", content: "components:\n  web:\n    path: web\n    tag-prefix: \"\"\n"},
 		{name: "rejects a tag prefix with a glob character", content: "components:\n  web:\n    path: web\n    tag-prefix: web*v\n"},
@@ -468,6 +468,34 @@ func TestResolveCarriesExcludedPathsCleaned(t *testing.T) {
 				t.Fatalf("ExcludePaths = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestLoadAcceptsARootComponentBesideOthers(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, `components:
+  acme:
+    path: ./
+    tag-prefix: v
+  web:
+    path: packages/web
+  api:
+    path: packages/api
+`)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got := cfg.Resolve()
+	if len(got) != 3 || got[0].Path != "." || got[0].TagPrefix != "v" || got[0].ChangelogPath != "CHANGELOG.md" {
+		t.Fatalf("Resolve() = %+v, want the root component at \".\" first, tagged v, changelog CHANGELOG.md", got)
+	}
+	if !reflect.DeepEqual(got[0].OtherPaths, []string{"packages/web", "packages/api"}) {
+		t.Fatalf("OtherPaths = %q, want the other components' paths, which the root does not own", got[0].OtherPaths)
+	}
+	if got[1].OtherPaths != nil || got[2].OtherPaths != nil {
+		t.Fatalf("OtherPaths = %q, %q, want none for a component below the root", got[1].OtherPaths, got[2].OtherPaths)
 	}
 }
 

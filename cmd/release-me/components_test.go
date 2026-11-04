@@ -301,6 +301,52 @@ func TestRunNextLeavesOutACommitThatChangedOnlyExcludedPaths(t *testing.T) {
 	}
 }
 
+// TestRunNextGivesARootComponentEveryFileOutsideTheOthers exercises a root
+// component beside a nested one through run(): the root owns every file
+// outside the nested component's path, and the nested component keeps its
+// own files.
+func TestRunNextGivesARootComponentEveryFileOutsideTheOthers(t *testing.T) {
+	cases := []struct {
+		name   string
+		config string
+		want   string
+	}{
+		{
+			name:   "the root component leaves the nested component's feat to it",
+			config: "components:\n  acme:\n    path: .\n    tag-prefix: v\n  web:\n    path: packages/web\n",
+			want:   "acme: 1.2.1 (fix)\nweb: 0.5.0 (feat)\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := newRepo(t)
+			writeConfig(t, dir, tc.config)
+			writeFiles(t, dir, "chore: scaffold the site and the web package", map[string]string{
+				"README.md":                 "acme\n",
+				"packages/web/package.json": `{"name": "@acme/web", "version": "0.4.0"}` + "\n",
+			})
+			runGit(t, dir, "tag", "v1.2.0")
+			runGit(t, dir, "tag", "web/v0.4.0")
+			writeFiles(t, dir, "feat(web): add the pricing page", map[string]string{
+				"packages/web/pricing.vue": "<template />\n",
+			})
+			writeFiles(t, dir, "fix: correct the install command in the README", map[string]string{
+				"README.md": "acme, installed with npm\n",
+			})
+
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"next"}, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0, stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tc.want {
+				t.Fatalf("stdout = %q, want %q", stdout.String(), tc.want)
+			}
+		})
+	}
+}
+
 // TestRunNextComponentFlagLimitsToOneComponent exercises --component
 // through run(): with two components configured, only the named one
 // prints, and without the "<name>: " prefix since the run targets one
