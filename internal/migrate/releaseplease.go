@@ -609,7 +609,8 @@ type style struct {
 // workspacePlugins maps each release-please workspace plugin to the
 // package manager release-me's "workspaces" names for it.
 var workspacePlugins = map[string]string{
-	"node-workspace": workspace.Node,
+	"node-workspace":  workspace.Node,
+	"cargo-workspace": workspace.Cargo,
 }
 
 // workspacePluginOptions are the keys a workspace plugin object carries
