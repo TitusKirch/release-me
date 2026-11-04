@@ -342,7 +342,7 @@ func applyWorkspaceUpdates(
 	for _, m := range members {
 		versions[m.comp.Name] = m.versionStr
 	}
-	files, entries := workspaceUpdates(manifests, versions, logger)
+	files, entries := workspaceUpdates(cfg, manifests, versions, logger)
 	for i := range members {
 		m := &members[i]
 		m.entries = append(slices.Clone(m.entries), entries[m.comp.Name]...)
@@ -360,7 +360,7 @@ func sharedDependents(dir string, cfg config.Config, all []config.ResolvedCompon
 	if err != nil {
 		return nil, err
 	}
-	return workspaceDependents(manifests, released), nil
+	return workspaceDependents(cfg, manifests, released), nil
 }
 
 // newSharedMember starts a sharedMember at its computed release.

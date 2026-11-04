@@ -418,7 +418,7 @@ func doPRLocked(
 		if err != nil {
 			return err
 		}
-		depFiles, depEntries = workspaceUpdates(manifests, versions, logger)
+		depFiles, depEntries = workspaceUpdates(cfg, manifests, versions, logger)
 	}
 
 	changelogs := make([]changelogUpdate, 0, len(members))
