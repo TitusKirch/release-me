@@ -196,7 +196,8 @@ func TestDoPRCreatesTheReleasePullRequest(t *testing.T) {
 // the signed commit requirement: a ruleset requiring signed commits
 // rejects a release commit made locally with a token that has no signing
 // key, so the commit goes through the forge, which signs what it creates
-// only when no author or committer is passed. Whatever identity the
+// only when no author or committer is passed, and on GitHub only for a
+// GitHub App installation token. Whatever identity the
 // configuration, the environment or the repository would supply, the
 // commit therefore carries the forge's own, and no local commit is made,
 // even on a runner with no git identity at all.
@@ -320,6 +321,68 @@ func TestDoPRCommitsExactlyTheReleaseContent(t *testing.T) {
 	}
 	if got := strings.Fields(gitOut(t, origin, "ls-tree", mainBranch, "--", "install.sh"))[0]; got != "100755" {
 		t.Fatalf("install.sh mode on the branch = %s, want 100755", got)
+	}
+}
+
+// TestDoPRWarnsWhenTheReleaseCommitIsUnsigned covers the token GitHub
+// does not sign for: a commit created through its API is signed only for
+// a GitHub App installation token, so a personal access token yields an
+// unsigned one that a ruleset requiring signed commits blocks. pr still
+// succeeds, the branch is written, but it says so, naming the branch.
+func TestDoPRWarnsWhenTheReleaseCommitIsUnsigned(t *testing.T) {
+	cases := []struct {
+		name     string
+		unsigned bool
+		sigErr   error
+		wantWarn []string
+	}{
+		{
+			name: "a signed commit warns about nothing",
+		},
+		{
+			name:     "an unsigned commit warns naming the branch and the user token",
+			unsigned: true,
+			wantWarn: []string{
+				"level=WARN", "the release commit is unsigned", "personal access token",
+				"ruleset requiring signed commits", "branch=" + mainBranch, "reason=unsigned",
+			},
+		},
+		{
+			name:     "a signature that cannot be read warns without failing",
+			sigErr:   errors.New("github: read signature of commit: 502 Bad Gateway"),
+			wantWarn: []string{"level=WARN", "could not check whether the release commit is signed", "branch=" + mainBranch},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, origin := newPRRepo(t)
+			commitEntry(t, dir, "feat: add the next command")
+
+			f := newPRFake(origin)
+			f.Unsigned = tc.unsigned
+			f.CommitSignatureErr = tc.sigErr
+			var logs, stdout bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&logs, nil))
+			if err := doPR(t.Context(), dir, config.Default(), "", f, logger, false, &stdout); err != nil {
+				t.Fatalf("doPR() error = %v", err)
+			}
+
+			if want := []string{bareBranchSHA(t, origin)}; !equalStrings(f.CommitSignatureCalls, want) {
+				t.Fatalf("CommitSignatureCalls = %v, want the release commit %v", f.CommitSignatureCalls, want)
+			}
+			if len(f.CreatedPullRequests) != 1 {
+				t.Fatalf("CreatedPullRequests = %+v, want one: a missing signature never stops pr", f.CreatedPullRequests)
+			}
+			got := logs.String()
+			if tc.wantWarn == nil && strings.Contains(got, "level=WARN") {
+				t.Fatalf("logs = %q, want no warning for a signed commit", got)
+			}
+			for _, want := range tc.wantWarn {
+				if !strings.Contains(got, want) {
+					t.Fatalf("logs = %q, want it to contain %q", got, want)
+				}
+			}
+		})
 	}
 }
 
