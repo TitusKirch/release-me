@@ -59,7 +59,7 @@ type rpPackage struct {
 var packageKeys = []string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
-	"initial-version", "extra-files",
+	"initial-version", "extra-files", "skip-changelog",
 }
 
 // topLevelKeys are the release-please settings that only exist at the top
@@ -228,6 +228,8 @@ type component struct {
 	bumpMinorPreMajor bool
 	initialVersion    string
 	files             []file
+	// skipChangelog is release-please's skip-changelog.
+	skipChangelog bool
 }
 
 // file is one release-me "files" entry.
@@ -244,7 +246,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	var (
 		releaseType, packageName, componentName, separator, changelogPath, initialVersion string
 		includeComponent, includeV                                                        = true, true
-		bumpMinor, bumpPatchForMinor                                                      bool
+		bumpMinor, bumpPatchForMinor, skipChangelog                                       bool
 	)
 	separator = "-"
 	changelogPath = "CHANGELOG.md"
@@ -253,6 +255,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"tag-separator": &separator, "changelog-path": &changelogPath, "initial-version": &initialVersion,
 		"include-component-in-tag": &includeComponent, "include-v-in-tag": &includeV,
 		"bump-minor-pre-major": &bumpMinor, "bump-patch-for-minor-pre-major": &bumpPatchForMinor,
+		"skip-changelog": &skipChangelog,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -323,6 +326,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		changelog:         repoPath(p.path, changelogPath),
 		bumpMinorPreMajor: bumpMinor,
 		initialVersion:    initialVersion,
+		skipChangelog:     skipChangelog,
 	}
 
 	// A version file the release type implies is carried over only where it
@@ -536,9 +540,16 @@ func render(components []component, versioning string, sharedPR bool, pending, t
 
 	// bump-minor-pre-major carried by every component is written once, at
 	// the top level, instead of repeated per component.
-	shared := slices.IndexFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }) == -1
-	if shared {
+	// So is a skip-changelog every component carries alike.
+	shared := topLevel{
+		bumpMinorPreMajor: slices.IndexFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }) == -1,
+		skipChangelog:     slices.IndexFunc(components, func(c component) bool { return !c.skipChangelog }) == -1,
+	}
+	if shared.bumpMinorPreMajor {
 		add(doc, "bump-minor-pre-major", boolean(true))
+	}
+	if shared.skipChangelog {
+		add(doc, "skip-changelog", boolean(true))
 	}
 
 	if len(components) == 1 && components[0].path == "." && components[0].tagPrefix == "v" {
@@ -577,15 +588,25 @@ func render(components []component, versioning string, sharedPR bool, pending, t
 	return buf.Bytes(), nil
 }
 
+// topLevel names the per-component settings render already wrote once at
+// the top level, because every component carries them alike.
+type topLevel struct {
+	bumpMinorPreMajor bool
+	skipChangelog     bool
+}
+
 // addSettings writes the settings release-me reads per component or at the
-// top level alike: initial-version, bump-minor-pre-major and files.
-// bump-minor-pre-major is left out where the top level already carries it.
-func addSettings(m *yaml.Node, c component, shared bool, add func(*yaml.Node, string, *yaml.Node)) {
+// top level alike: initial-version, bump-minor-pre-major, skip-changelog and files.
+// A setting shared names is left out, the top level already carries it.
+func addSettings(m *yaml.Node, c component, shared topLevel, add func(*yaml.Node, string, *yaml.Node)) {
 	if c.initialVersion != "" {
 		add(m, "initial-version", scalar(c.initialVersion))
 	}
-	if c.bumpMinorPreMajor && !shared {
+	if c.bumpMinorPreMajor && !shared.bumpMinorPreMajor {
 		add(m, "bump-minor-pre-major", boolean(true))
+	}
+	if c.skipChangelog && !shared.skipChangelog {
+		add(m, "skip-changelog", boolean(true))
 	}
 	if len(c.files) > 0 {
 		list := &yaml.Node{Kind: yaml.SequenceNode}
