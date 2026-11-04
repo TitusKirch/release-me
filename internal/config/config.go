@@ -3,7 +3,7 @@
 
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, versioning-strategy,
-// hidden-types, fallback-type, token-env, files,
+// release-as, hidden-types, fallback-type, token-env, files,
 // changelog, changelog-source, labels, author, major-tag, versioning,
 // draft-until-assets-attach, comment-mention, delete-release-branch and
 // components.
@@ -230,11 +230,16 @@ type Config struct {
 	// version.Next reads as version.StrategyDefault. A component overrides
 	// it through its own "versioning-strategy" key.
 	VersioningStrategy version.Strategy
-	HiddenTypes        []string
-	FallbackType       string
-	TokenEnv           string
-	Files              []File
-	ChangelogPath      string
+	// ReleaseAs is the top-level "release-as" key, "" when it is left out:
+	// the version every component's next release is forced to while it is
+	// greater than that component's last version. A component overrides
+	// it through its own "release-as" key, in VersioningIndependent only.
+	ReleaseAs     string
+	HiddenTypes   []string
+	FallbackType  string
+	TokenEnv      string
+	Files         []File
+	ChangelogPath string
 	// ChangelogSource is the top-level "changelog-source" key: which
 	// commits become changelog entries. See the ChangelogSource*
 	// constants. A component overrides it through its own
@@ -303,7 +308,7 @@ type Config struct {
 // Component is one entry of the "components" key: a name mapped to a path
 // and optional overrides of the top-level initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, versioning-strategy,
-// hidden-types, files, major-tag and
+// release-as, hidden-types, files, major-tag and
 // changelog-source, plus its own tag-prefix and changelog path. A nil
 // field was left out of release-me.yaml and falls back to the top-level
 // value, the same left-out-versus-zero-value distinction Load applies to
@@ -315,6 +320,7 @@ type Component struct {
 	BumpMinorPreMajor         *bool
 	BumpPatchForMinorPreMajor *bool
 	VersioningStrategy        *version.Strategy
+	ReleaseAs                 *string
 	HiddenTypes               *[]string
 	Files                     *[]File
 	MajorTag                  *bool
@@ -348,6 +354,7 @@ type ResolvedComponent struct {
 	BumpMinorPreMajor         bool
 	BumpPatchForMinorPreMajor bool
 	VersioningStrategy        version.Strategy
+	ReleaseAs                 string
 	HiddenTypes               []string
 	Files                     []File
 	MajorTag                  bool
@@ -373,6 +380,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			BumpMinorPreMajor:         cfg.BumpMinorPreMajor,
 			BumpPatchForMinorPreMajor: cfg.BumpPatchForMinorPreMajor,
 			VersioningStrategy:        cfg.VersioningStrategy,
+			ReleaseAs:                 cfg.ReleaseAs,
 			HiddenTypes:               cfg.HiddenTypes,
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
@@ -403,6 +411,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			BumpMinorPreMajor:         cfg.BumpMinorPreMajor,
 			BumpPatchForMinorPreMajor: cfg.BumpPatchForMinorPreMajor,
 			VersioningStrategy:        cfg.VersioningStrategy,
+			ReleaseAs:                 cfg.ReleaseAs,
 			HiddenTypes:               cfg.HiddenTypes,
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
@@ -419,6 +428,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.VersioningStrategy != nil {
 			rc.VersioningStrategy = *c.VersioningStrategy
+		}
+		if c.ReleaseAs != nil {
+			rc.ReleaseAs = *c.ReleaseAs
 		}
 		if c.HiddenTypes != nil {
 			rc.HiddenTypes = *c.HiddenTypes
@@ -444,6 +456,7 @@ func (rc ResolvedComponent) Rules() version.Rules {
 		BumpMinorPreMajor:         rc.BumpMinorPreMajor,
 		BumpPatchForMinorPreMajor: rc.BumpPatchForMinorPreMajor,
 		Strategy:                  rc.VersioningStrategy,
+		ReleaseAs:                 rc.ReleaseAs,
 	}
 }
 
@@ -455,6 +468,7 @@ func (cfg Config) Rules() version.Rules {
 		BumpMinorPreMajor:         cfg.BumpMinorPreMajor,
 		BumpPatchForMinorPreMajor: cfg.BumpPatchForMinorPreMajor,
 		Strategy:                  cfg.VersioningStrategy,
+		ReleaseAs:                 cfg.ReleaseAs,
 	}
 }
 
@@ -516,6 +530,7 @@ type raw struct {
 	BumpMinorPreMajor         *bool      `yaml:"bump-minor-pre-major"`
 	BumpPatchForMinorPreMajor *bool      `yaml:"bump-patch-for-minor-pre-major"`
 	VersioningStrategy        *string    `yaml:"versioning-strategy"`
+	ReleaseAs                 *string    `yaml:"release-as"`
 	HiddenTypes               *[]string  `yaml:"hidden-types"`
 	FallbackType              *string    `yaml:"fallback-type"`
 	TokenEnv                  *string    `yaml:"token-env"`
@@ -548,6 +563,7 @@ type rawComponent struct {
 	BumpMinorPreMajor         *bool      `yaml:"bump-minor-pre-major"`
 	BumpPatchForMinorPreMajor *bool      `yaml:"bump-patch-for-minor-pre-major"`
 	VersioningStrategy        *string    `yaml:"versioning-strategy"`
+	ReleaseAs                 *string    `yaml:"release-as"`
 	HiddenTypes               *[]string  `yaml:"hidden-types"`
 	Files                     *[]rawFile `yaml:"files"`
 	MajorTag                  *bool      `yaml:"major-tag"`
@@ -634,6 +650,12 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: %w", path, err)
 		}
 		cfg.VersioningStrategy = strategy
+	}
+	if r.ReleaseAs != nil {
+		if err := validateReleaseAs(*r.ReleaseAs); err != nil {
+			return Config{}, fmt.Errorf("config: parse %s: %w", path, err)
+		}
+		cfg.ReleaseAs = *r.ReleaseAs
 	}
 	if r.HiddenTypes != nil {
 		cfg.HiddenTypes = *r.HiddenTypes
@@ -777,6 +799,14 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, err
 		}
 		cfg.Components = components
+		if cfg.Versioning != VersioningIndependent {
+			for _, c := range components {
+				if c.ReleaseAs != nil {
+					return Config{}, fmt.Errorf("config: parse %s: component %s: release-as does not apply to versioning %s, "+
+						"which shares one version across the family, set it at the top level", path, c.Name, cfg.Versioning)
+				}
+			}
+		}
 		if err := validateFileUpdates(path, cfg); err != nil {
 			return Config{}, err
 		}
@@ -862,6 +892,11 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			}
 			strategy = &s
 		}
+		if rc.ReleaseAs != nil {
+			if err := validateReleaseAs(*rc.ReleaseAs); err != nil {
+				return nil, fmt.Errorf("config: parse %s: component %s: %w", path, name, err)
+			}
+		}
 		if rc.ChangelogSource != nil && !slices.Contains(changelogSources, *rc.ChangelogSource) {
 			return nil, fmt.Errorf(
 				"config: parse %s: component %s: changelog-source %q is none of %s",
@@ -872,8 +907,8 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 		c := Component{
 			Name: name, Path: *rc.Path, InitialVersion: rc.InitialVersion,
 			BumpMinorPreMajor: rc.BumpMinorPreMajor, BumpPatchForMinorPreMajor: rc.BumpPatchForMinorPreMajor,
-			VersioningStrategy: strategy,
-			HiddenTypes:        rc.HiddenTypes, MajorTag: rc.MajorTag,
+			VersioningStrategy: strategy, ReleaseAs: rc.ReleaseAs,
+			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
 		}
 		if rc.Files != nil {
@@ -900,6 +935,21 @@ func parseStrategy(value string) (version.Strategy, error) {
 		return "", fmt.Errorf("versioning-strategy %q is none of %s", value, strings.Join(names, ", "))
 	}
 	return s, nil
+}
+
+// validateReleaseAs rejects a "release-as" value version.ParseForced
+// refuses whatever the last version: one that does not parse, and a
+// pre-release, which would force the same pre-release again after it
+// shipped, since the key stays in release-me.yaml until it is removed.
+func validateReleaseAs(value string) error {
+	_, err := version.ParseForced(value, version.Semver{}, false, false)
+	switch {
+	case errors.Is(err, version.ErrPreRelease):
+		return fmt.Errorf("release-as %q %w, set one with a pre-release label instead", value, err)
+	case err != nil:
+		return fmt.Errorf("release-as %q %w", value, err)
+	}
+	return nil
 }
 
 // ValidateComponentName rejects a component name release-me cannot carry
