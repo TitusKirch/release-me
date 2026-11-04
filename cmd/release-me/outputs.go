@@ -14,6 +14,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	tagrelease "github.com/ostendorf-cloud/release-me/internal/release"
+	"github.com/ostendorf-cloud/release-me/internal/version"
 )
 
 // outputsEnv names the environment variable holding the path of a GitHub
@@ -44,14 +45,23 @@ type prOutput struct {
 }
 
 // componentOutput is one component's entry in the action's "components"
-// output. Version and Tag are empty unless Released; PR is nil unless a
-// release pull request for the component was opened, updated or found up
-// to date this run.
+// output. Version, Tag, SHA and Body are empty and Major, Minor and Patch
+// nil unless Released. PR is nil unless a release pull request for the
+// component was opened, updated or found up to date this run. The keys
+// after "tag" follow release-please-action's output names, so a migrated
+// workflow reads the same name off a component.
 type componentOutput struct {
-	Released bool      `json:"released"`
-	Version  string    `json:"version"`
-	Tag      string    `json:"tag"`
-	PR       *prOutput `json:"pr"`
+	Released  bool      `json:"released"`
+	Version   string    `json:"version"`
+	Tag       string    `json:"tag"`
+	Major     *int      `json:"major"`
+	Minor     *int      `json:"minor"`
+	Patch     *int      `json:"patch"`
+	SHA       string    `json:"sha"`
+	Body      string    `json:"body"`
+	HTMLURL   string    `json:"html_url"`
+	UploadURL string    `json:"upload_url"`
+	PR        *prOutput `json:"pr"`
 }
 
 // runOutputsKey is the unexported context key a *runOutputs is stored
@@ -131,6 +141,10 @@ func (out *runOutputs) render(components []string) (string, error) {
 	for _, r := range out.releases {
 		if c, ok := byName[r.Name]; ok {
 			c.Released, c.Version, c.Tag = true, r.Version, r.Tag
+			c.SHA, c.Body, c.HTMLURL, c.UploadURL = r.SHA, r.Body, r.HTMLURL, r.UploadURL
+			if v, ok := version.ParseTag("v" + r.Version); ok {
+				c.Major, c.Minor, c.Patch = &v.Major, &v.Minor, &v.Patch
+			}
 			byName[r.Name] = c
 		}
 	}

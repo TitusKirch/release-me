@@ -300,7 +300,9 @@ func (f *Forge) CommitSignature(ctx context.Context, owner, repo, sha string) (f
 // target is sent as target_commitish only when set: GitHub ignores it for
 // a tag that already exists, and creates the tag on it once the release is
 // published otherwise.
-func (f *Forge) CreateRelease(ctx context.Context, owner, repo, tag, target, name, body string, prerelease, draft bool) error {
+func (f *Forge) CreateRelease(
+	ctx context.Context, owner, repo, tag, target, name, body string, prerelease, draft bool,
+) (forge.Release, error) {
 	req := gogithub.CreateReleaseRequest{
 		TagName:    tag,
 		Name:       &name,
@@ -311,14 +313,19 @@ func (f *Forge) CreateRelease(ctx context.Context, owner, repo, tag, target, nam
 	if target != "" {
 		req.TargetCommitish = &target
 	}
-	_, resp, err := f.client.Repositories.CreateRelease(ctx, owner, repo, req)
+	created, resp, err := f.client.Repositories.CreateRelease(ctx, owner, repo, req)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity && releaseAlreadyExists(err) {
-			return forge.ErrReleaseExists
+			return forge.Release{}, forge.ErrReleaseExists
 		}
-		return fmt.Errorf("github: create release %s: %w", tag, err)
+		return forge.Release{}, fmt.Errorf("github: create release %s: %w", tag, err)
 	}
-	return nil
+	return toRelease(created), nil
+}
+
+// toRelease converts a go-github release to forge.Release.
+func toRelease(r *gogithub.RepositoryRelease) forge.Release {
+	return forge.Release{Draft: r.GetDraft(), HTMLURL: r.GetHTMLURL(), UploadURL: r.GetUploadURL()}
 }
 
 // releaseAlreadyExists reports whether err is GitHub's validation error for
@@ -371,7 +378,7 @@ func referenceDoesNotExist(err error) bool {
 	return errors.As(err, &errResp) && strings.Contains(strings.ToLower(errResp.Message), "reference does not exist")
 }
 
-// IsReleaseDraft implements forge.Forge. It lists the repository's releases
+// Release implements forge.Forge. It lists the repository's releases
 // and matches tag by hand, rather than GitHub's "get a release by tag name"
 // endpoint: that endpoint excludes drafts, confirmed live against this
 // repository, so it would read a still-draft release as not found. Listing
@@ -383,16 +390,16 @@ func referenceDoesNotExist(err error) bool {
 // Left as is: a cache would need invalidating on every CreateRelease in the
 // same run to stay correct, which is more than this repository's release
 // history currently justifies.
-func (f *Forge) IsReleaseDraft(ctx context.Context, owner, repo, tag string) (bool, error) {
+func (f *Forge) Release(ctx context.Context, owner, repo, tag string) (forge.Release, error) {
 	opts := &gogithub.ListOptions{PerPage: 100}
 	for {
 		releases, resp, err := f.client.Repositories.ListReleases(ctx, owner, repo, opts)
 		if err != nil {
-			return false, fmt.Errorf("github: list releases for %s/%s: %w", owner, repo, err)
+			return forge.Release{}, fmt.Errorf("github: list releases for %s/%s: %w", owner, repo, err)
 		}
 		for _, r := range releases {
 			if r.GetTagName() == tag {
-				return r.GetDraft(), nil
+				return toRelease(r), nil
 			}
 		}
 		if resp.NextPage == 0 {
@@ -400,7 +407,7 @@ func (f *Forge) IsReleaseDraft(ctx context.Context, owner, repo, tag string) (bo
 		}
 		opts.Page = resp.NextPage
 	}
-	return false, forge.ErrReleaseNotFound
+	return forge.Release{}, forge.ErrReleaseNotFound
 }
 
 // MergeCommit implements forge.Forge.
