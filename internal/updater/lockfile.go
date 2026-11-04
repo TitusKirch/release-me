@@ -30,11 +30,12 @@ func UpdateNpmLock(content, version string) (string, error) {
 // cargoTable matches any TOML table or array of tables header; cargoPackage
 // the "[[package]]" one a Cargo.lock entry opens with.
 var (
-	cargoTable   = regexp.MustCompile(`^\s*\[`)
-	cargoPackage = regexp.MustCompile(`^\s*\[\[package\]\]\s*$`)
-	cargoName    = valueLinePattern(`\s*name\s*=\s*`)
-	cargoVersion = valueLinePattern(`\s*version\s*=\s*`)
-	cargoSource  = regexp.MustCompile(`^\s*source\s*=`)
+	cargoTable      = regexp.MustCompile(`^\s*\[`)
+	cargoPackage    = regexp.MustCompile(`^\s*\[\[package\]\]\s*$`)
+	cargoName       = valueLinePattern(`\s*name\s*=\s*`)
+	cargoVersion    = valueLinePattern(`\s*version\s*=\s*`)
+	cargoDependency = regexp.MustCompile(`^(\s*")([^"\n]+)(".*)$`)
+	cargoSource     = regexp.MustCompile(`^\s*source\s*=`)
 )
 
 // UpdateCargoLock replaces the version of the crate named key in a
@@ -45,12 +46,14 @@ var (
 func UpdateCargoLock(content, key, version string) (string, error) {
 	lines := strings.Split(content, "\n")
 	found := false
+	oldVersions := map[string]bool{}
 
 	inPackage := false
 	name, versionLine, hasSource := "", -1, false
 	flush := func() {
 		if inPackage && name == key && versionLine >= 0 && !hasSource {
 			m := cargoVersion.FindStringSubmatch(lines[versionLine])
+			oldVersions[strings.Trim(m[2], `"'`)] = true
 			lines[versionLine] = m[1] + quoteLike(m[2], version) + m[3]
 			found = true
 		}
@@ -77,6 +80,28 @@ func UpdateCargoLock(content, key, version string) (string, error) {
 	flush()
 	if !found {
 		return "", fmt.Errorf("updater: cargo-lock: no workspace crate named %q", key)
+	}
+	inDependencies := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "dependencies = [") {
+			inDependencies = true
+			continue
+		}
+		if strings.TrimSpace(line) == "]" {
+			inDependencies = false
+			continue
+		}
+		if !inDependencies {
+			continue
+		}
+		m := cargoDependency.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		dep, old, ok := strings.Cut(m[2], " ")
+		if ok && dep == key && oldVersions[old] {
+			lines[i] = m[1] + key + " " + version + m[3]
+		}
 	}
 	return strings.Join(lines, "\n"), nil
 }
