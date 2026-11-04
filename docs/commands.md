@@ -136,7 +136,9 @@ printing `deleted release branch <branch>`. Only once every tag and release of t
 requests merged from it succeeded, for every component of a shared or locked pull request, and
 only while the branch still points at the head the pull request merged with and no open pull
 request uses it: a branch `pr` already pushed the next release onto stays. A branch already
-gone, deleted by GitHub's own setting to delete head branches on merge, is not an error. A
+gone, deleted by GitHub's own setting to delete head branches on merge, is not an error.
+Deletion uses `git push --force-with-lease` against the released head SHA, so a writer
+arriving after the lookup keeps its branch and is reported as a warning. A
 failed delete, a protected branch say, is a warning and never fails the run, since the tags and
 releases exist by then; the branch stays for a human. `pr` pushes the branch afresh for the
 next release. Deleting needs `contents: write`, the permission tagging already needs.
