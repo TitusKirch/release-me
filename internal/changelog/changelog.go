@@ -63,6 +63,9 @@ type Options struct {
 	// Breaking Changes only. An entry whose type no section lists renders
 	// nowhere unless it is breaking.
 	Sections []Section
+	// SentenceCase upper cases the first letter of every entry's
+	// description, see sentenceCase for the words it leaves alone.
+	SentenceCase bool
 }
 
 // section is one rendered section: its heading and the entries it takes.
@@ -199,13 +202,17 @@ func renderEntry(e Entry, opts Options) []string {
 }
 
 // renderLine renders one entry's own list item, as opts shapes it.
-func renderLine(e Entry, _ Options) string {
+func renderLine(e Entry, opts Options) string {
 	var b strings.Builder
 	b.WriteString("- ")
 	if e.Scope != "" {
 		fmt.Fprintf(&b, "**%s:** ", e.Scope)
 	}
-	b.WriteString(e.Description)
+	description := e.Description
+	if opts.SentenceCase {
+		description = sentenceCase(description)
+	}
+	b.WriteString(description)
 	if e.PullRequestNumber > 0 && e.URL != "" {
 		fmt.Fprintf(&b, " ([#%d](%s))", e.PullRequestNumber, e.URL)
 	}

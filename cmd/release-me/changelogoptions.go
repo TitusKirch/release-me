@@ -17,8 +17,12 @@ import (
 // heading rendered together where that heading first appears, and every
 // type the list names decides its own visibility: one listed with a section
 // renders even when hidden-types names it, one listed hidden never does.
+// The changelog style keys carry over as they are.
 func changelogOptions(comp config.ResolvedComponent) changelog.Options {
-	opts := changelog.Options{HiddenTypes: comp.HiddenTypes}
+	opts := changelog.Options{
+		HiddenTypes:  comp.HiddenTypes,
+		SentenceCase: comp.ChangelogStyle.SentenceCase,
+	}
 	if comp.ChangelogSections == nil {
 		return opts
 	}

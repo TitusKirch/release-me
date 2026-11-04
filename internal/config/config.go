@@ -4,7 +4,8 @@
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, versioning-strategy,
 // release-as, hidden-types, fallback-type, token-env, files,
-// changelog, changelog-source, labels, prerelease-types, author, major-tag,
+// changelog, changelog-source, changelog-sections, the changelog style keys
+// ChangelogStyle lists, labels, prerelease-types, author, major-tag,
 // versioning, draft-until-assets-attach, comment-mention,
 // delete-release-branch, exclude-paths, workspaces, always-link-local and
 // components.
@@ -203,6 +204,14 @@ type ChangelogSection struct {
 	Hidden  bool
 }
 
+// ChangelogStyle is the top-level keys that shape how a changelog line
+// renders, the same for every component.
+type ChangelogStyle struct {
+	// SentenceCase is "changelog-sentence-case", default false: upper case
+	// the first letter of every entry's description.
+	SentenceCase bool
+}
+
 // Labels is the "labels" key: the label names release-me expects on the
 // repository. Alpha, Beta and Rc select a pre-release type on the release
 // pull request; Pending and Tagged apply to every release, stable or not.
@@ -294,6 +303,10 @@ type Config struct {
 	// constants. A component overrides it through its own
 	// "changelog-source" key.
 	ChangelogSource string
+	// ChangelogStyle is the top-level keys that shape every changelog
+	// line. There is no per-component override: every component a shared
+	// release pull request carries renders alike.
+	ChangelogStyle ChangelogStyle
 	// ChangelogSections is the top-level "changelog-sections" key, nil
 	// when it was left out and the default sections apply. A component
 	// overrides it through its own "changelog-sections" key.
@@ -450,6 +463,8 @@ type ResolvedComponent struct {
 	// ChangelogSections is the "changelog-sections" this component's
 	// changelog renders with, nil for the default sections.
 	ChangelogSections []ChangelogSection
+	// ChangelogStyle is the top level's, the same for every component.
+	ChangelogStyle ChangelogStyle
 }
 
 // Resolve returns the components a command should loop over, in
@@ -474,6 +489,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
 			ChangelogSource:           cfg.ChangelogSource,
+			ChangelogStyle:            cfg.ChangelogStyle,
 			ChangelogSections:         cfg.ChangelogSections,
 			ExcludePaths:              cfg.ExcludePaths,
 		}}
@@ -507,6 +523,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
 			ChangelogSource:           cfg.ChangelogSource,
+			ChangelogStyle:            cfg.ChangelogStyle,
 			ChangelogSections:         cfg.ChangelogSections,
 			ExcludePaths:              c.ExcludePaths,
 		}
@@ -648,6 +665,7 @@ type raw struct {
 	Files                     *[]rawFile             `yaml:"files"`
 	Changelog                 *string                `yaml:"changelog"`
 	ChangelogSource           *string                `yaml:"changelog-source"`
+	ChangelogSentenceCase     *bool                  `yaml:"changelog-sentence-case"`
 	ChangelogSections         *[]rawChangelogSection `yaml:"changelog-sections"`
 	Labels                    *rawLabels             `yaml:"labels"`
 	Author                    *rawAuthor             `yaml:"author"`
@@ -811,6 +829,9 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: changelog-sections: %w", path, err)
 		}
 		cfg.ChangelogSections = sections
+	}
+	if r.ChangelogSentenceCase != nil {
+		cfg.ChangelogStyle.SentenceCase = *r.ChangelogSentenceCase
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {

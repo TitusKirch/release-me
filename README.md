@@ -145,6 +145,7 @@ files:
 | `release-as` | Forces the next version while it is greater than the last tag. | none | No |
 | `hidden-types` | Entry types hidden from the changelog. | `chore, docs, ci, style, refactor, test, build, other` | No |
 | `changelog-sections` | Renames, reorders or adds changelog sections per type. | `Features`, `Bug Fixes`, `Performance`, `Reverts` | No |
+| `changelog-sentence-case` | Upper cases the first letter of every changelog entry. | `false` | No |
 | `fallback-type` | Type assigned to text that does not parse as a conventional commit. | `other` | No |
 | `token-env` | Environment variable holding the GitHub token. | `GITHUB_TOKEN` | No |
 | `changelog` | Changelog file path. | `CHANGELOG.md` | No |

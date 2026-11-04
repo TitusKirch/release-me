@@ -179,7 +179,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			"component counts only the files outside the other components' paths")
 	}
 
-	versioning, workspaces, err := translatePlugins(topValues["plugins"], components, warn)
+	versioning, workspaces, st, err := translatePlugins(topValues["plugins"], components, warn)
 	if err != nil {
 		return Result{}, err
 	}
@@ -266,7 +266,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 
 	out, err := render(components, topLevel{
 		versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, workspaces: workspaces,
-		separateLinks: !linkLocal,
+		separateLinks: !linkLocal, sentenceCase: st.sentenceCase,
 	})
 	if err != nil {
 		return Result{}, err
@@ -892,18 +892,26 @@ var workspacePlugins = map[string]string{
 // behaves as.
 var workspacePluginOptions = []string{"type"}
 
-// translatePlugins maps release-please's linked-versions plugin to a
-// release-me versioning mode, and its workspace plugins to "workspaces".
-// linked-versions releases every component of its group at the group's
-// highest version, changed or not, which is release-me's locked mode when
-// the group is every component.
-func translatePlugins(raw json.RawMessage, components []component, warn func(string, ...any)) (string, []string, error) {
+// style is the top-level changelog style keys the translation writes,
+// carried over from release-please's plugins and settings.
+type style struct {
+	sentenceCase bool
+}
+
+// translatePlugins maps release-please's plugins onto release-me: the
+// linked-versions plugin to a release-me versioning mode, its workspace
+// plugins to "workspaces" and the sentence-case plugin to
+// changelog-sentence-case. linked-versions releases every component of its
+// group at the group's highest version, changed or not, which is
+// release-me's locked mode when the group is every component.
+func translatePlugins(raw json.RawMessage, components []component, warn func(string, ...any)) (string, []string, style, error) {
+	var st style
 	if raw == nil {
-		return "", nil, nil
+		return "", nil, st, nil
 	}
 	var plugins []json.RawMessage
 	if err := json.Unmarshal(raw, &plugins); err != nil {
-		return "", nil, fmt.Errorf("migrate: plugins: %w", err)
+		return "", nil, st, fmt.Errorf("migrate: plugins: %w", err)
 	}
 	versioning := ""
 	var workspaces []string
@@ -925,6 +933,10 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 	for _, p := range plugins {
 		var name string
 		if json.Unmarshal(p, &name) == nil {
+			if name == "sentence-case" {
+				st.sentenceCase = true
+				continue
+			}
 			if _, ok := workspacePlugins[name]; ok {
 				addWorkspace(name, nil)
 				continue
@@ -933,16 +945,25 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 			continue
 		}
 		var plugin struct {
-			Type       string   `json:"type"`
-			Components []string `json:"components"`
+			Type         string   `json:"type"`
+			Components   []string `json:"components"`
+			SpecialWords []string `json:"specialWords"`
 		}
 		if err := json.Unmarshal(p, &plugin); err != nil {
-			return "", nil, fmt.Errorf("migrate: plugins: %w", err)
+			return "", nil, st, fmt.Errorf("migrate: plugins: %w", err)
+		}
+		if plugin.Type == "sentence-case" {
+			st.sentenceCase = true
+			if len(plugin.SpecialWords) > 0 {
+				warn("plugins: sentence-case: specialWords: release-me keeps gRPC, npm and any first word "+
+					"already holding an upper case letter as written, %s left out", strings.Join(plugin.SpecialWords, ", "))
+			}
+			continue
 		}
 		if _, ok := workspacePlugins[plugin.Type]; ok {
 			var options map[string]json.RawMessage
 			if err := json.Unmarshal(p, &options); err != nil {
-				return "", nil, fmt.Errorf("migrate: plugins: %w", err)
+				return "", nil, st, fmt.Errorf("migrate: plugins: %w", err)
 			}
 			addWorkspace(plugin.Type, options)
 			continue
@@ -960,7 +981,7 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 		}
 		versioning = "locked"
 	}
-	return versioning, workspaces, nil
+	return versioning, workspaces, st, nil
 }
 
 // label reads a release-please label key, a comma separated list. release-me
@@ -1108,6 +1129,8 @@ type topLevel struct {
 	workspaces      []string
 	// separateLinks writes always-link-local: false.
 	separateLinks bool
+	// sentenceCase writes changelog-sentence-case: true.
+	sentenceCase bool
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1164,6 +1187,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 			add(types, t, scalar(preReleaseLabel(t)))
 		}
 		add(doc, "prerelease-types", types)
+	}
+	if top.sentenceCase {
+		add(doc, "changelog-sentence-case", boolean(true))
 	}
 
 	// A pre-major rule, a release-as value and a changelog-sections list
