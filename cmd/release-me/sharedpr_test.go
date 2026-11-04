@@ -564,3 +564,59 @@ func TestSharedReleaseFailsWithoutNamingThePushURLWhenTheBranchLookupFails(t *te
 		t.Fatalf("doRelease() error = %q, want the lookup named and the push URL left out", err)
 	}
 }
+
+func TestSharedReleasePullRequestCarriesARootComponentBesideANestedOne(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeConfig(t, dir, `release-pull-request: shared
+components:
+  acme:
+    path: .
+    tag-prefix: v
+    files:
+      - path: package.json
+        updater: json
+        key: version
+  web:
+    path: packages/web
+    files:
+      - path: packages/web/package.json
+        updater: json
+        key: version
+`)
+	writeFiles(t, dir, "chore: scaffold the site and the web package", map[string]string{
+		"package.json":              "{\n  \"name\": \"acme\",\n  \"version\": \"1.2.0\"\n}\n",
+		"packages/web/package.json": "{\n  \"name\": \"@acme/web\",\n  \"version\": \"0.4.0\"\n}\n",
+	})
+	runGit(t, dir, "tag", "v1.2.0")
+	runGit(t, dir, "tag", "web/v0.4.0")
+	writeFiles(t, dir, "feat: add the pricing page", map[string]string{"packages/web/pricing.vue": "<template />\n"})
+	writeFiles(t, dir, "fix: correct the install command in the README", map[string]string{"README.md": "acme\n"})
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+
+	f := newFake()
+	var stdout bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	if len(f.CreatedPullRequests) != 1 || f.CreatedPullRequests[0].Title != "chore: release acme v1.2.1, web v0.5.0" {
+		t.Fatalf("CreatedPullRequests = %+v, want one shared pull request releasing both", f.CreatedPullRequests)
+	}
+	files := map[string]string{
+		"CHANGELOG.md":              "- correct the install command in the README",
+		"packages/web/CHANGELOG.md": "- add the pricing page",
+		"package.json":              `"version": "1.2.1"`,
+		"packages/web/package.json": `"version": "0.5.0"`,
+	}
+	for path, want := range files {
+		if got := showBareFile(t, origin, "release-me/main", path); !strings.Contains(got, want) {
+			t.Errorf("%s = %q, want it to contain %q", path, got, want)
+		}
+	}
+	if got := showBareFile(t, origin, "release-me/main", "CHANGELOG.md"); strings.Contains(got, "pricing page") {
+		t.Errorf("CHANGELOG.md = %q, want the web feature left to the web component", got)
+	}
+}
