@@ -93,6 +93,10 @@ human wants the collapsed look kept. Every release pull request body also opens 
 collapsed "How this release works" guide release-please never rendered: `migrate` leaves
 `release-pull-request-guide` out, add `release-pull-request-guide: false` only when the human
 wants the body without it.
+`migrate` carries `pull-request-title-pattern` and
+`group-pull-request-title-pattern` over as `release-pull-request-title` and
+`release-pull-request-shared-title`; one it left out lacked a placeholder release-me reads the
+title back with, and the row offers the default title or a pattern carrying them.
 
 A **root package** beside other packages, package `.`, translates to a root component with a
 warning: it owns only the files outside the other components' paths, where release-please's

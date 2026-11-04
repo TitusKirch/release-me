@@ -72,6 +72,9 @@ Four choices belong to the human; ask each once, recommendation first:
   Every release pull request body opens with a collapsed "How this release works" guide; leave
   `release-pull-request-guide` out too, and write `release-pull-request-guide: false` only
   when the human asks to drop it.
+  Leave
+  `release-pull-request-title` and `release-pull-request-shared-title` out unless the human
+  asks for another title.
 - **Pre-releases:** wanted, or turned off with `alpha`, `beta` and `rc` set to `false` under
   `labels`, so the repository needs only the pending and tagged labels.
 - **Token:** a GitHub App (recommended: its release pull requests trigger checks and the
