@@ -170,9 +170,11 @@ Any other value is a configuration error. Every command reads the layout back fr
 itself, never from the key: a pull request opened before the key changed still releases every
 component it carries, and a `release-as <component>` comment still finds them. The next `pr`
 run rewrites the body in the new layout without pushing the release branch. A `<details>`
-block whose summary reads `<name> vX.Y.Z` marks `details`, a level two heading that is not a
-version heading marks `headings`, anything else is `compact`; the release notes and version
-override blocks are never read for components.
+block whose summary reads `<name> vX.Y.Z`, at the changelog's top level and closed by its own
+`</details>`, marks `details`, a level two heading that is not a version heading marks
+`headings`, anything else is `compact`. A line shaped like that summary inside a component's
+section, an override block's text carried into an entry, never marks `details`; the release
+notes and version override blocks are never read for components.
 
 ## `draft-until-assets-attach`
 
