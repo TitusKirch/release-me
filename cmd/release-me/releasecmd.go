@@ -136,6 +136,7 @@ func releaseComponent(comp config.ResolvedComponent) tagrelease.Component {
 		TagOnPublish:       !comp.ForceTagCreation,
 		SkipGitHubRelease:  comp.SkipGitHubRelease,
 		OmitVInReleaseName: !comp.IncludeVInReleaseName,
+		Draft:              comp.Draft,
 	}
 }
 
