@@ -394,10 +394,14 @@ func reportSupersededPRs(
 }
 
 // bodyGuide returns the guide every release pull request body renders: shown
-// unless "release-pull-request-guide: false", naming the configured labels.
+// unless "release-pull-request-guide: false", naming the configured labels,
+// every free pre-release type's label among them.
 func bodyGuide(cfg config.Config) releasepr.Guide {
 	return releasepr.Guide{
-		Show:   cfg.ReleasePullRequestGuide,
-		Labels: releasepr.GuideLabels{Tagged: cfg.Labels.Tagged, Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc},
+		Show: cfg.ReleasePullRequestGuide,
+		Labels: releasepr.GuideLabels{
+			Tagged: cfg.Labels.Tagged, Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc,
+			Others: otherPreReleaseLabelNames(cfg.Labels),
+		},
 	}
 }

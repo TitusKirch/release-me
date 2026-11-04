@@ -72,6 +72,7 @@ func doRelease(ctx context.Context, dir string, cfg config.Config, component str
 	labels := tagrelease.Labels{
 		Pending: cfg.Labels.Pending, Tagged: cfg.Labels.Tagged,
 		Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc,
+		Others: otherPreReleaseLabels(cfg.Labels),
 	}
 
 	released := releasedBranches{}
