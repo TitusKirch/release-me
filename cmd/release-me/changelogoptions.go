@@ -9,7 +9,11 @@ import (
 )
 
 // changelogOptions translates comp's changelog settings into the options
-// its entries render with.
+// its entries render with: hidden-types, and the changelog style keys as
+// they are.
 func changelogOptions(comp config.ResolvedComponent) changelog.Options {
-	return changelog.Options{HiddenTypes: comp.HiddenTypes}
+	return changelog.Options{
+		HiddenTypes:  comp.HiddenTypes,
+		SentenceCase: comp.ChangelogStyle.SentenceCase,
+	}
 }
