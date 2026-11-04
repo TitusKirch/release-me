@@ -228,11 +228,14 @@ counted every commit. It also carries over:
   value, a pre-release for one;
 - `exclude-paths`, per package or as a top-level default, keeping each path that lies inside
   the package it is set on and warning about every other one, which excludes nothing there;
-- the version file of a `node` (`package.json`), `simple` (its `version-file`, default
-  `version.txt`, through `plain`), `maven` (`pom.xml`, its project version or else its
-  parent's) or `helm` (`Chart.yaml`) package where that file exists, `node` being
-  release-please's default type. A multi-module `pom.xml` is warned about, since
+- the version file of a `node` (`package.json`), `rust` (`Cargo.toml`), `simple` (its
+  `version-file`, default `version.txt`, through `plain`), `maven` (`pom.xml`, its project
+  version or else its parent's) or `helm` (`Chart.yaml`) package where that file exists, `node`
+  being release-please's default type. A multi-module `pom.xml` is warned about, since
   release-please bumped every `pom.xml` below the package;
+- the lockfile release-please bumps beside it where it exists and holds the package:
+  `package-lock.json` and `npm-shrinkwrap.json` for `node`, `Cargo.lock` for `rust`, and
+  `Gemfile.lock` for `ruby`, keyed by the crate or gem name;
 - every `extra-files` entry of type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath, of
   type `xml` with a plain absolute xpath such as `/project/version`, and of type `pom`;
 - `label` and `release-label` as the `pending` and `tagged` labels;

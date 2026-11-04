@@ -236,6 +236,30 @@ fails `pr`, naming the path and the key.
       key: Project.PropertyGroup.Version
   ```
 
+- `npm-lock` bumps a `package-lock.json` or `npm-shrinkwrap.json`: its top-level `version` and,
+  in lockfile version 2 or 3, the root package's entry `packages[""].version`. Dependencies and
+  workspace packages are left alone. No `key`.
+
+- `cargo-lock` bumps the `[[package]]` entry of the crate `key` names in a `Cargo.lock`. Only an
+  entry without a `source` matches, which is how Cargo records a crate of the workspace itself,
+  so a same-named crate from a registry is never touched. A workspace releasing several crates
+  lists the file once per crate:
+
+  ```yaml
+  files:
+    - path: Cargo.toml
+      updater: toml
+      key: package.version
+    - path: Cargo.lock
+      updater: cargo-lock
+      key: release-core
+  ```
+
+- `gemfile-lock` bumps the specs entry `name (version)` of the gem `key` names in a
+  `Gemfile.lock`, indented by four spaces as Bundler lists a resolved gem; a dependency's
+  constraint, indented deeper, is left alone. A pre-release is written the way Bundler records
+  it, `1.2.0-rc.1` as `1.2.0.pre.rc.1`.
+
 Every file entry is validated when release-me.yaml loads: an unknown `updater`, a `key`
 missing where the updater requires one, and a `key` given to an updater that takes none are
 all errors.
