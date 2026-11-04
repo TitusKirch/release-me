@@ -17,6 +17,25 @@ Hides entries of these types from the changelog, default `chore`, `docs`, `ci`, 
 `refactor`, `test`, `build`, `other`. Only `feat`, `fix`, `perf`, `revert` and a breaking
 change ever render a section; a type outside those five never renders, hidden or not.
 
+## `changelog-authors`
+
+Credits each entry's author after its description, default `false`, the counterpart of
+release-please's `include-commit-authors`:
+
+```markdown
+- add the widget (@octocat) ([#12](https://github.com/owner/repo/pull/12))
+- handle the empty case (Ada Lovelace)
+```
+
+An entry whose text a pull request gave, its title or an
+[override block](overrides.md#override-block), credits the pull request's author as `@<login>`.
+That is every pull request entry in `first-parent`, `squash` and `nested`. An entry whose text
+a commit gave credits that commit's git author name: a direct commit, and every entry in
+`all`, which reads each commit's own subject. A `nested` sub item credits no one, since its
+parent line already credits the pull request. An `@<login>` mentions that account where GitHub
+renders the text, in the release pull request body and the release, which notifies it the way
+release-please's mention does. There is no per-component override.
+
 ## `fallback-type`
 
 The type assigned to text that does not parse as a conventional commit, default `other`.
