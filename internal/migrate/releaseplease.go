@@ -66,7 +66,7 @@ var packageKeys = []string{
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
 	"initial-version", "extra-files", "versioning", "release-as", "prerelease-type", "prerelease",
 	"exclude-paths", "version-file", "changelog-sections",
-	"include-commit-authors",
+	"include-commit-authors", "changelog-host",
 }
 
 // topLevelKeys are the release-please settings that only exist at the top
@@ -205,6 +205,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	// release-please's default changelog links every entry's commit and
 	// the issues it closes; release-me's does neither unless asked to.
 	st.commitLinks, st.issueReferences = true, true
+	st.host = translateChangelogHost(components, warn)
 	// release-please groups every package into one release pull request
 	// unless separate-pull-requests is true; release-me's own default is one
 	// per component, so the grouped default is written out. locked always
@@ -279,6 +280,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 		versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, workspaces: workspaces,
 		separateLinks: !linkLocal, sentenceCase: st.sentenceCase,
 		authors: st.authors, commitLinks: st.commitLinks, issueReferences: st.issueReferences,
+		host: st.host,
 	})
 	if err != nil {
 		return Result{}, err
@@ -320,6 +322,8 @@ type component struct {
 	changelogSections *[]config.ChangelogSection
 	// includeCommitAuthors is release-please's include-commit-authors.
 	includeCommitAuthors bool
+	// changelogHost is release-please's changelog-host, "" for none.
+	changelogHost string
 }
 
 // file is one release-me "files" entry.
@@ -335,7 +339,7 @@ type file struct {
 func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any)) (component, error) {
 	var (
 		releaseType, packageName, componentName, separator, changelogPath, initialVersion, versioning string
-		releaseAs, preReleaseType, versionFileName                                                    string
+		releaseAs, preReleaseType, versionFileName, changelogHost                                     string
 		preRelease                                                                                    bool
 		includeComponent, includeV                                                                    = true, true
 		bumpMinor, bumpPatchForMinor, includeAuthors                                                  bool
@@ -352,6 +356,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"release-as":      &releaseAs,
 		"prerelease-type": &preReleaseType, "prerelease": &preRelease,
 		"include-commit-authors": &includeAuthors,
+		"changelog-host":         &changelogHost,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -425,6 +430,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		preReleaseType:            preReleaseType,
 		initialVersion:            initialVersion,
 		includeCommitAuthors:      includeAuthors,
+		changelogHost:             changelogHost,
 	}
 
 	// A version file the release type implies is carried over only where it
@@ -769,6 +775,27 @@ func translatePom(c *component, pkgPath string, readFile ReadFile, warn func(str
 	}
 }
 
+// translateChangelogHost carries over a changelog-host every component
+// shares: release-me links every component's changelog on one host.
+func translateChangelogHost(components []component, warn func(string, ...any)) string {
+	host := components[0].changelogHost
+	for _, c := range components[1:] {
+		if c.changelogHost != host {
+			warn("changelog-host: release-me links every component on one host, left out")
+			return ""
+		}
+	}
+	if host == "" {
+		return ""
+	}
+	valid, err := config.ValidateChangelogHost(host)
+	if err != nil {
+		warn("changelog-host: %s, left out", err)
+		return ""
+	}
+	return valid
+}
+
 // translateExtraFiles carries over the extra-files entries an updater can
 // bump: a plain path and a generic entry through release-please's version
 // markers, json, yaml and toml files whose jsonpath is a plain dotted path,
@@ -915,6 +942,7 @@ type style struct {
 	authors         bool
 	commitLinks     bool
 	issueReferences bool
+	host            string
 }
 
 // translatePlugins maps release-please's plugins onto release-me: the
@@ -1155,6 +1183,8 @@ type topLevel struct {
 	// commitLinks and issueReferences write changelog-commit-links and
 	// changelog-issue-references: true.
 	commitLinks, issueReferences bool
+	// host writes changelog-host.
+	host string
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1223,6 +1253,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.authors {
 		add(doc, "changelog-authors", boolean(true))
+	}
+	if top.host != "" {
+		add(doc, "changelog-host", scalar(top.host))
 	}
 
 	// A pre-major rule, a release-as value and a changelog-sections list
