@@ -371,6 +371,12 @@ func TestFromReleasePleaseMapsWorkspacePluginsToWorkspaces(t *testing.T) {
 				"dependency, so release-pull-request is shared"},
 		},
 		{
+			name:       "the cargo plugin beside the node one",
+			configJSON: `{"plugins": [{"type": "cargo-workspace", "merge": false}, "node-workspace"], ` + packages + `}`,
+			want:       []string{"cargo", "node"}, sharedPR: true,
+			warnings: []string{"plugins: cargo-workspace: merge: no release-me equivalent, left out"},
+		},
+		{
 			name:       "a single package has nothing to link",
 			configJSON: `{"plugins": ["node-workspace"], "packages": {"packages/core": {"component": "core"}}}`,
 			warnings:   []string{"workspaces: node: a single package has no workspace dependency to move, left out"},
