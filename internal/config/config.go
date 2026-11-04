@@ -9,8 +9,9 @@
 // prerelease-types, author, major-tag, versioning,
 // release-pull-request-header, release-pull-request-footer,
 // release-pull-request-title, release-pull-request-shared-title,
-// draft-until-assets-attach, comment-mention, delete-release-branch,
-// exclude-paths, workspaces, always-link-local and components.
+// release-pull-request-draft, draft-until-assets-attach, comment-mention,
+// delete-release-branch, exclude-paths, workspaces, always-link-local and
+// components.
 package config
 
 import (
@@ -408,6 +409,10 @@ type Config struct {
 	// releasepr.DefaultSharedTitlePattern otherwise. Load checks it for the
 	// configured versioning mode.
 	ReleasePullRequestSharedTitle string
+	// ReleasePullRequestDraft is the top-level "release-pull-request-draft"
+	// key, default false: when true, pr opens every release pull request as
+	// a draft. It never touches one already open.
+	ReleasePullRequestDraft bool
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
 	// key, default false: when true, release creates every release as a
 	// draft instead of publishing it immediately, and resumes publishing
@@ -761,6 +766,7 @@ type raw struct {
 	SkipChangelog             *bool                  `yaml:"skip-changelog"`
 	Versioning                *string                `yaml:"versioning"`
 	ReleasePullRequest        *string                `yaml:"release-pull-request"`
+	ReleasePullRequestDraft   *bool                  `yaml:"release-pull-request-draft"`
 	ReleasePullRequestTitle   *string                `yaml:"release-pull-request-title"`
 	// ReleasePullRequestSharedTitle is "release-pull-request-shared-title".
 	ReleasePullRequestSharedTitle *string   `yaml:"release-pull-request-shared-title"`
@@ -1147,6 +1153,9 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: release-pull-request-shared-title %q %w", path, *r.ReleasePullRequestSharedTitle, err)
 		}
 		cfg.ReleasePullRequestSharedTitle = *r.ReleasePullRequestSharedTitle
+	}
+	if r.ReleasePullRequestDraft != nil {
+		cfg.ReleasePullRequestDraft = *r.ReleasePullRequestDraft
 	}
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach

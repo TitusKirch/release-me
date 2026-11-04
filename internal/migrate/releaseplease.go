@@ -76,7 +76,7 @@ var packageKeys = []string{
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "separate-pull-requests", "$schema",
 	"bootstrap-sha", "last-release-sha", "always-link-local", "pull-request-header", "pull-request-footer",
-	"pull-request-title-pattern", "group-pull-request-title-pattern",
+	"pull-request-title-pattern", "group-pull-request-title-pattern", "draft-pull-request",
 }
 
 // unsupportedReasons explains a release-please key the translation leaves
@@ -325,6 +325,12 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			if opts.sharedTitle, err = titlePattern(raw, "group-pull-request-title-pattern", kind, warn); err != nil {
 				return Result{}, err
 			}
+		}
+	}
+
+	if raw, ok := topValues["draft-pull-request"]; ok {
+		if err := json.Unmarshal(raw, &opts.draft); err != nil {
+			return Result{}, fmt.Errorf("migrate: draft-pull-request: %w", err)
 		}
 	}
 
@@ -1296,6 +1302,8 @@ type topLevel struct {
 	// title and sharedTitle write release-pull-request-title and
 	// release-pull-request-shared-title.
 	title, sharedTitle string
+	// draft writes release-pull-request-draft: true.
+	draft bool
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1342,6 +1350,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.sharedTitle != "" {
 		add(doc, "release-pull-request-shared-title", scalar(top.sharedTitle))
+	}
+	if top.draft {
+		add(doc, "release-pull-request-draft", boolean(true))
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
 	add(labels, "pending", scalar(top.pending))
