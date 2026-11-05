@@ -199,7 +199,7 @@ func doPRShared(
 	}
 	section := releasepr.RenderComponents(releasepr.Layout(cfg.ReleasePullRequestLayout), parts) + "\n"
 
-	body := releasepr.SharedBody(releases, guideLabels(cfg), perComponentVersion, notes, versionOverride, section)
+	body := releasepr.SharedBody(releases, bodyGuide(cfg), perComponentVersion, notes, versionOverride, section)
 	names := make([]string, 0, len(members))
 	for _, m := range members {
 		names = append(names, m.comp.Name)
@@ -393,8 +393,11 @@ func reportSupersededPRs(
 	}
 }
 
-// guideLabels returns the label names a release pull request body's guide
-// renders.
-func guideLabels(cfg config.Config) releasepr.GuideLabels {
-	return releasepr.GuideLabels{Tagged: cfg.Labels.Tagged, Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc}
+// bodyGuide returns the guide every release pull request body renders: shown
+// unless "release-pull-request-guide: false", naming the configured labels.
+func bodyGuide(cfg config.Config) releasepr.Guide {
+	return releasepr.Guide{
+		Show:   cfg.ReleasePullRequestGuide,
+		Labels: releasepr.GuideLabels{Tagged: cfg.Labels.Tagged, Alpha: cfg.Labels.Alpha, Beta: cfg.Labels.Beta, Rc: cfg.Labels.Rc},
+	}
 }
