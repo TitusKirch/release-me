@@ -1,0 +1,46 @@
+release-me, next branch of github.com/TitusKirch/release-me
+
+This is a modified version of release-me by Simon Ostendorf
+(https://github.com/ostendorf-cloud/release-me), licensed under the Apache
+License, Version 2.0 (see LICENSE). It is not an official release-me release.
+
+The modifications integrate the following pull requests of the upstream
+repository before they are released there. Every change, and the files each
+one modifies, is recorded in the git history of the next branch.
+
+- #78 fix(pr)!: create the release commit through the forge so it is signed
+- #79 feat(release)!: delete the release branch once its pull request is released
+- #80 feat(releasepr): turn the release pull request guide off
+- #81 feat(version): add bump-patch-for-minor-pre-major
+- #82 feat(components): leave subpaths out of a component with exclude-paths
+- #83 feat(release): tag without a GitHub release under skip-github-release
+- #84 feat(updater): add npm-lock, cargo-lock and gemfile-lock updaters
+- #85 feat(version): add release-please's versioning strategies
+- #86 feat(changelog): rename, reorder and add sections through changelog-sections
+- #87 feat(updater): add an xml updater for pom.xml and .csproj
+- #88 feat(release): create the GitHub release as a draft under draft
+- #89 feat(components): allow a root component beside other components
+- #90 feat(pr): configurable release pull request title patterns
+- #91 feat(changelog): sentence case entries with changelog-sentence-case
+- #92 feat(updater): add a plain updater for version.txt
+- #93 feat(pr): a header and a footer for every release pull request body
+- #94 feat(changelog): credit entry authors with changelog-authors
+- #95 feat(release): add force-tag-creation to leave the tag to the release publish
+- #96 feat(pr): open release pull requests as drafts with release-pull-request-draft
+- #97 feat(config): add the release-as key
+- #98 feat(updater): add updaters for release-please's release type version files
+- #99 feat(release): add include-v-in-release-name for the release name
+- #100 feat(workspace): release node workspace dependents with their dependency
+- #101 feat(changelog): link commits and closed issues in changelog entries
+- #102 feat(updater): add a generic updater for release-please's version markers
+- #103 feat(config): add free pre-release types with their own labels
+- #104 feat(config): several labels per role and extra labels
+- #105 feat(changelog): point changelog links at changelog-host
+- #106 feat(workspace): carry release-please's always-link-local over
+- #107 feat(pr): sign the release commit off under signoff
+- #108 feat(action): add the release fields release-please-action outputs to each component
+- #109 feat(workspace): release cargo workspace dependents with their dependency
+- #110 feat(changelog): configure the heading date with changelog-date-format
+- #111 feat(workspace): release maven workspace dependents with their dependency
+- #112 feat(pr): leave the changelog file alone with skip-changelog
+- #113 feat(changelog): render GitHub's generated release notes with changelog-type github
