@@ -34,21 +34,6 @@ func TestLoadReadsTheChangelogStyleKeys(t *testing.T) {
 	}
 }
 
-func TestResolveGivesEveryComponentTheTopLevelChangelogStyle(t *testing.T) {
-	t.Parallel()
-	path := writeFile(t, "changelog-host: https://github.example.com\ncomponents:\n  api:\n    path: api\n  web:\n    path: web\n")
-
-	cfg, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	for _, comp := range cfg.Resolve() {
-		if comp.ChangelogStyle != cfg.ChangelogStyle {
-			t.Fatalf("component %s ChangelogStyle = %+v, want the top level's %+v", comp.Name, comp.ChangelogStyle, cfg.ChangelogStyle)
-		}
-	}
-}
-
 func TestLoadRejectsAChangelogStyleKeyInsideAComponent(t *testing.T) {
 	t.Parallel()
 	_, err := config.Load(writeFile(t, "components:\n  api:\n    path: api\n    changelog-host: https://github.example.com\n"))

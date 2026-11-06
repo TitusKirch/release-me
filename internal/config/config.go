@@ -343,8 +343,6 @@ type ResolvedComponent struct {
 	// ChangelogSource is one of the ChangelogSource* constants: which
 	// commits become this component's changelog entries.
 	ChangelogSource string
-	// ChangelogStyle is the top level's, the same for every component.
-	ChangelogStyle ChangelogStyle
 }
 
 // Resolve returns the components a command should loop over, in
@@ -366,7 +364,6 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
 			ChangelogSource:   cfg.ChangelogSource,
-			ChangelogStyle:    cfg.ChangelogStyle,
 		}}
 	}
 
@@ -395,7 +392,6 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:             cfg.Files,
 			MajorTag:          cfg.MajorTag,
 			ChangelogSource:   cfg.ChangelogSource,
-			ChangelogStyle:    cfg.ChangelogStyle,
 		}
 		if c.InitialVersion != nil {
 			rc.InitialVersion = *c.InitialVersion
