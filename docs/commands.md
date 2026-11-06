@@ -198,7 +198,8 @@ counted every commit. It also carries over:
 
 - `bump-minor-pre-major`, `bump-patch-for-minor-pre-major` and `initial-version`;
 - `skip-github-release`, at the top level when every package carries the same value, on the
-  component otherwise;
+  component otherwise; release-me still creates the tag, unlike release-please, so remove
+  any external tagging step the old workflow needed;
 - the version file of a `node` (`package.json`), `rust` (`Cargo.toml`), `maven` (`pom.xml`, its
   project version or else its parent's), `simple` (its `version-file`, default `version.txt`,
   through `plain`) or `helm` (`Chart.yaml`) package where that file exists, `node` being
