@@ -77,3 +77,57 @@ func TestLinksIgnoresAPackageOfAnotherManagerWithTheSameName(t *testing.T) {
 		t.Fatalf("Links() = %+v, want none across package managers", got)
 	}
 }
+
+func TestWorkspaceIgnoresSelfDependenciesAndReleasesCyclesOnce(t *testing.T) {
+	t.Parallel()
+	self := []workspace.Member{
+		{Component: "core", Manager: workspace.Node, Package: workspace.Package{
+			Name: "@acme/core", Dependencies: []workspace.Dependency{{Name: "@acme/core", Range: "^1.2.0"}},
+		}},
+	}
+	cycle := []workspace.Member{
+		{Component: "core", Manager: workspace.Node, Package: workspace.Package{
+			Name: "@acme/core", Dependencies: []workspace.Dependency{{Name: "@acme/ui", Range: "^0.8.0"}},
+		}},
+		{Component: "ui", Manager: workspace.Node, Package: workspace.Package{
+			Name: "@acme/ui", Dependencies: []workspace.Dependency{{Name: "@acme/core", Range: "^1.2.0"}},
+		}},
+	}
+	cycleLinks := []workspace.Link{
+		{Dependent: "core", Dependency: "ui", Manager: workspace.Node, Name: "@acme/ui"},
+		{Dependent: "ui", Dependency: "core", Manager: workspace.Node, Name: "@acme/core"},
+	}
+	cases := []struct {
+		name           string
+		members        []workspace.Member
+		released       []string
+		wantLinks      []workspace.Link
+		wantDependents []string
+	}{
+		{name: "a self dependency creates no link or extra release", members: self, released: []string{"core"}},
+		{
+			name: "releasing the first member of a cycle releases its peer once", members: cycle,
+			released: []string{"core"}, wantLinks: cycleLinks, wantDependents: []string{"ui"},
+		},
+		{
+			name: "releasing the second member of a cycle releases its peer once", members: cycle,
+			released: []string{"ui"}, wantLinks: cycleLinks, wantDependents: []string{"core"},
+		},
+		{name: "a cycle without a released member releases nothing", members: cycle, wantLinks: cycleLinks},
+		{
+			name: "a cycle with both members released adds neither again", members: cycle,
+			released: []string{"core", "ui"}, wantLinks: cycleLinks,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := workspace.Links(tc.members); !reflect.DeepEqual(got, tc.wantLinks) {
+				t.Fatalf("Links() = %+v, want %+v", got, tc.wantLinks)
+			}
+			if got := workspace.Dependents(tc.members, tc.released); !reflect.DeepEqual(got, tc.wantDependents) {
+				t.Fatalf("Dependents(%q) = %q, want %q", tc.released, got, tc.wantDependents)
+			}
+		})
+	}
+}
