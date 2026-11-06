@@ -96,7 +96,7 @@ type mavenElement struct {
 // version. A version given through a property, "${core.version}", or as
 // a range, "[1.0,2.0)", is left as it is. Everything but the version text
 // is kept byte for byte.
-func setMavenDependency(content, name, version string) (string, error) {
+func setMavenDependency(content, name, version string, _ func(string) bool) (string, error) {
 	pkg, err := parseMaven([]byte(content))
 	if err != nil {
 		return "", err

@@ -213,7 +213,7 @@ var cargoVersionField = regexp.MustCompile(`(\bversion\s*=\s*)"([^"]*)"`)
 // version: a plain requirement string, the version of an inline table, or
 // the version line of a "[dependencies.<name>]" table. A declaration
 // without a version, a path or workspace one, is left as it is.
-func setCargoDependency(content, name, version string) (string, error) {
+func setCargoDependency(content, name, version string, _ func(string) bool) (string, error) {
 	lines := strings.Split(content, "\n")
 	for _, d := range cargoDecls(lines) {
 		if d.crate != name || d.version == "" {
