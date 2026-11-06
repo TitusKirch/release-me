@@ -766,6 +766,9 @@ and every action output, so a later step knows which tag to release. With
 release has no draft to attach assets to or to resume. A component overrides it through its
 own `skip-github-release` key.
 
+Unlike release-please, release-me creates the tag even with this key on. After migrating,
+remove any external tagging step that release-please needed for `skip-github-release`.
+
 ## `draft`
 
 Creates each GitHub release as a draft and leaves it one, default `false`, for a human to

@@ -244,7 +244,8 @@ counted every commit. It also carries over:
 - `skip-github-release`, `draft`, `force-tag-creation` and `include-v-in-release-name`, each at the
   top level when every package carries the same value, on the component otherwise; a `draft` package
   that leaves `force-tag-creation` out gets `false`, release-please's default, so GitHub still tags
-  the draft on publish;
+  the draft on publish. With `skip-github-release`, release-me still creates the tag, unlike
+  release-please, so remove any external tagging step the old workflow needed;
 - `versioning` as `versioning-strategy`, by name, with a warning for `service-pack` and
   `dependency-manifest`, whose release-me form differs from release-please's Java one;
 - `release-as`, unless the manifest already records it as released or release-me refuses the
