@@ -106,9 +106,9 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				Author:                   config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
+				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
 				IncludeVInReleaseName:    true,
-				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 			},
 		},
 		{
@@ -157,10 +157,10 @@ files:
 				MajorTag:                 true,
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestShared,
+				ReleasePullRequestLayout: config.LayoutDetails,
 				DraftUntilAssetsAttach:   true,
 				CommentMention:           config.DefaultCommentMention,
 				IncludeVInReleaseName:    true,
-				ReleasePullRequestLayout: config.LayoutDetails,
 				Files: []config.File{
 					{Path: "cmd/cli/version.go", Updater: "marker"},
 					{Path: "deploy/values.yaml", Updater: "marker"},
@@ -185,9 +185,9 @@ files:
 				Author:                   config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
+				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
 				IncludeVInReleaseName:    true,
-				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 			},
 		},
 		{
@@ -207,9 +207,9 @@ files:
 				Author:                   config.Author{Name: config.DefaultAuthorName, Email: config.DefaultAuthorEmail},
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
+				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
 				IncludeVInReleaseName:    true,
-				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 			},
 		},
 		{
@@ -229,9 +229,9 @@ files:
 				Author:                   config.Author{Name: "renovate", Email: config.DefaultAuthorEmail},
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestPerComponent,
+				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				CommentMention:           config.DefaultCommentMention,
 				IncludeVInReleaseName:    true,
-				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 			},
 		},
 	}
@@ -467,8 +467,8 @@ components:
 	}
 }
 
-// releaseKeysConfig carries two components, the second one overriding
-// every GitHub release key the top level sets.
+// releaseKeysConfig carries two components, neither overriding a
+// top-level setting.
 const releaseKeysConfig = `components:
   api:
     path: services/api

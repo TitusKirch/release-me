@@ -320,7 +320,8 @@ type ResolvedComponent struct {
 	// is false for the single implicit "main" component, which keeps
 	// today's tag prefix "v" and release name instead of the generic
 	// "<name>/v" prefix and "<name> vX.Y.Z" release name a configured
-	// component carries.
+	// component carries, with the "v" dropped when
+	// include-v-in-release-name is false.
 	Multi             bool
 	InitialVersion    string
 	BumpMinorPreMajor bool
@@ -478,10 +479,10 @@ type raw struct {
 	MajorTag                 *bool      `yaml:"major-tag"`
 	Versioning               *string    `yaml:"versioning"`
 	ReleasePullRequest       *string    `yaml:"release-pull-request"`
+	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	DraftUntilAssetsAttach   *bool      `yaml:"draft-until-assets-attach"`
 	IncludeVInReleaseName    *bool      `yaml:"include-v-in-release-name"`
 	CommentMention           *string    `yaml:"comment-mention"`
-	ReleasePullRequestLayout *string    `yaml:"release-pull-request-layout"`
 	// Components is decoded as a node, not a Go map, so decodeComponents
 	// can read its entries back in release-me.yaml's order: a Go map
 	// gives no such guarantee. A zero Kind means the "components" key was
@@ -521,9 +522,9 @@ func Default() Config {
 		Author:                   Author{Name: DefaultAuthorName, Email: DefaultAuthorEmail},
 		Versioning:               DefaultVersioning,
 		ReleasePullRequest:       ReleasePullRequestPerComponent,
+		ReleasePullRequestLayout: DefaultReleasePullRequestLayout,
 		CommentMention:           DefaultCommentMention,
 		IncludeVInReleaseName:    true,
-		ReleasePullRequestLayout: DefaultReleasePullRequestLayout,
 	}
 }
 
