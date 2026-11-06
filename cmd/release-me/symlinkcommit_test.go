@@ -15,14 +15,25 @@ import (
 
 func TestAPIReleaseCommitPreservesTrackedSymlinks(t *testing.T) {
 	for _, tc := range []struct {
-		name, target        string
-		executable, wantErr bool
+		name, target                       string
+		executable, symlinkedTemp, wantErr bool
 	}{
 		{name: "relative tracked version target", target: "internal/VERSION"},
 		{name: "executable tracked target", target: "internal/VERSION", executable: true},
 		{name: "target outside the repository", target: "../outside-version", wantErr: true},
+		{name: "relative tracked target under symlinked temp root", target: "internal/VERSION", symlinkedTemp: true},
+		{name: "executable target under symlinked temp root", target: "internal/VERSION", executable: true, symlinkedTemp: true},
+		{name: "escaping target under symlinked temp root", target: "../outside-version", symlinkedTemp: true, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.symlinkedTemp {
+				tempRoot := t.TempDir()
+				link := filepath.Join(t.TempDir(), "temp-root")
+				if err := os.Symlink(tempRoot, link); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("TMPDIR", link)
+			}
 			dir, remote := newPRRepo(t)
 			content := "VERSION=0.0.1 # release-me: version\n"
 			if tc.wantErr {
