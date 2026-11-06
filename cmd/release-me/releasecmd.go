@@ -117,7 +117,6 @@ func doReleaseLocked(
 	for _, comp := range resolved {
 		comps = append(comps, tagrelease.Component{
 			Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
-			Titles: cfg.TitlePatterns(),
 		})
 	}
 	branch := resolved[0].Branch
@@ -163,7 +162,6 @@ func doReleaseShared(
 	for _, comp := range resolved {
 		comps = append(comps, tagrelease.Component{
 			Name: comp.Name, Branch: comp.Branch, TagPrefix: comp.TagPrefix, Multi: comp.Multi, MajorTag: comp.MajorTag,
-			Titles: cfg.TitlePatterns(),
 		})
 	}
 
@@ -186,6 +184,7 @@ func doReleaseShared(
 			continue
 		}
 		comp.Branch = own
+		comp.Titles = cfg.TitlePatterns()
 		leftover, err := tagrelease.Run(ctx, f, owner, repoName, comp, labels, cfg.DraftUntilAssetsAttach, dryRun, logger)
 		if err != nil {
 			return fmt.Errorf("release-me: %w", err)
