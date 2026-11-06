@@ -3,8 +3,7 @@
 
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
-// changelog, changelog-source, labels, author, major-tag, versioning,
-// signoff,
+// changelog, changelog-source, labels, author, major-tag, versioning, signoff,
 // draft-until-assets-attach, comment-mention and components.
 package config
 
