@@ -484,11 +484,10 @@ it, default `true`; `false` keeps it. There is no per-component override. See
 
 GitHub's repository setting "Automatically delete head branches" deletes the branch at merge
 time, before `release` has tagged anything; `delete-release-branch` deletes it only after the
-tag and the GitHub release both succeeded. That ordering is why it is the safer of the two: a
-branch `release` still has to find a merged pull request by is never gone before that pull
-request is released, which the
+tag and the GitHub release both succeeded. The branch stays available until every pull request
+merged from it has been released. The
 [shared release pull request's leftover sweep](versioning-modes.md#shared-release-pull-request)
-depends on. Both can be on: a branch GitHub already deleted is not an error.
+depends on finding that branch. Both can be on: a branch GitHub already deleted is not an error.
 
 ## `components`
 
