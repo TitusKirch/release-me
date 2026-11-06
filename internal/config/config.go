@@ -558,7 +558,8 @@ type ResolvedComponent struct {
 	// is false for the single implicit "main" component, which keeps
 	// today's tag prefix "v" and release name instead of the generic
 	// "<name>/v" prefix and "<name> vX.Y.Z" release name a configured
-	// component carries.
+	// component carries, with the "v" dropped when
+	// include-v-in-release-name is false.
 	Multi                     bool
 	InitialVersion            string
 	BumpMinorPreMajor         bool

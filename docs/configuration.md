@@ -942,13 +942,15 @@ Setting the key without `node` in [`workspaces`](#workspaces) is a configuration
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `versioning-strategy`, `release-as` (only with `versioning:
 independent`), `hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
-`skip-changelog`, `changelog-type`, `skip-github-release`, `draft`, `force-tag-creation` and
+`skip-changelog`, `changelog-type`, `skip-github-release`, `draft`, `force-tag-creation`,
+`include-v-in-release-name` and
 `changelog`, plus its own [`exclude-paths`](#exclude-paths). A key left out of a component falls
 back to the top-level setting above. A repository without `components` is one component named `main`
 at path `.`, tag prefix `v`, branch `release-me/main`, the default shape a repository with no
 configuration at all already has. A configured component gets tag prefix `<name>/v`, branch
 `release-me/<name>`, or `release-me/main` when the release pull request is shared, changelog
-`<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`. A name holds ASCII letters, digits, `-`,
+`<path>/CHANGELOG.md`, and a release title `<name> vX.Y.Z`, without the `v` under
+`include-v-in-release-name: false`. A name holds ASCII letters, digits, `-`,
 `_` and `.` only, does not start with `.` or `-`, does not end with `.` or `.lock` and does not
 contain `..`; anything else is a configuration error naming the component and the character, since
 the name has to survive the tag prefix, the branch, the shared pull request title release reads

@@ -716,8 +716,8 @@ components:
 	}
 }
 
-// releaseKeysConfig carries two components, the second one overriding
-// every GitHub release key the top level sets.
+// releaseKeysConfig carries two components, neither overriding a
+// top-level setting.
 const releaseKeysConfig = `components:
   api:
     path: services/api
