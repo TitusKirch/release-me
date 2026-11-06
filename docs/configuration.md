@@ -638,9 +638,17 @@ must not expect it, a rerun cannot tell a draft it tagged before, and the
 name, so the resume of `draft-until-assets-attach` and the guard against a second draft work
 the same. A component overrides it through its own `force-tag-creation` key.
 
+Keep `force-tag-creation: true` when using this repository's
+`scripts/publish-release-assets.sh` with `draft-until-assets-attach`: the script checks out
+the tag and GoReleaser resolves it before publishing, so both need an existing git ref.
+A workflow that defers the tag must build from the release's `targetCommitish` instead of
+checking out the tag, and use tooling that can build without that tag ref.
+
 While a deferred version tag is absent and its release is an unpublished draft, `pr` waits
 for `release` to resume that draft. It does not open another pull request for the same version,
-including after switching per-component releases to a shared pull request.
+including after switching per-component releases to a shared pull request. Publishing the
+draft creates the tag and unblocks `pr`; deleting the draft also unblocks it, so the next
+run can create the release again.
 
 ## `skip-github-release`
 

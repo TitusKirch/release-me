@@ -205,7 +205,8 @@ counted every commit. It also carries over:
 
 - `bump-minor-pre-major`, `bump-patch-for-minor-pre-major` and `initial-version`;
 - `force-tag-creation`, at the top level when every package carries the same value, on the
-  component otherwise;
+  component otherwise. When absent, release-me's default `true` is kept, rather than
+  release-please's `false`; without drafts both create the tag during the release run;
 - `skip-github-release`, at the top level when every package carries the same value, on the
   component otherwise; release-me still creates the tag, unlike release-please, so remove
   any external tagging step the old workflow needed;
