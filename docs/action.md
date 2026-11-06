@@ -41,7 +41,9 @@ phase fails still lists in `prs` the pull request its `pr` phase opened.
   [`skip-github-release`](configuration.md#skip-github-release) is listed too, its tag without
   a GitHub release.
 - `released`: `true` when this run tagged a release for any component, `false` otherwise and
-  always in dry-run.
+  always in dry-run. With `draft: true` or `draft-until-assets-attach: true`, this and
+  `components.<name>.released` become true while the GitHub release is still an unpublished
+  draft; `tags` includes its tag too.
 - `components`: a JSON object keyed by every component this run handled, every configured
   one unless `component` limits it, the implicit one as `main`. Each entry is
   `{"released", "version", "tag", "major", "minor", "patch", "sha", "body", "html_url",
@@ -82,6 +84,15 @@ phase fails still lists in `prs` the pull request its `pr` phase opened.
 
 A component name with a `-` in it needs the index form,
 `fromJSON(steps.release.outputs.components)['duxt-ui'].released`.
+
+## Draft for human review
+
+`draft: true` in `release-me.yaml`, or on a component, creates its GitHub release as a
+draft for a human to review and publish. It still reports the release in the outputs above,
+and does not resume it on later runs. Keep automatic publish steps off for that component
+if publishing needs human approval. With `draft-until-assets-attach: true` too, the workflow
+below resumes and publishes the draft automatically; setting `draft` does not add a human
+gate to that workflow. See [configuration](configuration.md#draft).
 
 ## Draft until assets attach
 

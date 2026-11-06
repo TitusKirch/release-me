@@ -201,6 +201,7 @@ func TestReleaseDraftsTheReleaseUnderDraftAndLeavesItForAHuman(t *testing.T) {
 	}
 	withDraft := func(f *forgetest.Fake, tag string) *forgetest.Fake {
 		f.ReleaseDrafts = map[string]bool{tag: true}
+		f.ExistingTags = map[string]bool{tag: true}
 		return f
 	}
 	cases := []struct {
@@ -213,19 +214,27 @@ func TestReleaseDraftsTheReleaseUnderDraftAndLeavesItForAHuman(t *testing.T) {
 		wantReleases           []releaseDraft
 		wantMessages           []string
 		wantLabelSwap          bool
+		wantDraftChecks        int
 	}{
+		{
+			name: "both draft options off make no draft lookup", run: runOwn,
+			fake:         mergedFake("chore(main): release v0.2.0", "release: pending"),
+			comps:        []release.Component{{Name: "main", Branch: "release-me/main", TagPrefix: "v"}},
+			wantReleases: []releaseDraft{{Tag: "v0.2.0"}},
+			wantMessages: []string{"tagged and released v0.2.0"}, wantLabelSwap: true,
+		},
 		{
 			name: "drafts the release of the implicit main component", run: runOwn,
 			fake:         mergedFake("chore(main): release v0.2.0", "release: pending"),
 			comps:        []release.Component{draftMain},
 			wantReleases: []releaseDraft{{Tag: "v0.2.0", Draft: true}},
-			wantMessages: []string{"tagged and drafted v0.2.0"}, wantLabelSwap: true,
+			wantMessages: []string{"tagged and drafted v0.2.0"}, wantLabelSwap: true, wantDraftChecks: 1,
 		},
 		{
 			name: "drafts no second release when a rerun finds the first draft", run: runOwn,
 			fake:         withDraft(mergedFake("chore(main): release v0.2.0", "release: pending"), "v0.2.0"),
 			comps:        []release.Component{draftMain},
-			wantMessages: []string{"tagged and drafted v0.2.0"}, wantLabelSwap: true,
+			wantMessages: []string{"already tagged v0.2.0"}, wantLabelSwap: true, wantDraftChecks: 1,
 		},
 		{
 			name: "resumes no draft left on purpose", run: runOwn,
@@ -236,21 +245,21 @@ func TestReleaseDraftsTheReleaseUnderDraftAndLeavesItForAHuman(t *testing.T) {
 			name: "resumes the draft when draft-until-assets-attach is on too", run: runOwn,
 			fake:  withDraft(mergedFake("chore(main): release v0.2.0", "release: tagged"), "v0.2.0"),
 			comps: []release.Component{draftMain}, draftUntilAssetsAttach: true,
-			wantMessages: []string{"resuming unpublished release v0.2.0"},
+			wantMessages: []string{"resuming unpublished release v0.2.0"}, wantDraftChecks: 1,
 		},
 		{
 			name: "drafts only the locked component that asks for it", run: runLocked,
 			fake:         mergedFake("chore: release v0.3.0 (api, web)", "release: pending"),
 			comps:        apiDraft,
 			wantReleases: []releaseDraft{{Tag: "api/v0.3.0", Draft: true}, {Tag: "web/v0.3.0"}},
-			wantMessages: []string{"tagged and drafted api/v0.3.0", "tagged and released web/v0.3.0"}, wantLabelSwap: true,
+			wantMessages: []string{"tagged and drafted api/v0.3.0", "tagged and released web/v0.3.0"}, wantLabelSwap: true, wantDraftChecks: 1,
 		},
 		{
 			name: "drafts only the shared component that asks for it", run: runShared,
 			fake:         mergedFake("chore: release api v1.3.0, web v0.4.1", "release: pending"),
 			comps:        apiDraft,
 			wantReleases: []releaseDraft{{Tag: "api/v1.3.0", Draft: true}, {Tag: "web/v0.4.1"}},
-			wantMessages: []string{"tagged and drafted api/v1.3.0", "tagged and released web/v0.4.1"}, wantLabelSwap: true,
+			wantMessages: []string{"tagged and drafted api/v1.3.0", "tagged and released web/v0.4.1"}, wantLabelSwap: true, wantDraftChecks: 1,
 		},
 		{
 			name: "dry run reports the draft and writes nothing", run: runOwn,
@@ -265,6 +274,9 @@ func TestReleaseDraftsTheReleaseUnderDraftAndLeavesItForAHuman(t *testing.T) {
 			results, err := tc.run(tc.fake, tc.comps, tc.draftUntilAssetsAttach, tc.dryRun)
 			if err != nil {
 				t.Fatalf("release error = %v", err)
+			}
+			if got := len(tc.fake.ReleaseCalls); got != tc.wantDraftChecks {
+				t.Fatalf("draft lookups = %q, want %d calls", tc.fake.ReleaseCalls, tc.wantDraftChecks)
 			}
 			var messages []string
 			for _, r := range results {
