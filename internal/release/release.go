@@ -631,6 +631,8 @@ func releaseOne(
 	pr forge.PullRequest, ver version.Semver, labels Labels, draftUntilAssetsAttach, dryRun bool,
 ) (Result, error) {
 	componentName, tagPrefix, majorTagEnabled := comp.Name, comp.TagPrefix, comp.MajorTag
+	// Single-component titles are normalized through Semver before the
+	// tag is built; release-me itself always renders canonical versions.
 	versionStr := ver.String()
 	tag := tagPrefix + versionStr
 	releaseName := comp.releaseName(versionStr)
@@ -698,7 +700,9 @@ func releaseOne(
 
 // releasedMessage reports what release did for comp at tag: already
 // tagged by an earlier run, tagged with a release left a draft on purpose,
-// or tagged and released.
+// or tagged and released. Only the human-publish Draft option changes
+// the message; temporary drafts for draft-until-assets-attach keep the
+// existing released wording.
 func releasedMessage(comp Component, tag string, alreadyTagged bool) string {
 	switch {
 	case alreadyTagged:
@@ -710,7 +714,8 @@ func releasedMessage(comp Component, tag string, alreadyTagged bool) string {
 	}
 }
 
-// dryRunMessage reports what release would do for comp at tag.
+// dryRunMessage reports what release would do for comp at tag. Like
+// releasedMessage it calls out only the human-publish Draft option.
 func dryRunMessage(comp Component, tag string) string {
 	if comp.Draft {
 		return fmt.Sprintf("would tag and draft %s", tag)
