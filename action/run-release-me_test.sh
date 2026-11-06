@@ -24,7 +24,7 @@ mkdir -p "${current}" "${older}" "${failing}"
 components_json='{"duxt":{"released":true,"version":"0.9.0","tag":"duxt@v0.9.0","major":0,"minor":9,"patch":0,'
 components_json+='"sha":"4f2a9c1e","body":"## v0.9.0 (2026-10-01)\n\n- add the search page",'
 components_json+='"html_url":"https://github.com/kirchDev/duxt/releases/tag/duxt@v0.9.0",'
-components_json+='"upload_url":"https://uploads.github.com/repos/kirchDev/duxt/releases/1874/assets{?name,label}","pr":null}}'
+components_json+='"upload_url":"https://uploads.github.com/repos/kirchDev/duxt/releases/1874/assets{?name,label}","draft":true,"pr":null}}'
 
 # current/release-me is a release-me that writes its own outputs. The
 # literal $@ and variables below are the fake script's own, not this test

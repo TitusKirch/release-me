@@ -306,7 +306,7 @@ func resumeShared(
 		results = append(results, Result{
 			PullRequestNumber: pr.Number, Name: p.comp.Name, Version: p.versionStr, Tag: tag,
 			Message: fmt.Sprintf("resuming unpublished release %s", tag),
-			SHA:     sha, Body: lockedReleaseBody(pr.Body, p.comp.Name), HTMLURL: rel.HTMLURL, UploadURL: rel.UploadURL,
+			SHA:     sha, Body: lockedReleaseBody(pr.Body, p.comp.Name), HTMLURL: rel.HTMLURL, UploadURL: rel.UploadURL, Draft: rel.Draft,
 		})
 	}
 	return results, nil
@@ -384,7 +384,7 @@ func releaseShared(
 		results = append(results, Result{
 			PullRequestNumber: pr.Number, Name: comp.Name, Version: versionStr, Tag: tag, Skipped: alreadyTagged,
 			Message: message, MajorTag: mtag, MajorTagMessage: mmsg,
-			SHA: sha, Body: body, HTMLURL: rel.HTMLURL, UploadURL: rel.UploadURL,
+			SHA: sha, Body: body, HTMLURL: rel.HTMLURL, UploadURL: rel.UploadURL, Draft: rel.Draft,
 		})
 	}
 
@@ -474,14 +474,17 @@ type Result struct {
 	MajorTagMessage string
 	// SHA is the merge commit the tag is on.
 	SHA string
-	// Body is the release notes rendered for the component: the GitHub
-	// release's body.
+	// Body is the release notes rendered from the pull request for the
+	// component, including when an existing release is read back. Edits
+	// made directly to the GitHub release are not included.
 	Body string
 	// HTMLURL and UploadURL are the GitHub release's web page and asset
 	// upload address, empty when an earlier run's release exists but its
 	// lookup found none.
 	HTMLURL   string
 	UploadURL string
+	// Draft is true while the release is still an unpublished draft.
+	Draft bool
 }
 
 // MajorTagName returns the major tag name for tagPrefix and releasedVersion,
@@ -635,7 +638,7 @@ func resumeOne(
 	return Result{
 		PullRequestNumber: pr.Number, Name: componentName, Version: versionStr, Tag: tag,
 		Message: fmt.Sprintf("resuming unpublished release %s", tag),
-		SHA:     sha, Body: releasepr.ReleaseBody(pr.Body), HTMLURL: rel.HTMLURL, UploadURL: rel.UploadURL,
+		SHA:     sha, Body: releasepr.ReleaseBody(pr.Body), HTMLURL: rel.HTMLURL, UploadURL: rel.UploadURL, Draft: rel.Draft,
 	}, true, nil
 }
 
@@ -713,7 +716,7 @@ func releaseOne(
 	return Result{
 		PullRequestNumber: pr.Number, Name: componentName, Version: versionStr, Tag: tag, Skipped: alreadyTagged,
 		Message: message, MajorTag: mtag, MajorTagMessage: mmsg,
-		SHA: sha, Body: body, HTMLURL: rel.HTMLURL, UploadURL: rel.UploadURL,
+		SHA: sha, Body: body, HTMLURL: rel.HTMLURL, UploadURL: rel.UploadURL, Draft: rel.Draft,
 	}, nil
 }
 

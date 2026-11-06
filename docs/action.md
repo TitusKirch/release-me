@@ -44,15 +44,19 @@ phase fails still lists in `prs` the pull request its `pr` phase opened.
 - `components`: a JSON object keyed by every component this run handled, every configured
   one unless `component` limits it, the implicit one as `main`. Each entry is
   `{"released", "version", "tag", "major", "minor", "patch", "sha", "body", "html_url",
-  "upload_url", "pr"}`. Unless `released`, the strings are empty and `major`, `minor` and
-  `patch` are `null`. Otherwise:
+  "upload_url", "draft", "pr"}`. Unless `released`, the strings are empty, `major`, `minor`
+  and `patch` are `null`, and `draft` is `false`. Otherwise:
   - `version` (`0.9.0`, no `v`) and `tag` (`duxt@v0.9.0`);
   - `major`, `minor` and `patch`, the version's numbers (`0`, `9`, `0`);
   - `sha`, the merge commit the tag is on;
-  - `body`, the release notes;
+  - `body`, the release notes rendered from the pull request for this component, including
+    on resumed or existing releases; edits made directly to a GitHub release are not included;
   - `html_url` and `upload_url`, the GitHub release's page and its asset upload template,
     `https://uploads.github.com/repos/<owner>/<repo>/releases/<id>/assets{?name,label}`. A
-    draft's `html_url` is GitHub's `untagged-…` address until it is published.
+    draft's `html_url` is GitHub's `untagged-…` address until it is published. Both addresses
+    can still be empty when release creation reports an existing release that its read-back
+    lookup cannot find;
+  - `draft`, `true` while the release is still an unpublished draft.
 
   `pr` is the release pull request opened, updated or found up to date for that component
   this run, shaped as in `prs`, else `null`. The names after `tag` are
