@@ -1364,6 +1364,16 @@ func Load(path string) (cfg Config, err error) {
 		}
 		cfg.AlwaysLinkLocal = *r.AlwaysLinkLocal
 	}
+	if cfg.Versioning != VersioningIndependent {
+		for _, comp := range cfg.Resolve() {
+			if comp.VersioningStrategy == version.StrategyServicePack {
+				return Config{}, fmt.Errorf(
+					"config: parse %s: component %s: versioning-strategy service-pack applies to versioning independent only, "+
+						"a %s family shares one version line", path, comp.Name, cfg.Versioning,
+				)
+			}
+		}
+	}
 	return cfg, nil
 }
 
