@@ -1034,6 +1034,10 @@ func warnUnsigned(ctx context.Context, f forge.Forge, owner, repoName, branch, s
 // releaseFileTarget follows symlinks as the worktree writer does, while
 // refusing to replace a link or write outside the scratch repository.
 func releaseFileTarget(ctx context.Context, dir, path string) (string, error) {
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolve release file %s: %w", path, err)
+	}
 	candidate := filepath.Join(dir, filepath.FromSlash(path))
 	ancestor := candidate
 	var suffix []string
