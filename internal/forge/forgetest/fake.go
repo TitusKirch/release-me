@@ -172,6 +172,10 @@ type Fake struct {
 	// releaseIDs is the numeric release id release assigned each tag.
 	releaseIDs map[string]int
 
+	// IsReleaseDraftCalls records tags looked up through Release, including
+	// missing releases.
+	IsReleaseDraftCalls []string
+
 	// NextNumber is the pull request number CreatePullRequest assigns next.
 	NextNumber int
 
@@ -342,6 +346,7 @@ func (f *Fake) CreateRelease(
 // Release implements forge.Forge. A tag in ExistingReleases and not in
 // ReleaseDrafts is a published release.
 func (f *Fake) Release(_ context.Context, owner, repo, tag string) (forge.Release, error) {
+	f.IsReleaseDraftCalls = append(f.IsReleaseDraftCalls, tag)
 	draft, ok := f.ReleaseDrafts[tag]
 	if !ok && !f.ExistingReleases[tag] {
 		return forge.Release{}, forge.ErrReleaseNotFound

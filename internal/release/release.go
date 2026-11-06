@@ -716,6 +716,8 @@ func releaseOne(
 	pr forge.PullRequest, ver version.Semver, labels Labels, draftUntilAssetsAttach, dryRun bool,
 ) (Result, error) {
 	componentName, tagPrefix, majorTagEnabled := comp.Name, comp.TagPrefix, comp.MajorTag
+	// Single-component titles are normalized through Semver before the
+	// tag is built; release-me itself always renders canonical versions.
 	versionStr := ver.String()
 	tag := tagPrefix + versionStr
 	releaseName := comp.releaseName(versionStr)
@@ -782,7 +784,10 @@ func releaseOne(
 // releasedMessage reports what release did for comp at tag, its release a
 // draft when draft is true: already tagged by an earlier run, tagged
 // without a GitHub release, drafted with the tag left to its publish,
-// tagged with a release left a draft on purpose, or tagged and released.
+// tagged with a release left a draft on purpose for a human, or tagged
+// and released. Only comp's own TagOnPublish and Draft change the
+// message; a temporary draft from draft-until-assets-attach alone keeps
+// the plain tagged and released wording.
 func releasedMessage(comp Component, tag string, alreadyTagged, draft bool) string {
 	switch {
 	case alreadyTagged:
@@ -799,7 +804,8 @@ func releasedMessage(comp Component, tag string, alreadyTagged, draft bool) stri
 }
 
 // dryRunMessage reports what release would do for comp at tag, its release
-// a draft when draft is true.
+// a draft when draft is true. Like releasedMessage, it calls out comp's
+// own TagOnPublish and Draft only.
 func dryRunMessage(comp Component, tag string, draft bool) string {
 	switch {
 	case comp.SkipGitHubRelease:

@@ -764,7 +764,9 @@ still happen as for a published release, so a later step can attach assets to th
 differs from [`draft-until-assets-attach`](#draft-until-assets-attach) in one way: a draft
 left on purpose is never resumed, so a later run does not print its `released-tag` marker
 again while it waits for a human. With both on, the release drafts and resumes the way
-`draft-until-assets-attach` does. A component overrides it through its own `draft` key.
+`draft-until-assets-attach` does. The asset workflow then publishes it automatically in the
+same run, so `draft` adds no human approval gate to that workflow. A component overrides it
+through its own `draft` key.
 
 ## `comment-mention`
 
