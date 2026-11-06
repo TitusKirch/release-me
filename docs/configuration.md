@@ -183,7 +183,7 @@ release-please renders:
 
 The commit is the one the entry comes from: the merge commit for a pull request in
 `first-parent` and `nested`, the squash commit in `squash`, each commit's own in `all`, where an
-[override block](overrides.md#override-block) links the first commit of its pull request. A
+[override block](overrides.md#override-block) links the oldest commit of its pull request. A
 `nested` sub item links its own commit. There is no per-component override.
 
 ## `changelog-issue-references`

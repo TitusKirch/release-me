@@ -359,7 +359,8 @@ func assembleAllEntries(ctx context.Context, f forge.Forge, owner, repoName stri
 		switch {
 		case err == nil:
 			if override := conventional.ParseOverride(pr.Body); override.Present {
-				c, en := overrideEntries(override, e, pr, fallbackType)
+				// AllEntries orders the group newest first; link its oldest commit.
+				c, en := overrideEntries(override, group[len(group)-1], pr, fallbackType)
 				changes = append(changes, c...)
 				entries = append(entries, en...)
 				continue
@@ -431,8 +432,9 @@ func warnRefusedReleaseAs(logger *slog.Logger, who string, refused []version.Ref
 
 // overrideEntries parses one change and one changelog entry per line of
 // pr's override block, all naming pr, crediting its author, linking e's
-// commit, the one that brought pr in, and referencing the issues pr's body
-// closes.
+// commit and referencing
+// the issues pr's body closes. The caller selects the merge or squash
+// commit, or the oldest commit of the pull request's group in all mode.
 func overrideEntries(override conventional.Override, e history.Entry, pr forge.PullRequest, fallbackType string) ([]version.Change, []changelog.Entry) {
 	number, url, author := e.PullRequestNumber, pr.URL, pullRequestAuthor(pr, e)
 	changes := make([]version.Change, 0, len(override.Entries))
