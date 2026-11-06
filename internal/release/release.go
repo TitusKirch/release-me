@@ -411,7 +411,8 @@ func releaseShared(
 // declares more than one component. Multi false, the implicit "main"
 // component a repository without "components" carries, keeps today's bare
 // tag prefix and release name instead of the generic "<name>/v" prefix and
-// "<name> vX.Y.Z" release name a configured component carries.
+// "<name> vX.Y.Z" release name a configured component carries. Both
+// names drop the "v" under OmitVInReleaseName.
 type Component struct {
 	Name      string
 	Branch    string
@@ -443,8 +444,8 @@ type Component struct {
 	OmitVInReleaseName bool
 }
 
-// releaseName returns the name of comp's release at versionStr, "X.Y.Z"
-// without the "v": the tag itself for the implicit "main" component,
+// releaseName returns the name of comp's release at versionStr:
+// the tag itself for the implicit "main" component,
 // "<name> vX.Y.Z" for a configured one, each without the "v" under
 // OmitVInReleaseName.
 func (comp Component) releaseName(versionStr string) string {
@@ -454,6 +455,7 @@ func (comp Component) releaseName(versionStr string) string {
 	case comp.Multi:
 		return fmt.Sprintf("%s v%s", comp.Name, versionStr)
 	case comp.OmitVInReleaseName:
+		// The implicit main component always has tag prefix "v".
 		return versionStr
 	default:
 		return comp.TagPrefix + versionStr

@@ -827,7 +827,8 @@ repository without `components` is one component named `main` at path `.`, tag p
 branch `release-me/main`, the default shape a repository with no configuration at all already
 has. A configured component gets tag prefix `<name>/v`, branch `release-me/<name>`, or
 `release-me/main` when the release pull request is shared, changelog `<path>/CHANGELOG.md`,
-and a release title `<name> vX.Y.Z`. A name holds ASCII letters, digits, `-`, `_` and `.` only,
+and a release title `<name> vX.Y.Z`, without the `v` under `include-v-in-release-name: false`.
+A name holds ASCII letters, digits, `-`, `_` and `.` only,
 does not start with `.` or `-`, does not end with `.` or `.lock` and does not contain `..`;
 anything else is a configuration error naming the
 component and the character, since the name has to survive the tag prefix, the branch, the

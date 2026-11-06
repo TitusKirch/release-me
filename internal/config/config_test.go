@@ -167,11 +167,11 @@ files:
 				MajorTag:                 true,
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestShared,
+				ReleasePullRequestLayout: config.LayoutDetails,
 				DraftUntilAssetsAttach:   true,
 				CommentMention:           config.DefaultCommentMention,
 				ForceTagCreation:         true,
 				IncludeVInReleaseName:    true,
-				ReleasePullRequestLayout: config.LayoutDetails,
 				DeleteReleaseBranch:      false,
 				AlwaysLinkLocal:          true,
 				Files: []config.File{
@@ -665,8 +665,8 @@ components:
 	}
 }
 
-// releaseKeysConfig carries two components, the second one overriding
-// every GitHub release key the top level sets.
+// releaseKeysConfig carries two components, neither overriding a
+// top-level setting.
 const releaseKeysConfig = `components:
   api:
     path: services/api
