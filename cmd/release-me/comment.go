@@ -229,11 +229,11 @@ func ofComponent(name string) string {
 	return " of " + name
 }
 
-// isReleasePullRequest reports whether prLabels carries one of labels'
-// configured release labels: pending, tagged, or one of the enabled
-// pre-release types. A comment command only ever acts on a release pull
-// request, never an ordinary one; this is the same signal the labeled and
-// unlabeled workflow trigger already uses to tell the two apart.
+// isReleasePullRequest reports whether prLabels carries every configured
+// pending label, every tagged label, or one enabled pre-release label.
+// A comment command only ever acts on a release pull request, never an
+// ordinary one; this is the same signal the labeled and unlabeled workflow
+// trigger already uses to tell the two apart.
 func isReleasePullRequest(prLabels []string, labels config.Labels) bool {
 	if tagrelease.HasAll(prLabels, labels.Pending) || tagrelease.HasAll(prLabels, labels.Tagged) {
 		return true

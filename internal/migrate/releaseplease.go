@@ -485,9 +485,9 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 	return versioning, nil
 }
 
-// labels reads a release-please label key, a comma separated list, every
-// label of it carried over: fallback alone when raw is nil or names none,
-// none when fallback is "" too.
+// labels reads every name in a release-please comma separated label list.
+// A missing key uses fallback; an explicitly empty list is refused when
+// fallback names a required release label, and allowed for optional extras.
 func labels(raw json.RawMessage, fallback, key string) ([]string, error) {
 	value := fallback
 	if raw != nil {
@@ -502,7 +502,7 @@ func labels(raw json.RawMessage, fallback, key string) ([]string, error) {
 		}
 	}
 	if len(out) == 0 && fallback != "" {
-		out = []string{fallback}
+		return nil, fmt.Errorf("migrate: %s: no label names", key)
 	}
 	return out, nil
 }
