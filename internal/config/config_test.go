@@ -368,6 +368,39 @@ func TestLoadRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestLoadRefusesAComponentServicePackOutsideIndependentVersioning(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"independent", "linked", "locked"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			path := writeFile(t, "versioning: "+mode+"\n"+`components:
+  api:
+    path: api
+    versioning-strategy: service-pack
+`)
+
+			got, err := config.Load(path)
+			if mode == "independent" {
+				if err != nil {
+					t.Fatalf("Load() error = %v", err)
+				}
+				if strategy := got.Resolve()[0].VersioningStrategy; strategy != version.StrategyServicePack {
+					t.Fatalf("component strategy = %q, want service-pack", strategy)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("Load() error = nil, want service-pack to be refused for a version family")
+			}
+			for _, want := range []string{"component api", "versioning-strategy service-pack", mode} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("Load() error = %q, want it to name %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadReadsComponentsInConfigOrder(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, `components:
