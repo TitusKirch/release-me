@@ -371,6 +371,12 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		warn("package %s: release-type ruby: its version.rb is not carried over, add it under files", p.path)
 		if componentName != "" {
 			versionFile("Gemfile.lock", updater.GemfileLock, componentName, true)
+		} else {
+			path := stdpath.Join(p.path, "Gemfile.lock")
+			if _, err := readFile(path); err == nil {
+				warn("package %s: release-type ruby: %s is not carried over without component or package-name, "+
+					"add it under files with a gem name as key", p.path, path)
+			}
 		}
 	case "helm":
 		versionFile("Chart.yaml", updater.Helm, "", false)
