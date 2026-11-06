@@ -170,11 +170,11 @@ files:
 				MajorTag:                 true,
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestShared,
+				ReleasePullRequestLayout: config.LayoutDetails,
 				DraftUntilAssetsAttach:   true,
 				CommentMention:           config.DefaultCommentMention,
 				DeleteReleaseBranch:      false,
 				AlwaysLinkLocal:          true,
-				ReleasePullRequestLayout: config.LayoutDetails,
 				ForceTagCreation:         true,
 				IncludeVInReleaseName:    true,
 				Files: []config.File{

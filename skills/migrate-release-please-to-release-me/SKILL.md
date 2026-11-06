@@ -158,7 +158,7 @@ confirmation:
   | `version`, `<path>--version` | `fromJSON(steps.release.outputs.components).<name>.version` |
   | `major`, `minor`, `patch`, `<path>--major` and the like | `fromJSON(steps.release.outputs.components).<name>.major`, `.minor`, `.patch` |
   | `sha`, `body`, `html_url`, `upload_url`, `<path>--sha` and the like | `fromJSON(steps.release.outputs.components).<name>.sha`, `.body`, `.html_url`, `.upload_url` |
-  | `paths_released` | `steps.release.outputs.tags`, one tag per released component |
+  | `paths_released` | `steps.release.outputs.tags`, one tag name per released component; with `force-tag-creation: false` a draft's ref exists only after publish |
   | `pr` | `steps.release.outputs.pr`: `number`, `url`, `branch`, `components` |
   | `prs`, `prs_created` | `steps.release.outputs.prs`, `prs != '[]'` |
   | `id` | none: `gh release view <tag> --json databaseId` in the consuming step |
