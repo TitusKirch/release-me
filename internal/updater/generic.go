@@ -21,7 +21,8 @@ var (
 
 // The values a scope replaces, the same expressions release-please uses:
 // the first full version on the line for "version", the first number for
-// "major", "minor" and "patch".
+// "major", "minor" and "patch". Release-please 17's major expression has
+// no leading word boundary: "v1" matches major, but not minor or patch.
 var (
 	genericVersion = regexp.MustCompile(`\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`)
 	genericMajor   = regexp.MustCompile(`\d+\b`)
@@ -77,6 +78,9 @@ func UpdateGeneric(content, version string) (string, error) {
 	block, blockLine := "", 0
 	for i, line := range lines {
 		var err error
+		// Match release-please's precedence: an inline marker wins over an
+		// active block, even on an end-marker line. An end marker outside a
+		// block is ordinary text.
 		switch {
 		case genericInline.MatchString(line):
 			found = true

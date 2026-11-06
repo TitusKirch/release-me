@@ -425,6 +425,10 @@ fails `pr`, naming the path and the key.
 
   The `date` and `version-date` scopes are an error, since an updater is given the version
   only, not the release date. So are a file with no marker and a block that is never closed.
+  As in release-please, an inline marker inside a block takes precedence for that line;
+  put the end marker on its own line so it closes the block. An end marker outside a block
+  has no effect. The major scope also matches a number prefixed with `v`,
+  whereas minor and patch require a word boundary before the number.
 
 - `helm` replaces a `Chart.yaml`'s top-level `version` field. No `key`:
 
