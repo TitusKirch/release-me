@@ -104,8 +104,9 @@ func releaseFlagKeys() []string {
 	return keys
 }
 
-// topLevelKeys are the release-please settings that only exist at the top
-// level and that this translation reads or deliberately leaves out.
+// topLevelKeys are the release-please settings this translation reads at
+// the top level or deliberately leaves out there. Some also allow per-package
+// settings that release-me cannot represent, reported separately below.
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "extra-label", "separate-pull-requests", "$schema",
 	"bootstrap-sha", "last-release-sha", "always-link-local", "pull-request-header", "pull-request-footer",
@@ -192,6 +193,10 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			settings[k] = v
 		}
 		for _, kv := range own {
+			if kv.key == "draft-pull-request" {
+				warn("package %s: draft-pull-request: release-me's release-pull-request-draft is repository-wide, set it at the top level if every release pull request should be a draft", entry.key)
+				continue
+			}
 			if !slices.Contains(packageKeys, kv.key) {
 				warn("package %s: %s: %s", entry.key, kv.key, unsupported(kv.key))
 				continue
