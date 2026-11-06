@@ -158,10 +158,12 @@ confirmation:
   | `version`, `<path>--version` | `fromJSON(steps.release.outputs.components).<name>.version` |
   | `major`, `minor`, `patch`, `<path>--major` and the like | `fromJSON(steps.release.outputs.components).<name>.major`, `.minor`, `.patch` |
   | `sha`, `body`, `html_url`, `upload_url`, `<path>--sha` and the like | `fromJSON(steps.release.outputs.components).<name>.sha`, `.body`, `.html_url`, `.upload_url` |
+  | `draft`, `<path>--draft` | `fromJSON(steps.release.outputs.components).<name>.draft` |
+  | `name`, `<path>--name` | none: `gh release view <tag> --json name` in the consuming step |
   | `paths_released` | `steps.release.outputs.tags`, one tag name per released component; with `force-tag-creation: false` a draft's ref exists only after publish |
   | `pr` | `steps.release.outputs.pr`: `number`, `url`, `branch`, `components` |
   | `prs`, `prs_created` | `steps.release.outputs.prs`, `prs != '[]'` |
-  | `id` | none: `gh release view <tag> --json databaseId` in the consuming step |
+  | `id`, `<path>--id` | none: `gh release view <tag> --json databaseId` in the consuming step |
 
   `pr` is `null` with several release pull requests, where release-please gave the first;
   read `prs` there. Its JSON is release-me's own shape, not release-please's: a consumer

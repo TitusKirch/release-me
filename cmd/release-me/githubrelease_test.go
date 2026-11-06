@@ -117,28 +117,37 @@ func TestDoReleaseWithoutForceTagCreationLeavesTheTagToThePublish(t *testing.T) 
 // mergedReleaseFake is a forge holding one merged, pending release pull
 // request for the implicit main component, number 9, at v0.1.0.
 func TestDoReleaseReportsTheReleaseFieldsInTheComponentsOutput(t *testing.T) {
-	dir, _ := newPRRepo(t)
-	commitEntry(t, dir, "chore: initial commit")
-	f := mergedReleaseFake()
-	var stdout bytes.Buffer
+	for _, draft := range []bool{false, true} {
+		t.Run(map[bool]string{false: "published", true: "draft"}[draft], func(t *testing.T) {
+			dir, _ := newPRRepo(t)
+			commitEntry(t, dir, "chore: initial commit")
+			f := mergedReleaseFake()
+			cfg := config.Default()
+			cfg.DraftUntilAssetsAttach = draft
+			var stdout bytes.Buffer
 
-	out := &runOutputs{}
-	if err := doRelease(withOutputs(t.Context(), out), dir, config.Default(), "", f, discardLogger(), false, &stdout); err != nil {
-		t.Fatalf("doRelease() error = %v", err)
-	}
+			out := &runOutputs{}
+			if err := doRelease(withOutputs(t.Context(), out), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+				t.Fatalf("doRelease() error = %v", err)
+			}
 
-	got, err := out.render([]string{"main"})
-	if err != nil {
-		t.Fatalf("render() error = %v", err)
-	}
-	for _, want := range []string{
-		"released=true\n", `"tag":"v0.1.0","major":0,"minor":1,"patch":0,"sha":"deadbeef"`,
-		`"body":"## v0.1.0 (2026-01-02)\n\n### Features\n\n- add the thing"`,
-		`"html_url":"https://github.com/owner/repo/releases/tag/v0.1.0"`,
-		`"upload_url":"https://uploads.github.com/repos/owner/repo/releases/9001/assets{?name,label}"`,
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("outputs = %q, want it to contain %q", got, want)
-		}
+			got, err := out.render([]string{"main"})
+			if err != nil {
+				t.Fatalf("render() error = %v", err)
+			}
+			for _, want := range []string{
+				"released=true\n", `"tag":"v0.1.0","major":0,"minor":1,"patch":0,"sha":"deadbeef"`,
+				`"body":"## v0.1.0 (2026-01-02)\n\n### Features\n\n- add the thing"`,
+				`"html_url":"https://github.com/owner/repo/releases/tag/v0.1.0"`,
+				`"upload_url":"https://uploads.github.com/repos/owner/repo/releases/9001/assets{?name,label}"`,
+			} {
+				if !strings.Contains(got, want) {
+					t.Fatalf("outputs = %q, want it to contain %q", got, want)
+				}
+			}
+			if gotDraft := parseOutputs(t, got).components["main"].Draft; gotDraft != draft {
+				t.Fatalf("draft = %t, want %t", gotDraft, draft)
+			}
+		})
 	}
 }
