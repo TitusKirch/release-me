@@ -4,7 +4,7 @@
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, hidden-types, fallback-type, token-env, files,
 // changelog, changelog-source, labels, author, major-tag, versioning,
-// release-pull-request-draft,
+// release-pull-request, release-pull-request-layout, release-pull-request-draft,
 // draft-until-assets-attach, comment-mention and components.
 package config
 

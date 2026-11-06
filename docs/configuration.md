@@ -224,6 +224,8 @@ GitHub refuses to merge a draft until someone marks it ready for review, so a re
 that one deliberate click on top of the merge. The key applies when `pr` opens a release pull
 request; one already open keeps its state, draft or ready, through every update, and changing
 the key never converts it. `release` reads a merged draft exactly like any other pull request.
+The action's `pr`, `prs` and per-component `pr` outputs do not include the draft state; a
+workflow that merges pull requests must read their current state from GitHub first.
 GitHub offers drafts on public repositories and on private ones with a paid plan; where it
 does not, creating the pull request fails with the forge's error and `pr` reports it, the
 release branch already pushed.
