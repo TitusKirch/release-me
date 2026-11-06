@@ -179,7 +179,7 @@ func RenderHeading(version string, date time.Time, compareURL string) string {
 // renderEntry renders one visible entry's own line, followed by one
 // indented line per sub entry that opts.HiddenTypes does not drop.
 func renderEntry(e Entry, opts Options) []string {
-	lines := []string{renderLine(e, opts)}
+	lines := []string{renderLine(e)}
 	for _, sub := range e.SubEntries {
 		if slices.Contains(opts.HiddenTypes, sub.Type) {
 			continue
@@ -193,13 +193,13 @@ func renderEntry(e Entry, opts Options) []string {
 				continue
 			}
 		}
-		lines = append(lines, "  "+renderLine(sub, opts))
+		lines = append(lines, "  "+renderLine(sub))
 	}
 	return lines
 }
 
-// renderLine renders one entry's own list item, as opts shapes it.
-func renderLine(e Entry, _ Options) string {
+// renderLine renders one entry's own list item.
+func renderLine(e Entry) string {
 	var b strings.Builder
 	b.WriteString("- ")
 	if e.Scope != "" {
