@@ -647,7 +647,13 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		for _, table := range []string{"project", "tool.poetry"} {
 			if name := tomlString(string(pyproject), table, "name"); name != "" {
 				project = name
-				versionFile("pyproject.toml", updater.TOML, table+".version", true)
+				break
+			}
+		}
+		beforePyproject := len(c.files)
+		for _, table := range []string{"project", "tool.poetry"} {
+			versionFile("pyproject.toml", updater.TOML, table+".version", true)
+			if len(c.files) > beforePyproject {
 				break
 			}
 		}
@@ -705,9 +711,18 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		versionFile("npm-shrinkwrap.json", updater.NpmLock, "", true)
 		versionFile("app.json", updater.JSON, "expo.version", false)
 		versionFile("app.json", updater.JSON, "expo.ios.buildNumber", true)
-		if data, err := readFile(stdpath.Join(p.path, "app.json")); err == nil && strings.Contains(string(data), `"versionCode"`) {
-			warn("package %s: release-type expo: app.json's expo.android.versionCode is computed from the Expo SDK "+
-				"and the version, release-me does not bump it", p.path)
+		if data, err := readFile(stdpath.Join(p.path, "app.json")); err == nil {
+			var app struct {
+				Expo struct {
+					Android struct {
+						VersionCode json.RawMessage `json:"versionCode"`
+					} `json:"android"`
+				} `json:"expo"`
+			}
+			if json.Unmarshal(data, &app) == nil && len(app.Expo.Android.VersionCode) != 0 {
+				warn("package %s: release-type expo: app.json's expo.android.versionCode is computed from the Expo SDK "+
+					"and the version, release-me does not bump it", p.path)
+			}
 		}
 	case "sfdx":
 		versionFile("sfdx-project.json", updater.Sfdx, "", false)
