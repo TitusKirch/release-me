@@ -225,6 +225,30 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 			},
 		},
 		{
+			name:     "rust warns about a crate inheriting its workspace version",
+			settings: `"release-type": "rust"`,
+			repo: map[string]string{
+				"web/Cargo.toml": "[package]\nname = \"release-core\"\nversion.workspace = true\n",
+				"web/Cargo.lock": cargoLockFile,
+			},
+			wantWarnings: []string{
+				"package web: release-type rust: web/Cargo.toml declares no [package] name and version, " +
+					"add the crates it releases under files",
+			},
+		},
+		{
+			name:     "ruby warns when an existing lockfile has no configured gem name",
+			settings: `"release-type": "ruby"`,
+			repo: map[string]string{
+				"web/Gemfile.lock": gemfileLockFile,
+			},
+			wantWarnings: []string{
+				"package web: release-type ruby: its version.rb is not carried over, add it under files",
+				"package web: release-type ruby: web/Gemfile.lock is not carried over without component or package-name, " +
+					"add it under files with a gem name as key",
+			},
+		},
+		{
 			name:     "ruby bumps the gem's version.rb and its Gemfile.lock entry",
 			settings: `"release-type": "ruby", "component": "release-notes"`,
 			repo: map[string]string{
