@@ -275,6 +275,35 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 			},
 		},
 		{
+			name:     "maven ignores modules mentioned only in a comment",
+			settings: `"release-type": "maven"`,
+			repo: map[string]string{"web/pom.xml": `<project>
+  <version>1.4.0</version>
+  <!-- <modules><module>notes-core</module></modules> -->
+</project>
+`},
+			wantFiles: []config.File{
+				{Path: "web/pom.xml", Updater: "xml", Key: "project.version"},
+			},
+		},
+		{
+			name:     "maven recognizes prefixed modules with a declared encoding",
+			settings: `"release-type": "maven"`,
+			repo: map[string]string{"web/pom.xml": `<?xml version="1.0" encoding="ISO-8859-1"?>
+<pom:project xmlns:pom="http://maven.apache.org/POM/4.0.0">
+  <pom:version>1.4.0</pom:version>
+  <pom:modules><pom:module>notes-core</pom:module></pom:modules>
+</pom:project>
+`},
+			wantFiles: []config.File{
+				{Path: "web/pom.xml", Updater: "xml", Key: "project.version"},
+			},
+			wantWarnings: []string{
+				"package web: release-type maven: release-please bumped every pom.xml below the package, " +
+					"only web/pom.xml is carried over, add each module's pom.xml under files",
+			},
+		},
+		{
 			name:     "maven warns about the modules of a multi-module project",
 			settings: `"release-type": "maven"`,
 			repo: map[string]string{"web/pom.xml": `<project>

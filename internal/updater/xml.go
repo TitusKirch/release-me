@@ -70,7 +70,8 @@ func UpdateXML(content, key, version string) (string, error) {
 			}
 		case xml.EndElement:
 			// RawToken leaves matching start and end elements to the
-			// caller.
+			// caller and preserves literal namespace prefixes. Compare
+			// those prefixes too, even when they resolve to the same URI.
 			if len(stack) == 0 || names[len(names)-1] != t.Name {
 				return "", fmt.Errorf("updater: xml: unexpected end element %q", t.Name.Local)
 			}
