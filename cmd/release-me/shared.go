@@ -93,6 +93,9 @@ func doPRShared(
 		for _, comp := range all {
 			needsSweep = needsSweep || !comp.ForceTagCreation
 		}
+		// A legacy branch can hold an unpublished deferred draft or a
+		// merged release still pending; finish either before opening a
+		// shared release pull request.
 		if needsSweep {
 			own, err := remoteBranches(ctx, dir, "release-me/*")
 			if err != nil {
@@ -103,12 +106,12 @@ func doPRShared(
 				if legacy == branch || !own[legacy] {
 					continue
 				}
-				deferred, err := mergedPendingRelease(ctx, f, owner, repoName, legacy, cfg, logger)
+				deferral, err := mergedReleaseDeferral(ctx, f, owner, repoName, legacy, cfg, logger)
 				if err != nil {
 					return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 				}
-				if deferred {
-					fmt.Fprintln(stdout, "nothing to release")
+				if deferral != "" {
+					fmt.Fprintln(stdout, deferral)
 					return nil
 				}
 			}
@@ -128,12 +131,12 @@ func doPRShared(
 		return err
 	}
 	if existing == nil {
-		pending, err := mergedPendingRelease(ctx, f, owner, repoName, branch, cfg, logger)
+		deferral, err := mergedReleaseDeferral(ctx, f, owner, repoName, branch, cfg, logger)
 		if err != nil {
 			return fmt.Errorf("release-me: %s: %w", sharedWho, err)
 		}
-		if pending {
-			fmt.Fprintln(stdout, "nothing to release")
+		if deferral != "" {
+			fmt.Fprintln(stdout, deferral)
 			return nil
 		}
 	}

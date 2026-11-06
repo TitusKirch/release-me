@@ -171,7 +171,8 @@ release-me continues from the existing tags and changelogs. A single root packag
 
 - `bump-minor-pre-major` and `initial-version`;
 - `force-tag-creation`, at the top level when every package carries the same value, on the
-  component otherwise;
+  component otherwise. When absent, release-me's default `true` is kept, rather than
+  release-please's `false`; without drafts both create the tag during the release run;
 - the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package where that
   file exists, `node` being release-please's default type, and every `extra-files` entry of
   type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;

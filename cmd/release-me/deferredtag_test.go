@@ -5,6 +5,10 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
@@ -70,6 +74,9 @@ func TestRunRetriesAnUnpublishedDeferredTagWithoutAnotherReleasePR(t *testing.T)
 				if len(f.CreatedPullRequests) != 1 || len(f.CreatedReleases) != releases || len(f.CreatedTags) != 0 {
 					t.Fatalf("retry duplicated work: PRs=%+v releases=%+v tags=%+v", f.CreatedPullRequests, f.CreatedReleases, f.CreatedTags)
 				}
+				if !bytes.Contains(out.Bytes(), []byte("waiting for unpublished release")) || !bytes.Contains(out.Bytes(), []byte("publish or delete its draft")) {
+					t.Fatalf("missing draft deferral: %s", out.String())
+				}
 				if !bytes.Contains(out.Bytes(), []byte("released-tag:")) {
 					t.Fatalf("draft not resumed: %s", out.String())
 				}
@@ -82,19 +89,23 @@ func TestDeferredDraftDeferralRequiresAnAbsentTagAndAnUnpublishedRelease(t *test
 	for _, tc := range []struct {
 		name                    string
 		tagExists, draft, force bool
+		missing                 bool
 		title                   string
 		want                    bool
 	}{
 		{name: "unpublished draft", draft: true, want: true},
 		{name: "tag already exists", tagExists: true, draft: true},
 		{name: "published release"},
+		{name: "deleted draft", missing: true},
 		{name: "forced tag creation", draft: true, force: true},
 		{name: "unrelated title", draft: true, title: "feat: add a command"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFake()
 			f.ExistingTags = map[string]bool{"v1.1.0": tc.tagExists}
-			f.ReleaseDrafts = map[string]bool{"v1.1.0": tc.draft}
+			if !tc.missing {
+				f.ReleaseDrafts = map[string]bool{"v1.1.0": tc.draft}
+			}
 			cfg := config.Default()
 			cfg.ForceTagCreation = tc.force
 			title := tc.title
@@ -104,6 +115,51 @@ func TestDeferredDraftDeferralRequiresAnAbsentTagAndAnUnpublishedRelease(t *test
 			got, err := unpublishedDeferredRelease(t.Context(), f, "owner", "repo", cfg, forge.PullRequest{Number: 9, Title: title})
 			if err != nil || got != tc.want {
 				t.Fatalf("deferred=%v,%v;want %v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+// deferredLookupForge records remote probes made while deciding whether
+// an unpublished release should hold back a new release pull request.
+type deferredLookupForge struct {
+	*forgetest.Fake
+	tags, drafts []string
+}
+
+func (f *deferredLookupForge) TagExists(ctx context.Context, owner, repo, tag string) (bool, error) {
+	f.tags = append(f.tags, tag)
+	return f.Fake.TagExists(ctx, owner, repo, tag)
+}
+
+func (f *deferredLookupForge) IsReleaseDraft(ctx context.Context, owner, repo, tag string) (bool, error) {
+	f.drafts = append(f.drafts, tag)
+	return f.Fake.IsReleaseDraft(ctx, owner, repo, tag)
+}
+
+func TestReleaseDeferralOnlyChecksTheNewestMergedTaggedPullRequest(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reverse listing %t", reverse), func(t *testing.T) {
+			prs := []forge.PullRequest{
+				{Number: 10, Title: "chore(main): release v1.0.0", Merged: true, Labels: []string{"release: tagged"}},
+				{Number: 20, Title: "chore(main): release v1.1.0", Merged: true, Labels: []string{"release: tagged"}},
+				{Number: 30, Title: "chore(main): release v1.2.0", Labels: []string{"release: tagged"}},
+			}
+			if reverse {
+				slices.Reverse(prs)
+			}
+			f := &deferredLookupForge{Fake: &forgetest.Fake{
+				ListResponses: []forgetest.ListResponse{{Head: mainBranch, State: "closed", PullRequests: prs}},
+				ExistingTags:  map[string]bool{"v1.1.0": true},
+			}}
+			cfg := config.Default()
+			cfg.ForceTagCreation, cfg.DraftUntilAssetsAttach = false, true
+			deferral, err := mergedReleaseDeferral(t.Context(), f, "owner", "repo", mainBranch, cfg, discardLogger())
+			if err != nil || deferral != "" {
+				t.Fatalf("deferral = %q, %v; want empty, nil", deferral, err)
+			}
+			if !reflect.DeepEqual(f.tags, []string{"v1.1.0"}) || len(f.drafts) != 0 {
+				t.Fatalf("remote lookups: tags = %q, drafts = %q; want only newest merged tag", f.tags, f.drafts)
 			}
 		})
 	}

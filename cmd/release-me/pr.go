@@ -186,12 +186,12 @@ func doPRComponent(
 	}
 
 	if existing == nil {
-		pending, err := mergedPendingRelease(ctx, f, owner, repoName, comp.Branch, cfg, logger)
+		deferral, err := mergedReleaseDeferral(ctx, f, owner, repoName, comp.Branch, cfg, logger)
 		if err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
-		if pending {
-			printLine(stdout, comp.Name, multi, "nothing to release")
+		if deferral != "" {
+			printLine(stdout, comp.Name, multi, deferral)
 			return nil
 		}
 	}
@@ -366,12 +366,12 @@ func doPRLocked(
 	}
 
 	if existing == nil {
-		pending, err := mergedPendingRelease(ctx, f, owner, repoName, branch, cfg, logger)
+		deferral, err := mergedReleaseDeferral(ctx, f, owner, repoName, branch, cfg, logger)
 		if err != nil {
 			return fmt.Errorf("release-me: locked family: %w", err)
 		}
-		if pending {
-			fmt.Fprintln(stdout, "nothing to release")
+		if deferral != "" {
+			fmt.Fprintln(stdout, deferral)
 			return nil
 		}
 	}
@@ -566,9 +566,12 @@ func lockedPreReleaseEntries(
 	return versionStr, out, nil
 }
 
-// mergedPendingRelease reports whether branch already carries a closed,
+// mergedReleaseDeferral returns a message when branch carries a closed,
 // merged pull request still labeled pending, or a tagged release whose
 // deferred tag is absent and whose release remains an unpublished draft.
+// An empty message means a new release pull request may be opened. Only
+// the newest merged, tagged pull request is probed for a deferred draft,
+// keeping remote lookups bounded as the release history grows.
 // The pending label signals a release already
 // decided, not yet tagged. doRelease recognizes the exact same pull
 // request by the exact same signal to tag it, so as long as it still
@@ -584,36 +587,44 @@ func lockedPreReleaseEntries(
 // stays blind to that tag until the next checkout. Recognizing the
 // merged, still pending pull request directly, the same way doRelease
 // already does, needs no local git state at all.
-func mergedPendingRelease(ctx context.Context, f forge.Forge, owner, repoName, branch string, cfg config.Config, logger *slog.Logger) (bool, error) {
+func mergedReleaseDeferral(ctx context.Context, f forge.Forge, owner, repoName, branch string, cfg config.Config, logger *slog.Logger) (string, error) {
 	closed, err := f.PullRequests(ctx, owner, repoName, branch, "closed")
 	if err != nil {
-		return false, fmt.Errorf("list closed pull requests on %s: %w", branch, err)
+		return "", fmt.Errorf("list closed pull requests on %s: %w", branch, err)
 	}
+	var newestTagged *forge.PullRequest
 	for _, pr := range closed {
-		if pr.Merged && cfg.DraftUntilAssetsAttach && slices.Contains(pr.Labels, cfg.Labels.Tagged) {
-			deferred, err := unpublishedDeferredRelease(ctx, f, owner, repoName, cfg, pr)
-			if err != nil {
-				return false, err
-			}
-			if deferred {
-				logger.Debug("merged release has an unpublished deferred tag, deferring to release", "head", branch, "number", pr.Number)
-				return true, nil
-			}
+		if !pr.Merged {
+			continue
 		}
-		if pr.Merged && slices.Contains(pr.Labels, cfg.Labels.Pending) {
+		if slices.Contains(pr.Labels, cfg.Labels.Pending) {
 			logger.Debug("merged pull request still pending, deferring to release",
 				"head", branch, "number", pr.Number)
-			return true, nil
+			return "nothing to release", nil
+		}
+		if slices.Contains(pr.Labels, cfg.Labels.Tagged) && (newestTagged == nil || pr.Number > newestTagged.Number) {
+			newestTagged = &pr
 		}
 	}
-	return false, nil
+	if cfg.DraftUntilAssetsAttach && newestTagged != nil {
+		deferred, err := unpublishedDeferredRelease(ctx, f, owner, repoName, cfg, *newestTagged)
+		if err != nil {
+			return "", err
+		}
+		if deferred {
+			logger.Debug("merged release has an unpublished deferred tag, deferring to release", "head", branch, "number", newestTagged.Number)
+			return fmt.Sprintf("waiting for unpublished release %q from pull request #%d; publish or delete its draft to continue", newestTagged.Title, newestTagged.Number), nil
+		}
+	}
+	return "", nil
 }
 
 // unpublishedDeferredRelease checks the version the merged PR actually
 // released, rather than the next version recomputed from a still-missing tag.
 func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoName string, cfg config.Config, pr forge.PullRequest) (bool, error) {
 	versions := map[string]string{}
-	for _, comp := range cfg.Resolve() {
+	components := cfg.Resolve()
+	for _, comp := range components {
 		if v, ok := tagrelease.VersionFromTitle(pr.Title, comp.Name); ok {
 			versions[comp.Name] = v
 		}
@@ -628,7 +639,7 @@ func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoN
 			versions[name] = v
 		}
 	}
-	for _, comp := range cfg.Resolve() {
+	for _, comp := range components {
 		v := versions[comp.Name]
 		if comp.ForceTagCreation || v == "" {
 			continue
