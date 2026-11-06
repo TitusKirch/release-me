@@ -62,11 +62,25 @@ func TestReleaseTypeUpdatersBumpTheVersionOfTheirFile(t *testing.T) {
 			to:      `      version: "1.5.0-rc.1",`,
 		},
 		{
+			name:    "elixir leaves version examples in documentation and comments alone",
+			updater: updater.Elixir,
+			content: "defmodule ReleaseNotes.MixProject do\n  use Mix.Project\n  @moduledoc ~s(Use version: \"1.0.0\" in the project list.)\n  # version: \"1.1.0\"\n\n  def project do\n    [\n      app: :release_notes,\n      version: \"1.4.0\",\n      elixir: \"~> 1.16\"\n    ]\n  end\nend\n",
+			from:    `      version: "1.4.0",`,
+			to:      `      version: "1.5.0-rc.1",`,
+		},
+		{
 			name:    "ocaml bumps an opam file's version field",
 			updater: updater.OCaml,
 			content: "opam-version: \"2.0\"\nversion: \"1.4.0\"\nsynopsis: \"Release notes\"\ndepends: [\n  \"dune\" {>= \"3.0\"}\n]\n",
 			from:    `version: "1.4.0"`,
 			to:      `version: "1.5.0-rc.1"`,
+		},
+		{
+			name:    "ocaml keeps the trailing comment on an opam version field",
+			updater: updater.OCaml,
+			content: "opam-version: \"2.0\"\nversion: \"1.4.0\" # release version\nsynopsis: \"Release notes\"\n",
+			from:    `version: "1.4.0" # release version`,
+			to:      `version: "1.5.0-rc.1" # release version`,
 		},
 		{
 			name:    "ocaml bumps a dune-project's version stanza",
@@ -133,6 +147,7 @@ func TestReleaseTypeUpdatersRejectAFileWithoutTheirVersion(t *testing.T) {
 		{"python rejects setup.cfg's attr: version", updater.Python, "[metadata]\nversion = attr: release_notes.__version__\n"},
 		{"ruby rejects a file without a VERSION constant", updater.Ruby, "module ReleaseNotes\nend\n"},
 		{"elixir rejects a mix.exs without a version", updater.Elixir, "defmodule A.MixProject do\nend\n"},
+		{"elixir rejects version examples without a version keyword", updater.Elixir, "@moduledoc ~s(Use version: \"1.0.0\".)\n# version: \"1.1.0\"\n"},
 		{"ocaml rejects a file without a version", updater.OCaml, "opam-version: \"2.0\"\n"},
 		{"r rejects a DESCRIPTION without a Version", updater.R, "Package: releasenotes\n"},
 		{"bazel rejects a MODULE.bazel without a module() call", updater.Bazel, "bazel_dep(name = \"platforms\", version = \"0.0.10\")\n"},

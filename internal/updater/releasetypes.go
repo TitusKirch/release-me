@@ -68,7 +68,7 @@ func UpdateRuby(content, version string) (string, error) {
 // elixirKeyword the "version: \"1.2.3\"" keyword in its project/0.
 var (
 	elixirAttribute = regexp.MustCompile(`^(\s*@version\s+)("[^"]*")(.*)$`)
-	elixirKeyword   = regexp.MustCompile(`^(.*?\bversion:\s*)("[^"]*")(.*)$`)
+	elixirKeyword   = regexp.MustCompile(`^(\s*version:\s*)("[^"]*")(.*)$`)
 )
 
 // UpdateElixir replaces the version of a mix.exs: its @version module
@@ -88,7 +88,7 @@ func UpdateElixir(content, version string) (string, error) {
 // opamVersion matches an opam file's top-level "version: \"1.2.3\"" field,
 // duneVersion a dune-project's "(version 1.2.3)" stanza.
 var (
-	opamVersion = regexp.MustCompile(`^(version:\s*)("[^"]*")(\s*)$`)
+	opamVersion = regexp.MustCompile(`^(version:\s*)("[^"]*")(\s*(?:#.*)?)$`)
 	duneVersion = regexp.MustCompile(`^(\(version\s+)([^\s)]+)(\).*)$`)
 )
 
