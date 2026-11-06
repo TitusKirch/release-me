@@ -390,6 +390,26 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 			},
 		},
 		{
+			name:     "python carries over a pyproject version without a project name",
+			settings: `"release-type": "python"`,
+			repo: map[string]string{
+				"web/pyproject.toml": "[project]\nversion = \"1.4.0\"\n",
+			},
+			wantFiles: []config.File{
+				{Path: "web/pyproject.toml", Updater: "toml", Key: "project.version"},
+			},
+		},
+		{
+			name:     "python carries over a poetry version without a project name",
+			settings: `"release-type": "python"`,
+			repo: map[string]string{
+				"web/pyproject.toml": "[tool.poetry]\nversion = \"1.4.0\"\n",
+			},
+			wantFiles: []config.File{
+				{Path: "web/pyproject.toml", Updater: "toml", Key: "tool.poetry.version"},
+			},
+		},
+		{
 			name:     "python warns when it finds no version file",
 			settings: `"release-type": "python"`,
 			wantWarnings: []string{
@@ -472,6 +492,18 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 			wantWarnings: []string{
 				"package web: release-type expo: app.json's expo.android.versionCode is computed from the Expo SDK " +
 					"and the version, release-me does not bump it",
+			},
+		},
+		{
+			name:     "expo ignores a versionCode outside its Android settings",
+			settings: `"release-type": "expo"`,
+			repo: map[string]string{
+				"web/package.json": packageJSON,
+				"web/app.json":     "{\n  \"versionCode\": 7,\n  \"expo\": {\n    \"version\": \"2.0.0\",\n    \"extra\": {\n      \"versionCode\": 8\n    }\n  }\n}\n",
+			},
+			wantFiles: []config.File{
+				{Path: "web/package.json", Updater: "json", Key: "version"},
+				{Path: "web/app.json", Updater: "json", Key: "expo.version"},
 			},
 		},
 		{
