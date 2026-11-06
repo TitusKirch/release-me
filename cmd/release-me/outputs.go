@@ -61,6 +61,7 @@ type componentOutput struct {
 	Body      string    `json:"body"`
 	HTMLURL   string    `json:"html_url"`
 	UploadURL string    `json:"upload_url"`
+	Draft     bool      `json:"draft"`
 	PR        *prOutput `json:"pr"`
 }
 
@@ -141,10 +142,12 @@ func (out *runOutputs) render(components []string) (string, error) {
 	for _, r := range out.releases {
 		if c, ok := byName[r.Name]; ok {
 			c.Released, c.Version, c.Tag = true, r.Version, r.Tag
-			c.SHA, c.Body, c.HTMLURL, c.UploadURL = r.SHA, r.Body, r.HTMLURL, r.UploadURL
-			if v, ok := version.ParseTag("v" + r.Version); ok {
-				c.Major, c.Minor, c.Patch = &v.Major, &v.Minor, &v.Patch
+			c.SHA, c.Body, c.HTMLURL, c.UploadURL, c.Draft = r.SHA, r.Body, r.HTMLURL, r.UploadURL, r.Draft
+			v, valid := version.ParseTag("v" + r.Version)
+			if !valid {
+				return "", fmt.Errorf("component %s: release version %q is invalid", r.Name, r.Version)
 			}
+			c.Major, c.Minor, c.Patch = &v.Major, &v.Minor, &v.Patch
 			byName[r.Name] = c
 		}
 	}

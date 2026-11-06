@@ -165,6 +165,7 @@ func TestReleaseSkipsTheGitHubReleaseButStillTagsAndSwapsTheLabel(t *testing.T) 
 // releaseOutputs is what a result reports for the action's outputs.
 type releaseOutputs struct {
 	Tag, SHA, Body, HTMLURL, UploadURL string
+	Draft                              bool
 }
 
 func TestReleaseReportsTheCommitNotesAndAddressesOfEveryRelease(t *testing.T) {
@@ -183,14 +184,17 @@ func TestReleaseReportsTheCommitNotesAndAddressesOfEveryRelease(t *testing.T) {
 		HTMLURL:   "https://github.com/owner/repo/releases/tag/v0.2.0",
 		UploadURL: "https://uploads.github.com/repos/owner/repo/releases/9001/assets{?name,label}",
 	}
-	cases := []struct {
+	drafted := created
+	drafted.Draft = true
+	type releaseOutputCase struct {
 		name                   string
 		run                    releaseRun
 		fake                   *forgetest.Fake
 		comps                  []release.Component
 		draftUntilAssetsAttach bool
 		want                   []releaseOutputs
-	}{
+	}
+	cases := []releaseOutputCase{
 		{
 			name: "reports the release it created", run: runOwn,
 			fake:  withBody(mergedFake("chore(main): release v0.2.0", "release: pending"), mainBody),
@@ -209,6 +213,32 @@ func TestReleaseReportsTheCommitNotesAndAddressesOfEveryRelease(t *testing.T) {
 			want:  []releaseOutputs{created},
 		},
 		{
+			name: "reports the draft it creates", run: runOwn,
+			fake:  withBody(mergedFake("chore(main): release v0.2.0", "release: pending"), mainBody),
+			comps: []release.Component{mainComponent}, draftUntilAssetsAttach: true,
+			want: []releaseOutputs{drafted},
+		},
+		{
+			name: "reports the draft left before an earlier run swapped the label", run: runOwn,
+			fake: func() *forgetest.Fake {
+				f := withBody(mergedFake("chore(main): release v0.2.0", "release: pending"), mainBody)
+				f.ReleaseDrafts = map[string]bool{"v0.2.0": true}
+				return f
+			}(),
+			comps: []release.Component{mainComponent}, draftUntilAssetsAttach: true,
+			want: []releaseOutputs{drafted},
+		},
+		{
+			name: "keeps addresses empty when an existing release cannot be found", run: runOwn,
+			fake: func() *forgetest.Fake {
+				f := withBody(mergedFake("chore(main): release v0.2.0", "release: pending"), mainBody)
+				f.CreateReleaseErrs = map[string]error{"v0.2.0": forge.ErrReleaseExists}
+				return f
+			}(),
+			comps: []release.Component{mainComponent},
+			want:  []releaseOutputs{{Tag: "v0.2.0", SHA: "4f2a9c1", Body: notes}},
+		},
+		{
 			name: "reports the draft it resumes", run: runOwn,
 			fake: func() *forgetest.Fake {
 				f := withBody(mergedFake("chore(main): release v0.2.0", "release: tagged"), mainBody)
@@ -216,7 +246,7 @@ func TestReleaseReportsTheCommitNotesAndAddressesOfEveryRelease(t *testing.T) {
 				return f
 			}(),
 			comps: []release.Component{mainComponent}, draftUntilAssetsAttach: true,
-			want: []releaseOutputs{created},
+			want: []releaseOutputs{drafted},
 		},
 		{
 			name: "reports every shared component's own release", run: runShared,
@@ -239,6 +269,23 @@ func TestReleaseReportsTheCommitNotesAndAddressesOfEveryRelease(t *testing.T) {
 			},
 		},
 	}
+	shared := cases[len(cases)-1]
+	for _, resume := range []bool{false, true} {
+		label, name := "release: pending", "reports drafts created for every shared component"
+		if resume {
+			label, name = "release: tagged", "reports the shared draft it resumes and skips published components"
+		}
+		f := withBody(mergedFake("chore: release api v1.3.0, web v0.4.1", label), sharedNotes)
+		want := append([]releaseOutputs(nil), shared.want...)
+		for i := range want {
+			want[i].Draft = true
+		}
+		if resume {
+			f.ReleaseDrafts = map[string]bool{"api/v1.3.0": true, "web/v0.4.1": false}
+			want = want[:1]
+		}
+		cases = append(cases, releaseOutputCase{name: name, run: runShared, fake: f, comps: shared.comps, draftUntilAssetsAttach: true, want: want})
+	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -248,7 +295,7 @@ func TestReleaseReportsTheCommitNotesAndAddressesOfEveryRelease(t *testing.T) {
 			}
 			var got []releaseOutputs
 			for _, r := range results {
-				got = append(got, releaseOutputs{Tag: r.Tag, SHA: r.SHA, Body: r.Body, HTMLURL: r.HTMLURL, UploadURL: r.UploadURL})
+				got = append(got, releaseOutputs{Tag: r.Tag, SHA: r.SHA, Body: r.Body, HTMLURL: r.HTMLURL, UploadURL: r.UploadURL, Draft: r.Draft})
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("results = %+v, want %+v", got, tc.want)
