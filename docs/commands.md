@@ -170,7 +170,8 @@ release-me continues from the existing tags and changelogs. A single root packag
 
 - `bump-minor-pre-major` and `initial-version`;
 - `skip-github-release`, at the top level when every package carries the same value, on the
-  component otherwise;
+  component otherwise; release-me still creates the tag, unlike release-please, so remove
+  any external tagging step the old workflow needed;
 - the version file of a `node` (`package.json`) or `helm` (`Chart.yaml`) package where that
   file exists, `node` being release-please's default type, and every `extra-files` entry of
   type `json`, `yaml` or `toml` with a plain `$.a.b` jsonpath;

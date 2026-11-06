@@ -286,6 +286,9 @@ func resumeShared(
 ) ([]Result, error) {
 	var results []Result
 	for _, p := range plan {
+		if p.comp.SkipGitHubRelease {
+			continue
+		}
 		tag := p.comp.TagPrefix + p.versionStr
 		draft, err := f.IsReleaseDraft(ctx, owner, repoName, tag)
 		if err != nil {
@@ -568,6 +571,9 @@ func Run(
 		// release publishes the moment it is created, so a tagged pull
 		// request never has anything left to resume.
 		if dryRun || !draftUntilAssetsAttach || !slices.Contains(pr.Labels, labels.Tagged) {
+			continue
+		}
+		if comp.SkipGitHubRelease {
 			continue
 		}
 		result, resumed, err := resumeOne(ctx, f, owner, repoName, comp.Name, comp.TagPrefix, pr)

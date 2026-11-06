@@ -54,6 +54,8 @@ var apiAndWeb = []release.Component{
 func TestReleaseSkipsTheGitHubReleaseButStillTagsAndSwapsTheLabel(t *testing.T) {
 	t.Parallel()
 	skipMain := release.Component{Name: "main", Branch: "release-me/main", TagPrefix: "v", SkipGitHubRelease: true}
+	alreadyTagged := mergedFake("chore(main): release v0.2.0", "release: pending")
+	alreadyTagged.ExistingTags = map[string]bool{"v0.2.0": true}
 	cases := []struct {
 		name                   string
 		run                    releaseRun
@@ -71,6 +73,11 @@ func TestReleaseSkipsTheGitHubReleaseButStillTagsAndSwapsTheLabel(t *testing.T) 
 			fake:  mergedFake("chore(main): release v0.2.0", "release: pending"),
 			comps: []release.Component{skipMain}, wantTags: []string{"v0.2.0"},
 			wantMessages: []string{"tagged v0.2.0, GitHub release skipped"}, wantLabelSwap: true,
+		},
+		{
+			name: "reports an existing tag before the skipped release", run: runOwn,
+			fake: alreadyTagged, comps: []release.Component{skipMain},
+			wantMessages: []string{"already tagged v0.2.0"}, wantLabelSwap: true,
 		},
 		{
 			name: "drafts nothing with draft-until-assets-attach on", run: runOwn,
