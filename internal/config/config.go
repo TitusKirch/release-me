@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package config loads release-me.yaml: initial-version,
-// bump-minor-pre-major, bump-patch-for-minor-pre-major, hidden-types, fallback-type, token-env, files,
-// changelog, changelog-source, labels, author, major-tag, versioning,
-// draft-until-assets-attach, comment-mention and components.
+// bump-minor-pre-major, bump-patch-for-minor-pre-major, hidden-types,
+// fallback-type, token-env, files, changelog, changelog-source, labels,
+// author, major-tag, versioning, draft-until-assets-attach,
+// comment-mention and components.
 package config
 
 import (

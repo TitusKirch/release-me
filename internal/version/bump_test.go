@@ -80,6 +80,14 @@ func TestNextComputesTheReleasedVersion(t *testing.T) {
 			want:    version.Result{Version: "0.4.2", Bump: version.BumpPatch, Reason: "feat, patch below 1.0.0"},
 		},
 		{
+			name:    "keeps minor for a feature below one with patch for minor pre major off",
+			last:    version.Semver{Major: 0, Minor: 4, Patch: 1},
+			lastOK:  true,
+			changes: []version.Change{{Type: "feat"}},
+			rules:   version.Rules{BumpPatchForMinorPreMajor: false},
+			want:    version.Result{Version: "0.5.0", Bump: version.BumpMinor, Reason: "feat"},
+		},
+		{
 			name:    "keeps minor for a feature from one on with patch for minor pre major",
 			last:    version.Semver{Major: 1, Minor: 4, Patch: 1},
 			lastOK:  true,
