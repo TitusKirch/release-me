@@ -9,8 +9,10 @@ package migrate
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	stdpath "path"
 	"reflect"
 	"regexp"
@@ -909,9 +911,19 @@ func translatePom(c *component, pkgPath string, readFile ReadFile, warn func(str
 		return
 	}
 	c.files = append(c.files, file{path: path, updater: updater.XML, key: key})
-	if strings.Contains(string(data), "<modules>") {
-		warn("package %s: release-type maven: release-please bumped every pom.xml below the package, "+
-			"only %s is carried over, add each module's pom.xml under files", pkgPath, path)
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	// As in UpdateXML, only ASCII element names matter here.
+	dec.CharsetReader = func(_ string, r io.Reader) (io.Reader, error) { return r, nil }
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		if start, ok := tok.(xml.StartElement); ok && start.Name.Local == "modules" {
+			warn("package %s: release-type maven: release-please bumped every pom.xml below the package, "+
+				"only %s is carried over, add each module's pom.xml under files", pkgPath, path)
+			break
+		}
 	}
 }
 
