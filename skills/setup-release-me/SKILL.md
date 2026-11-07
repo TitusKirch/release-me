@@ -86,7 +86,9 @@ Everything else is derived:
   `version`, `Chart.yaml` with `helm`, `Cargo.toml` with `toml` and key `package.version`,
   `pyproject.toml` with `toml` and key `project.version`, or `tool.poetry.version` where the
   version sits under `[tool.poetry]` instead, a Go constant with `go` and the constant's name
-  as key.
+  as key. A lockfile next to it is listed too: `package-lock.json` or `npm-shrinkwrap.json`
+  with `npm-lock`, `Cargo.lock` with `cargo-lock` and the crate name as key, `Gemfile.lock`
+  with `gemfile-lock` and the gem name as key.
 
 Done when every key the plan writes is either answered by the human or derived above.
 
