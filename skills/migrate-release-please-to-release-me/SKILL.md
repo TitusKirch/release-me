@@ -136,10 +136,13 @@ confirmation:
   `gh api repos/{owner}/{repo}/labels --paginate --jq '.[].name'` lacks is listed for the human
   to create; labels are repository settings, and the skill creates none.
 - **Removal:** `release-please-config.json`, `.release-please-manifest.json` and the
-  release-please workflow steps. Changelogs stay, since release-me prepends to them.
+  release-please workflow steps. Changelogs stay, since release-me prepends to them. So do the
+  `x-release-please-version` markers of every file `release-me.yaml` lists with the `generic`
+  updater, which reads them as they are.
 
 Done when `git grep -n release-please` returns only history, such as changelog entries and
-release notes, and each remaining hit is named in the plan as history.
+release notes, and the markers of files listed with `generic`, and each remaining hit is named
+in the plan as one of those.
 
 ### 5. Prove
 

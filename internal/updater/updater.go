@@ -19,6 +19,8 @@ const (
 	JSON   = "json"
 	YAML   = "yaml"
 	TOML   = "toml"
+
+	Generic = "generic"
 )
 
 // Func is the shape every registered updater implements: given a file's
@@ -42,6 +44,8 @@ var Updaters = map[string]Entry{
 	JSON:   {Update: UpdateJSON, NeedsKey: true},
 	YAML:   {Update: UpdateYAML, NeedsKey: true},
 	TOML:   {Update: UpdateTOML, NeedsKey: true},
+
+	Generic: {Update: ignoreKey(UpdateGeneric)},
 }
 
 // ignoreKey adapts an updater that takes no key to the Func shape every

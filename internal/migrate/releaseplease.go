@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
+	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"gopkg.in/yaml.v3"
 )
 
@@ -349,7 +350,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	}
 
 	if raw, ok := p.settings["extra-files"]; ok {
-		files, err := translateExtraFiles(p.path, raw, warn)
+		files, err := translateExtraFiles(p.path, raw, readFile, warn)
 		if err != nil {
 			return component{}, err
 		}
@@ -358,9 +359,11 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	return c, nil
 }
 
-// translateExtraFiles carries over the extra-files entries a typed updater
-// can bump: json, yaml and toml files whose jsonpath is a plain dotted path.
-func translateExtraFiles(pkgPath string, raw json.RawMessage, warn func(string, ...any)) ([]file, error) {
+// translateExtraFiles carries over the extra-files entries an updater can
+// bump: a plain path and a generic entry through release-please's version
+// markers, and json, yaml and toml files whose jsonpath is a plain dotted
+// path.
+func translateExtraFiles(pkgPath string, raw json.RawMessage, readFile ReadFile, warn func(string, ...any)) ([]file, error) {
 	var entries []json.RawMessage
 	if err := json.Unmarshal(raw, &entries); err != nil {
 		return nil, fmt.Errorf("migrate: package %s: extra-files: %w", pkgPath, err)
@@ -369,17 +372,26 @@ func translateExtraFiles(pkgPath string, raw json.RawMessage, warn func(string, 
 	for _, e := range entries {
 		var plain string
 		if json.Unmarshal(e, &plain) == nil {
-			warn("package %s: extra-files: %s: release-please's version markers are not release-me's, "+
-				"mark the line with \"release-me: version\" and add it under files", pkgPath, plain)
+			files = append(files, markedExtraFile(pkgPath, plain, true, readFile, warn)...)
 			continue
 		}
 		var typed struct {
 			Type     string `json:"type"`
 			Path     string `json:"path"`
 			JSONPath string `json:"jsonpath"`
+			Glob     bool   `json:"glob"`
 		}
 		if err := json.Unmarshal(e, &typed); err != nil {
 			return nil, fmt.Errorf("migrate: package %s: extra-files: %w", pkgPath, err)
+		}
+		if typed.Glob {
+			warn("package %s: extra-files: %s: a glob, release-me lists its files, add each file it matches under files",
+				pkgPath, typed.Path)
+			continue
+		}
+		if typed.Type == "generic" {
+			files = append(files, markedExtraFile(pkgPath, typed.Path, false, readFile, warn)...)
+			continue
 		}
 		key, ok := strings.CutPrefix(typed.JSONPath, "$.")
 		if !slices.Contains([]string{"json", "yaml", "toml"}, typed.Type) || !ok || strings.ContainsAny(key, "[]*") {
@@ -390,6 +402,40 @@ func translateExtraFiles(pkgPath string, raw json.RawMessage, warn func(string, 
 		files = append(files, file{path: repoPath(pkgPath, typed.Path), updater: typed.Type, key: key})
 	}
 	return files, nil
+}
+
+// markedExtraFile carries over an extra-files entry release-please bumps
+// through its version markers: a generic entry, or a plain path, which for
+// a .json, .yaml, .yml or .toml file release-please also bumps at its
+// top-level "version" key. Each becomes an entry only where the file exists
+// and the updater finds what to bump in it, since an entry that does not
+// would fail the first release pull request.
+func markedExtraFile(pkgPath, rel string, plain bool, readFile ReadFile, warn func(string, ...any)) []file {
+	path := repoPath(pkgPath, rel)
+	data, err := readFile(path)
+	if err != nil {
+		warn("package %s: extra-files: %s does not exist, left out of files", pkgPath, path)
+		return nil
+	}
+	content := string(data)
+
+	var out []file
+	if plain {
+		typed := map[string]string{".json": updater.JSON, ".yaml": updater.YAML, ".yml": updater.YAML, ".toml": updater.TOML}
+		if name, ok := typed[stdpath.Ext(path)]; ok {
+			if _, err := updater.Updaters[name].Update(content, "version", "0.0.0"); err == nil {
+				out = append(out, file{path: path, updater: name, key: "version"})
+			}
+		}
+	}
+	_, err = updater.UpdateGeneric(content, "0.0.0")
+	switch {
+	case err == nil:
+		out = append(out, file{path: path, updater: updater.Generic})
+	case len(out) == 0 || strings.Contains(content, "x-release-please-"):
+		warn("package %s: extra-files: %s: %v, left out of files", pkgPath, path, err)
+	}
+	return out
 }
 
 // translatePlugins maps release-please's linked-versions plugin to a
