@@ -8,4 +8,5 @@
 set -euo pipefail
 
 cd "${GITHUB_ACTION_PATH}/.."
-go build -ldflags "-X main.Version=${VERSION}" -o "${RUNNER_TEMP}/release-me" ./cmd/release-me
+# Downloaded actions carry no Git metadata; ancestor repositories are unrelated.
+go build -buildvcs=false -ldflags "-X main.Version=${VERSION}" -o "${RUNNER_TEMP}/release-me" ./cmd/release-me
