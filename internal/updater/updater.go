@@ -27,6 +27,8 @@ const (
 	GemfileLock = "gemfile-lock"
 
 	XML = "xml"
+
+	Plain = "plain"
 )
 
 // Func is the shape every registered updater implements: given a file's
@@ -58,6 +60,8 @@ var Updaters = map[string]Entry{
 	GemfileLock: {Update: UpdateGemfileLock, NeedsKey: true},
 
 	XML: {Update: UpdateXML, NeedsKey: true},
+
+	Plain: {Update: ignoreKey(UpdatePlain)},
 }
 
 // ignoreKey adapts an updater that takes no key to the Func shape every

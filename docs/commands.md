@@ -173,9 +173,10 @@ counted every commit. It also carries over:
 
 - `bump-minor-pre-major`, `bump-patch-for-minor-pre-major` and `initial-version`;
 - the version file of a `node` (`package.json`), `rust` (`Cargo.toml`), `maven` (`pom.xml`, its
-  project version or else its parent's) or `helm` (`Chart.yaml`) package where that file
-  exists, `node` being release-please's default type. A multi-module `pom.xml` is warned
-  about, since release-please bumped every `pom.xml` below the package;
+  project version or else its parent's), `simple` (its `version-file`, default `version.txt`,
+  through `plain`) or `helm` (`Chart.yaml`) package where that file exists, `node` being
+  release-please's default type. A multi-module `pom.xml` is warned about, since release-please
+  bumped every `pom.xml` below the package;
 - the lockfile release-please bumps beside it where it exists and holds the package:
   `package-lock.json` and `npm-shrinkwrap.json` for `node`, `Cargo.lock` for `rust`, and
   `Gemfile.lock` for `ruby`, keyed by the crate or gem name;

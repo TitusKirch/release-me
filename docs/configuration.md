@@ -193,6 +193,11 @@ fails `pr`, naming the path and the key.
       key: Project.PropertyGroup.Version
   ```
 
+- `plain` replaces the whole content of a file holding nothing but the version, such as a
+  `version.txt` or a `VERSION` file, where a line has no room for a marker comment. The
+  whitespace around the version, a trailing newline or none, is kept. An empty file, or one
+  holding anything besides the version, is an error. No `key`.
+
 Every file entry is validated when release-me.yaml loads: an unknown `updater`, a `key`
 missing where the updater requires one, and a `key` given to an updater that takes none are
 all errors.
