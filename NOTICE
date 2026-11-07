@@ -44,3 +44,7 @@ one modifies, is recorded in the git history of the next branch.
 - #111 feat(workspace): release maven workspace dependents with their dependency
 - #112 feat(pr): leave the changelog file alone with skip-changelog
 - #113 feat(changelog): render GitHub's generated release notes with changelog-type github
+
+This next revision also includes the review corrections published on November 7, 2026,
+with integration adjustments retaining the combined changelog, workspace, draft and
+release-output behavior. GitLab support from draft pull request #10 is not included.
