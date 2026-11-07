@@ -18,6 +18,7 @@ permissions: {}
 
 jobs:
   image:
+    if: ${{ !startsWith(github.event.release.tag_name, 'next-') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

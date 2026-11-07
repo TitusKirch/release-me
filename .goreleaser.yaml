@@ -27,6 +27,13 @@ archives:
       - README.md
       - CHANGELOG.md
 
+# The Next channel keeps binaries and checksums tied to their exact source commit.
+# Ordinary local snapshots retain GoReleaser's usual version shape.
+snapshot:
+  version_template: >-
+    {{ if isEnvSet "RELEASE_ME_NEXT" }}next-{{ .FullCommit }}
+    {{- else }}{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}{{ end }}
+
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
 

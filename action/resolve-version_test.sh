@@ -63,6 +63,22 @@ run_case "an explicit source input wins over everything else" \
   "source" "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0" "${work}/with-version/action" \
   0 "version=source"
 
+run_case "next builds its source instead of downloading the old shipped VERSION" \
+  "" "next" "${work}/with-version/action" \
+  0 "version=source"
+
+run_case "next builds from source before any VERSION file exists" \
+  "" "next" "${work}/no-version/action" \
+  0 "version=source"
+
+run_case "an explicit release still wins on the next branch" \
+  "v0.2.0" "next" "${work}/with-version/action" \
+  0 "version=0.2.0"
+
+run_case "an explicit next version fails instead of downloading a stable release" \
+  "next" "v0.1.1" "${work}/with-version/action" \
+  1 ""
+
 run_case "a floating tag pin resolves from the action ref alone" \
   "" "v0.1.1" "${work}/no-version/action" \
   0 "version=0.1.1"

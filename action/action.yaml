@@ -26,8 +26,9 @@ inputs:
   version:
     description: >-
       release-me release to run, without the "v" prefix, or "source" to build it with go build
-      from this checkout instead of downloading a release. Defaults to the ref the action was
-      invoked at when that ref is itself a release tag, then to the VERSION file shipped at
+      from this action's checkout instead of downloading a release. On action@next the default
+      is source. Otherwise defaults to the ref the action was invoked at when that ref is
+      itself a release tag, then to the VERSION file shipped at
       the pinned commit, used whenever the invocation ref is not itself a release tag: a
       commit digest pin or a floating branch pin alike.
     required: false
@@ -119,6 +120,7 @@ runs:
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
       with:
         go-version-file: ${{ github.action_path }}/../go.mod
+        cache-dependency-path: ${{ github.action_path }}/../go.sum
 
     - name: Build release-me from source
       if: steps.version.outputs.version == 'source'

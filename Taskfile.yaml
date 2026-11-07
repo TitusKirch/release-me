@@ -20,6 +20,11 @@ tasks:
     cmds:
       - goreleaser release --snapshot --clean
 
+  build:next:
+    desc: Build Next archives and checksums for the current commit
+    cmds:
+      - scripts/next-build.sh
+
   run:
     desc: Run the CLI from source, arguments after --
     cmds:
@@ -78,7 +83,7 @@ tasks:
   test:go:
     desc: Go tests with the race detector
     cmds:
-      - go test -race -count=1 ./...
+      - go test -race -count=1 -timeout 30m ./...
 
   test:action:
     desc: Shell script tests for the composite action and this repository's own CI scripts
@@ -86,6 +91,16 @@ tasks:
       - action/resolve-version_test.sh
       - action/run-release-me_test.sh
       - scripts/publish-release-assets_test.sh
+
+  test:next:
+    desc: Next prerelease publication and stale-build guards, without network
+    cmds:
+      - scripts/next-publish_test.sh
+
+  test:image:
+    desc: Build the runtime image and run the CLI against a real git repository
+    cmds:
+      - scripts/next-image_test.sh
 
   check:
     desc: Every check, one after another
@@ -102,6 +117,8 @@ tasks:
       - task: lint:secrets
       - task: test:go
       - task: test:action
+      - task: test:next
+      - task: test:image
       - task: build
 
   fmt:

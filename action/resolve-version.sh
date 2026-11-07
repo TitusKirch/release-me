@@ -12,8 +12,11 @@ version_file="${GITHUB_ACTION_PATH}/../VERSION"
 
 if [ -n "${INPUT_VERSION:-}" ]; then
   version="${INPUT_VERSION}"
-elif [[ "${ACTION_REF}" =~ ${tag_pattern} ]]; then
-  version="${ACTION_REF}"
+elif [ "${ACTION_REF:-}" = "next" ] || [ "${ACTION_REF:-}" = "refs/heads/next" ]; then
+  # next deliberately contains changes newer than the last released VERSION.
+  version="source"
+elif [[ "${ACTION_REF:-}" =~ ${tag_pattern} ]]; then
+  version="${ACTION_REF:-}"
 elif [ -s "${version_file}" ]; then
   # The invocation ref is not itself a release tag, so the regex above
   # never matches: a consumer pinned by commit digest, the convention this
@@ -23,7 +26,7 @@ elif [ -s "${version_file}" ]; then
   # from this same commit.
   version="$(awk '{print $1; exit}' "${version_file}")"
 else
-  version="${ACTION_REF}"
+  version="${ACTION_REF:-}"
 fi
 
 if [ -z "${version}" ]; then

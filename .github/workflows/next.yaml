@@ -1,0 +1,114 @@
+name: next
+
+on:
+  push:
+    branches: [next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Keep publications serialized even when an older run finishes its gates later.
+# Outdated queued runs also check the current branch before publishing anything.
+concurrency:
+  group: next-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    if: github.ref == 'refs/heads/next' && github.repository == 'TitusKirch/release-me'
+    uses: ./.github/workflows/checks.yaml
+
+  archives:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db  # v3.6.3
+      - run: task build:next
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: next-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/*.tar.gz
+            dist/*_checksums.txt
+            dist/next.json
+
+  publish:
+    needs: [checks, archives]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: next-${{ github.sha }}
+          path: dist
+      - name: Check that this commit is still Next
+        id: current
+        env:
+          NEXT_SHA: ${{ github.sha }}
+        run: ./scripts/next-current.sh >>"${GITHUB_OUTPUT}"
+      - name: Publish the commit's Next prerelease
+        if: steps.current.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_SHA: ${{ github.sha }}
+        run: ./scripts/next-publish.sh
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4
+        if: steps.current.outputs.current == 'true'
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+        if: steps.current.outputs.current == 'true'
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        if: steps.current.outputs.current == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the commit image
+        id: image
+        if: steps.current.outputs.current == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=next-${{ github.sha }}
+            REVISION=${{ github.sha }}
+            SOURCE=https://github.com/${{ github.repository }}
+          tags: ghcr.io/tituskirch/release-me:sha-${{ github.sha }}
+      - name: Recheck Next after building the commit image
+        id: image-current
+        if: steps.image.outputs.digest != ''
+        env:
+          NEXT_SHA: ${{ github.sha }}
+        run: ./scripts/next-current.sh >>"${GITHUB_OUTPUT}"
+      - name: Promote the exact built digest to Next
+        if: steps.image-current.outputs.current == 'true'
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: >-
+          docker buildx imagetools create --tag ghcr.io/tituskirch/release-me:next
+          "ghcr.io/tituskirch/release-me@${DIGEST}"
+      - name: Record published addresses
+        if: steps.image-current.outputs.current == 'true'
+        env:
+          COMMIT: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          {
+            echo "Next source: https://github.com/${REPOSITORY}/commit/${COMMIT}"
+            echo "Downloads: https://github.com/${REPOSITORY}/releases/tag/next-${COMMIT}"
+            echo "Image: ghcr.io/tituskirch/release-me:sha-${COMMIT}"
+          } >>"${GITHUB_STEP_SUMMARY}"

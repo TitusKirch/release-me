@@ -3,6 +3,12 @@
 Release automation for repositories that merge with merge commits. One changelog entry per
 pull request, versions from Conventional Commits, a release pull request, a tag and a release.
 
+This fork's `next` branch integrates upcoming upstream changes. Use
+`TitusKirch/release-me/action@next` to build its current source, or
+`ghcr.io/tituskirch/release-me:next` for the checked container. Each successful Next publication
+also has commit-specific downloads and an image tag. See [the Next channel](docs/next.md)
+for usage, checksums and the difference from official releases; attribution is in [NOTICE](NOTICE).
+
 ## What it does
 
 - Reads commit history since the last tag in a configurable changelog mode, the first parent
