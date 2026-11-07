@@ -1016,7 +1016,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 
 	for _, want := range []string{
 		"sequential-calls: no release-me equivalent, left out",
-		"package a: draft-pull-request: no release-me equivalent, left out",
+		"package a: draft-pull-request: release-me's release-pull-request-draft is repository-wide, set it at the top level if every release pull request should be a draft",
 		"package a: release-type java: the files it bumps are not carried over, add them under files",
 		"package a: extra-files: a/src/version.py does not exist, left out of files",
 		`package a: extra-files: pom.xml: type "xml" at "//version" has no typed updater, add it under files`,

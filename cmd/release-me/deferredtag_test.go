@@ -91,7 +91,7 @@ func TestRunRetriesAnUnpublishedDeferredTagWithoutAnotherReleasePR(t *testing.T)
 				if !bytes.Contains(out.Bytes(), []byte("waiting for unpublished release")) || !bytes.Contains(out.Bytes(), []byte("publish or delete its draft")) {
 					t.Fatalf("missing draft deferral: %s", out.String())
 				}
-				if !bytes.Contains(out.Bytes(), []byte("released-tag:")) {
+				if !tc.deleted && !bytes.Contains(out.Bytes(), []byte("released-tag:")) {
 					t.Fatalf("draft not resumed: %s", out.String())
 				}
 			}

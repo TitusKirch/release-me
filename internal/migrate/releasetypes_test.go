@@ -272,7 +272,7 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 				"web/Gemfile.lock": gemfileLockFile,
 			},
 			wantWarnings: []string{
-				"package web: release-type ruby: its version.rb is not carried over, add it under files",
+				"package web: release-type ruby: no component or package-name to find its version.rb by, add it under files",
 				"package web: release-type ruby: web/Gemfile.lock is not carried over without component or package-name, " +
 					"add it under files with a gem name as key",
 			},

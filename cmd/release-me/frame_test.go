@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,36 +26,42 @@ const (
 // body opens with the header and closes with the footer, and every release
 // body is the one the same pull request without them releases.
 func TestHeaderAndFooterFrameEveryBodyAndChangeNoRelease(t *testing.T) {
-	for _, family := range prFamilies {
-		t.Run(family.name, func(t *testing.T) {
-			releases := map[bool][]forgetest.CreateReleaseCall{}
-			for _, framed := range []bool{false, true} {
-				dir, origin, cfg := family.repo(t)
-				if framed {
-					cfg.ReleasePullRequestHeader, cfg.ReleasePullRequestFooter = testHeader, testFooter
-				}
-				f := newPRFake(origin)
-				var stdout bytes.Buffer
-				if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
-					t.Fatalf("doPR() error = %v", err)
-				}
-				body := f.CreatedPullRequests[0].Body
-				if framed {
-					if !strings.HasPrefix(body, "Reviewed by the release team.\n\n ```release-me-notes\n") ||
-						!strings.HasSuffix(body, testFooter) {
-						t.Fatalf("body = %q, want the escaped header first and the footer last", body)
+	for _, guide := range []bool{false, true} {
+		for _, family := range prFamilies {
+			t.Run(fmt.Sprintf("%s/guide=%v", family.name, guide), func(t *testing.T) {
+				releases := map[bool][]forgetest.CreateReleaseCall{}
+				for _, framed := range []bool{false, true} {
+					dir, origin, cfg := family.repo(t)
+					cfg.ReleasePullRequestGuide = guide
+					if framed {
+						cfg.ReleasePullRequestHeader, cfg.ReleasePullRequestFooter = testHeader, testFooter
 					}
-					if _, ok := releasepr.ExtractNotes(body); ok {
-						t.Fatalf("body = %q, want the header's block left inert", body)
+					f := newPRFake(origin)
+					var stdout bytes.Buffer
+					if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+						t.Fatalf("doPR() error = %v", err)
 					}
+					body := f.CreatedPullRequests[0].Body
+					if got := strings.Contains(body, "<summary>How this release works</summary>"); got != guide {
+						t.Fatalf("guide present = %v, want %v", got, guide)
+					}
+					if framed {
+						if !strings.HasPrefix(body, "Reviewed by the release team.\n\n ```release-me-notes\n") ||
+							!strings.HasSuffix(body, testFooter) {
+							t.Fatalf("body = %q, want the escaped header first and the footer last", body)
+						}
+						if _, ok := releasepr.ExtractNotes(body); ok {
+							t.Fatalf("body = %q, want the header's block left inert", body)
+						}
+					}
+					releaseMerged(t, dir, cfg, f, f.CreatedPullRequests[0].Title, body, family.wantTags)
+					releases[framed] = f.CreatedReleases
 				}
-				releaseMerged(t, dir, cfg, f, f.CreatedPullRequests[0].Title, body, family.wantTags)
-				releases[framed] = f.CreatedReleases
-			}
-			if !reflect.DeepEqual(releases[true], releases[false]) {
-				t.Fatalf("releases = %+v, want the ones without a header or footer, %+v", releases[true], releases[false])
-			}
-		})
+				if !reflect.DeepEqual(releases[true], releases[false]) {
+					t.Fatalf("releases = %+v, want the ones without a header or footer, %+v", releases[true], releases[false])
+				}
+			})
+		}
 	}
 }
 

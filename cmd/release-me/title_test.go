@@ -53,22 +53,28 @@ var titleFamilies = []struct {
 // request with a custom title pattern and merges it: release reads every
 // version back from the title the pattern rendered and tags it.
 func TestTitlePatternRoundTripsThroughPRAndRelease(t *testing.T) {
-	for _, family := range titleFamilies {
-		t.Run(family.name, func(t *testing.T) {
-			dir, origin, cfg := family.repo(t)
-			setTitlePattern(&cfg, family.pattern, family.sharedTitle)
-			f := newPRFake(origin)
-			var stdout bytes.Buffer
-			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
-				t.Fatalf("doPR() error = %v", err)
-			}
-			created := f.CreatedPullRequests[0]
-			if created.Title != family.wantTitle {
-				t.Fatalf("title = %q, want %q", created.Title, family.wantTitle)
-			}
+	for guideName, guide := range map[string]bool{"shown": true, "hidden": false} {
+		for _, family := range titleFamilies {
+			t.Run(family.name+"/guide-"+guideName, func(t *testing.T) {
+				dir, origin, cfg := family.repo(t)
+				cfg.ReleasePullRequestGuide = guide
+				setTitlePattern(&cfg, family.pattern, family.sharedTitle)
+				f := newPRFake(origin)
+				var stdout bytes.Buffer
+				if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+					t.Fatalf("doPR() error = %v", err)
+				}
+				created := f.CreatedPullRequests[0]
+				if got := strings.Contains(created.Body, "<summary>How this release works</summary>"); got != guide {
+					t.Fatalf("guide present = %v, want %v", got, guide)
+				}
+				if created.Title != family.wantTitle {
+					t.Fatalf("title = %q, want %q", created.Title, family.wantTitle)
+				}
 
-			releaseMerged(t, dir, cfg, f, created.Title, created.Body, family.wantTags)
-		})
+				releaseMerged(t, dir, cfg, f, created.Title, created.Body, family.wantTags)
+			})
+		}
 	}
 }
 
