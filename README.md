@@ -149,6 +149,7 @@ files:
 | `token-env` | Environment variable holding the GitHub token. | `GITHUB_TOKEN` | No |
 | `changelog` | Changelog file path. | `CHANGELOG.md` | No |
 | `changelog-source` | Which commits become changelog entries. | `first-parent` | No |
+| `changelog-type` | Changelog from the entries (`default`) or GitHub's generated release notes (`github`). | `default` | No |
 | `labels.pending` / `labels.tagged` | Label names `pr`, `release` and `check` use, one or a list. | `release: pending` / `release: tagged` | No |
 | `labels.extra` | Labels `pr` adds to every release pull request it opens. | none | No |
 | `labels.alpha` / `labels.beta` / `labels.rc` | Pre-release type labels. | `release: alpha` / `release: beta` / `release: rc` | No |

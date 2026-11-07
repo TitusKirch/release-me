@@ -75,9 +75,11 @@ the configured labels for pre-releases and tagging, left out with
 version override block and the [notes block](overrides.md#notes-block) when present, then the
 full changelog for the version inside a collapsed `<details>` section. When every entry is a
 hidden type, the changelog carries one explicit line,
-`- Version bump without user facing changes.`, instead of an empty heading. The guide never
-reaches the changelog file or the GitHub release. A shared release pull request's title and
-body name every component it releases: see
+`- Version bump without user facing changes.`, instead of an empty heading. With
+[`changelog-type: github`](configuration.md#changelog-type), the section under the heading is
+the release notes GitHub generates instead, the same in the changelog file, the body and the
+release. The guide never reaches the changelog file or the GitHub release. A shared release pull
+request's title and body name every component it releases: see
 [shared release pull request](versioning-modes.md#shared-release-pull-request).
 
 ## Pre-releases

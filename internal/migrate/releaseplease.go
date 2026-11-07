@@ -65,7 +65,7 @@ type rpPackage struct {
 var packageKeys = []string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
-	"initial-version", "extra-files", "version-file",
+	"initial-version", "extra-files", "version-file", "changelog-type",
 }
 
 // topLevelKeys are the release-please settings that only exist at the top
@@ -274,6 +274,8 @@ type component struct {
 	bumpPatchForMinorPreMajor bool
 	initialVersion            string
 	files                     []file
+	// changelogType is release-please's changelog-type, "" for default.
+	changelogType string
 }
 
 // file is one release-me "files" entry.
@@ -288,10 +290,10 @@ type file struct {
 // its release type and extra-files bump.
 func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any)) (component, error) {
 	var (
-		releaseType, packageName, componentName, separator, changelogPath, initialVersion string
-		versionFileName                                                                   string
-		includeComponent, includeV                                                        = true, true
-		bumpMinor, bumpPatchForMinor                                                      bool
+		releaseType, packageName, componentName, separator, changelogPath, initialVersion, changelogType string
+		versionFileName                                                                                  string
+		includeComponent, includeV                                                                       = true, true
+		bumpMinor, bumpPatchForMinor                                                                     bool
 	)
 	separator = "-"
 	changelogPath = "CHANGELOG.md"
@@ -301,6 +303,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"version-file":             &versionFileName,
 		"include-component-in-tag": &includeComponent, "include-v-in-tag": &includeV,
 		"bump-minor-pre-major": &bumpMinor, "bump-patch-for-minor-pre-major": &bumpPatchForMinor,
+		"changelog-type": &changelogType,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -367,6 +370,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		bumpMinorPreMajor:         bumpMinor,
 		bumpPatchForMinorPreMajor: bumpPatchForMinor,
 		initialVersion:            initialVersion,
+		changelogType:             changelogType,
 	}
 
 	// A version file the release type implies is carried over only where it
@@ -428,6 +432,15 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	case "go":
 	default:
 		warn("package %s: release-type %s: the files it bumps are not carried over, add them under files", p.path, releaseType)
+	}
+
+	switch changelogType {
+	case "", config.ChangelogTypeDefault:
+		c.changelogType = ""
+	case config.ChangelogTypeGitHub:
+	default:
+		warn("package %s: changelog-type %s: release-me knows default and github, left out", p.path, changelogType)
+		c.changelogType = ""
 	}
 
 	if raw, ok := p.settings["extra-files"]; ok {
@@ -910,11 +923,15 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 
 	// A pre-major rule carried by every component is written once, at the
-	// top level, instead of repeated per component.
+	// top level, instead of repeated per component. So is a changelog-type
+	// every component carries alike.
 	shared := sharedRules{
 		bumpMinorPreMajor: !slices.ContainsFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }),
 		bumpPatchForMinorPreMajor: !slices.ContainsFunc(components, func(c component) bool {
 			return !c.bumpPatchForMinorPreMajor
+		}),
+		changelogType: !slices.ContainsFunc(components, func(c component) bool {
+			return c.changelogType != config.ChangelogTypeGitHub
 		}),
 	}
 	if shared.bumpMinorPreMajor {
@@ -922,6 +939,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if shared.bumpPatchForMinorPreMajor {
 		add(doc, "bump-patch-for-minor-pre-major", boolean(true))
+	}
+	if shared.changelogType {
+		add(doc, "changelog-type", scalar(config.ChangelogTypeGitHub))
 	}
 
 	if len(components) == 1 && components[0].path == "." && components[0].tagPrefix == "v" {
@@ -960,17 +980,18 @@ func render(components []component, top topLevel) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// sharedRules names the pre-major rules every component carries, which
-// render writes once at the top level.
+// sharedRules names the pre-major rules and the changelog-type every
+// component carries alike, which render writes once at the top level.
 type sharedRules struct {
 	bumpMinorPreMajor         bool
 	bumpPatchForMinorPreMajor bool
+	changelogType             bool
 }
 
 // addSettings writes the settings release-me reads per component or at the
 // top level alike: initial-version, bump-minor-pre-major,
-// bump-patch-for-minor-pre-major and files. A pre-major rule is left out
-// where the top level already carries it.
+// bump-patch-for-minor-pre-major, changelog-type and files. A setting
+// shared names is left out, the top level already carries it.
 func addSettings(m *yaml.Node, c component, shared sharedRules, add func(*yaml.Node, string, *yaml.Node)) {
 	if c.initialVersion != "" {
 		add(m, "initial-version", scalar(c.initialVersion))
@@ -980,6 +1001,9 @@ func addSettings(m *yaml.Node, c component, shared sharedRules, add func(*yaml.N
 	}
 	if c.bumpPatchForMinorPreMajor && !shared.bumpPatchForMinorPreMajor {
 		add(m, "bump-patch-for-minor-pre-major", boolean(true))
+	}
+	if c.changelogType == config.ChangelogTypeGitHub && !shared.changelogType {
+		add(m, "changelog-type", scalar(c.changelogType))
 	}
 	if len(c.files) > 0 {
 		list := &yaml.Node{Kind: yaml.SequenceNode}

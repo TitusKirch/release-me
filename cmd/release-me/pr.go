@@ -224,12 +224,11 @@ func doPRComponent(
 		}
 	}
 
-	entriesBody := changelog.Sections(entries, rel.options)
-	if entriesBody == "" {
-		entriesBody = noUserFacingChangesLine
-	}
-
 	tag := comp.TagPrefix + versionStr
+	entriesBody, err := sectionBody(ctx, f, dir, owner, repoName, comp, entries, rel.options, tag, fromTag, true)
+	if err != nil {
+		return err
+	}
 	link := compareURL(f, owner, repoName, fromTag, tag)
 	update := changelogUpdate{path: comp.ChangelogPath, version: versionStr, entriesBody: entriesBody, compareURL: link}
 	plan, err := planReleaseBranch(ctx, dir, []changelogUpdate{update}, filesAt(comp.Files, versionStr), comp.Branch)
@@ -431,9 +430,10 @@ func doPRLocked(
 			entries = rel.entries
 		}
 		entries = append(slices.Clone(entries), depEntries[m.comp.Name]...)
-		entriesBody := changelog.Sections(entries, changelogOptions(m.comp))
-		if entriesBody == "" {
-			entriesBody = noUserFacingChangesLine
+		entriesBody, err := sectionBody(ctx, f, dir, owner, repoName, m.comp, entries, changelogOptions(m.comp),
+			m.comp.TagPrefix+versionStr, releases[m.comp.Name].fromTag, true)
+		if err != nil {
+			return err
 		}
 		changelogs = append(changelogs, changelogUpdate{
 			path: m.comp.ChangelogPath, version: versionStr, entriesBody: entriesBody,

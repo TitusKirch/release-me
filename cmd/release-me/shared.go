@@ -165,9 +165,10 @@ func doPRShared(
 	changelogs := make([]changelogUpdate, 0, len(members))
 	var files []fileUpdate
 	for _, m := range members {
-		entriesBody := changelog.Sections(m.entries, m.rel.options)
-		if entriesBody == "" {
-			entriesBody = noUserFacingChangesLine
+		entriesBody, err := sectionBody(ctx, f, dir, owner, repoName, m.comp, m.entries, m.rel.options,
+			m.comp.TagPrefix+m.versionStr, m.fromTag, true)
+		if err != nil {
+			return err
 		}
 		changelogs = append(changelogs, changelogUpdate{
 			path: m.comp.ChangelogPath, version: m.versionStr, entriesBody: entriesBody,
