@@ -28,7 +28,7 @@ func Title(name, version string) string {
 // pre-release type labels, an empty one for a type turned off. The pending
 // label never appears there.
 type GuideLabels struct {
-	Tagged string
+	Tagged []string
 	Alpha  string
 	Beta   string
 	Rc     string
@@ -125,8 +125,12 @@ func render(headline, tag string, guide Guide, perComponentVersion bool, notes, 
 func guideBlock(tag string, labels GuideLabels, perComponentVersion bool) string {
 	var b strings.Builder
 	b.WriteString("<details>\n<summary>How this release works</summary>\n\n")
-	fmt.Fprintf(&b, "- Merging this pull request tags `%s`, creates the release and moves the label to `%s`. "+
-		"With `major-tag` enabled, the moving major tag follows a stable release.\n", tag, labels.Tagged)
+	movesTo := "the label to " + codeList(labels.Tagged, "and")
+	if len(labels.Tagged) > 1 {
+		movesTo = "the labels to " + codeList(labels.Tagged, "and")
+	}
+	fmt.Fprintf(&b, "- Merging this pull request tags `%s`, creates the release and moves %s. "+
+		"With `major-tag` enabled, the moving major tag follows a stable release.\n", tag, movesTo)
 	b.WriteString("- Release notes: add a fenced block with the info string `release-me-notes` anywhere in this body. " +
 		"It is rendered above the changelog in the GitHub release, never in the changelog file, and survives updates.\n")
 	if perComponentVersion {
@@ -162,16 +166,26 @@ func preReleaseLabelList(labels GuideLabels) string {
 	var names []string
 	for _, l := range []string{labels.Alpha, labels.Beta, labels.Rc} {
 		if l != "" {
-			names = append(names, "`"+l+"`")
+			names = append(names, l)
 		}
 	}
-	switch len(names) {
+	return codeList(names, "or")
+}
+
+// codeList renders names as prose, each in backticks, joined by conjunction
+// before the last: "`a`", "`a` and `b`" or "`a`, `b` and `c`", "" for none.
+func codeList(names []string, conjunction string) string {
+	quoted := make([]string, 0, len(names))
+	for _, n := range names {
+		quoted = append(quoted, "`"+n+"`")
+	}
+	switch len(quoted) {
 	case 0:
 		return ""
 	case 1:
-		return names[0]
+		return quoted[0]
 	default:
-		return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
+		return strings.Join(quoted[:len(quoted)-1], ", ") + " " + conjunction + " " + quoted[len(quoted)-1]
 	}
 }
 

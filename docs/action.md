@@ -96,7 +96,8 @@ only fires for a release pull request: the pull request from the repository itse
 a fork, head branch under `release-me/`, and the changed label one of the release labels in use,
 `release: pending`, `release: tagged`, `release: alpha`, `release: beta` or `release: rc` by
 default, without the pre-release types turned off. A repository that renames its labels
-through `labels` in `release-me.yaml` names the renamed ones in that guard instead: the
+through `labels` in `release-me.yaml` names the renamed ones in that guard instead, every
+pending and tagged one of a list, extra labels left out: the
 workflow condition is plain text, it does not read the configuration. Check out the pull
 request's base branch on a label event, not the merge ref, so the action computes against the
 default branch.

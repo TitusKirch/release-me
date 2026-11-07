@@ -15,6 +15,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/forge"
 	"github.com/ostendorf-cloud/release-me/internal/history"
+	tagrelease "github.com/ostendorf-cloud/release-me/internal/release"
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 )
 
@@ -228,13 +229,16 @@ func ofComponent(name string) string {
 	return " of " + name
 }
 
-// isReleasePullRequest reports whether prLabels carries one of labels'
-// configured release labels: pending, tagged, or one of the enabled
-// pre-release types. A comment command only ever acts on a release pull
-// request, never an ordinary one; this is the same signal the labeled and
-// unlabeled workflow trigger already uses to tell the two apart.
+// isReleasePullRequest reports whether prLabels carries every configured
+// pending label, every tagged label, or one enabled pre-release label.
+// A comment command only ever acts on a release pull request, never an
+// ordinary one; this is the same signal the labeled and unlabeled workflow
+// trigger already uses to tell the two apart.
 func isReleasePullRequest(prLabels []string, labels config.Labels) bool {
-	for _, l := range []string{labels.Pending, labels.Tagged, labels.Alpha, labels.Beta, labels.Rc} {
+	if tagrelease.HasAll(prLabels, labels.Pending) || tagrelease.HasAll(prLabels, labels.Tagged) {
+		return true
+	}
+	for _, l := range []string{labels.Alpha, labels.Beta, labels.Rc} {
 		if l != "" && slices.Contains(prLabels, l) {
 			return true
 		}

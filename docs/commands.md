@@ -176,7 +176,8 @@ release-me continues from the existing tags and changelogs. A single root packag
   gets its top-level `version` bumped, as release-please does. Each is carried over only where
   the file exists and holds what it bumps; a `glob` entry is warned about, since release-me
   lists its files;
-- `label` and `release-label` as the `pending` and `tagged` labels, with the pre-release types
+- `label`, `release-label` and `extra-label` as the `pending`, `tagged` and `extra` labels,
+  every label of each comma separated list, with the pre-release types
   turned off, since release-please has none;
 - a `linked-versions` plugin over every component as `versioning: locked`: both release every
   component at the family's version, changed or not;

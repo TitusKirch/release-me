@@ -107,7 +107,8 @@ confirmation:
   `release-me.yaml` at the repository root.
 - **Workflow:** replace the release-please step with `ostendorf-cloud/release-me/action` as the
   README's action section shows it: `push` to the default branch plus `pull_request` with types
-  `labeled` and `unlabeled`, a job guard listing exactly the labels in `release-me.yaml`, a
+  `labeled` and `unlabeled`, a job guard listing exactly the pending, tagged and pre-release
+  labels in `release-me.yaml`, `labels.extra` left out, a
   checkout of the base branch with `fetch-depth: 0`, the action pinned to the release's commit
   SHA with the version as a trailing comment.
 - **Consumers:** each one from step 1 rewired to a signal release-me does produce: one of the
@@ -132,7 +133,8 @@ confirmation:
   `pr` is `null` with several release pull requests, where release-please gave the first;
   read `prs` there. Its JSON is release-me's own shape, not release-please's: a consumer
   reading `headBranchName`, `title` or `labels` off it reads `branch` or asks the API.
-- **Labels:** release-please's labels carry over by name. Each one `release-me.yaml` names and
+- **Labels:** release-please's labels carry over by name, every one of a comma separated
+  `label`, `release-label` and `extra-label`. Each one `release-me.yaml` names and
   `gh api repos/{owner}/{repo}/labels --paginate --jq '.[].name'` lacks is listed for the human
   to create; labels are repository settings, and the skill creates none.
 - **Removal:** `release-please-config.json`, `.release-please-manifest.json` and the
