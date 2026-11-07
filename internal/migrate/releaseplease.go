@@ -21,6 +21,7 @@ import (
 	"github.com/ostendorf-cloud/release-me/internal/config"
 	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
+	"github.com/ostendorf-cloud/release-me/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -178,7 +179,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			"component counts only the files outside the other components' paths")
 	}
 
-	versioning, st, err := translatePlugins(topValues["plugins"], components, warn)
+	versioning, st, workspaces, err := translatePlugins(topValues["plugins"], components, warn)
 	if err != nil {
 		return Result{}, err
 	}
@@ -195,6 +196,17 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			}
 		}
 		sharedPR = !separate
+		if separate && len(workspaces) > 0 {
+			// release-me releases a dependent together with its
+			// dependency, which only one shared release pull request does.
+			warn("separate-pull-requests: release-me releases a workspace dependent together with its dependency, " +
+				"so release-pull-request is shared")
+			sharedPR = true
+		}
+	}
+	if len(components) == 1 && len(workspaces) > 0 {
+		warn("workspaces: %s: a single package has no workspace dependency to move, left out", strings.Join(workspaces, ", "))
+		workspaces = nil
 	}
 
 	pending, err := labels(topValues["label"], "autorelease: pending", "label")
@@ -219,6 +231,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 
 	opts := topLevel{
 		versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, extra: extra, style: st,
+		workspaces: workspaces,
 	}
 	if opts.title, err = titlePattern(topValues["pull-request-title-pattern"], "pull-request-title-pattern",
 		releasepr.TitlePerComponent, warn); err != nil {
@@ -600,26 +613,58 @@ type style struct {
 	sentenceCase bool
 }
 
+// workspacePlugins maps each release-please workspace plugin to the
+// package manager release-me's "workspaces" names for it.
+var workspacePlugins = map[string]string{
+	"node-workspace":  workspace.Node,
+	"cargo-workspace": workspace.Cargo,
+}
+
+// workspacePluginOptions are the keys a workspace plugin object carries
+// that need no translation: its type, and the options release-me already
+// behaves as.
+var workspacePluginOptions = []string{"type"}
+
 // translatePlugins maps release-please's plugins onto release-me. The
 // linked-versions plugin releases every component of its group at the
 // group's highest version, changed or not, which is release-me's locked
 // mode when the group is every component. The sentence-case plugin is
-// changelog-sentence-case.
-func translatePlugins(raw json.RawMessage, components []component, warn func(string, ...any)) (string, style, error) {
+// changelog-sentence-case, and its workspace plugins become "workspaces".
+func translatePlugins(raw json.RawMessage, components []component, warn func(string, ...any)) (string, style, []string, error) {
 	var st style
 	if raw == nil {
-		return "", st, nil
+		return "", st, nil, nil
 	}
 	var plugins []json.RawMessage
 	if err := json.Unmarshal(raw, &plugins); err != nil {
-		return "", st, fmt.Errorf("migrate: plugins: %w", err)
+		return "", st, nil, fmt.Errorf("migrate: plugins: %w", err)
 	}
 	versioning := ""
+	var workspaces []string
+	addWorkspace := func(plugin string, options map[string]json.RawMessage) {
+		keys := make([]string, 0, len(options))
+		for key := range options {
+			if !slices.Contains(workspacePluginOptions, key) {
+				keys = append(keys, key)
+			}
+		}
+		slices.Sort(keys)
+		for _, key := range keys {
+			warn("plugins: %s: %s: no release-me equivalent, left out", plugin, key)
+		}
+		if manager := workspacePlugins[plugin]; !slices.Contains(workspaces, manager) {
+			workspaces = append(workspaces, manager)
+		}
+	}
 	for _, p := range plugins {
 		var name string
 		if json.Unmarshal(p, &name) == nil {
 			if name == "sentence-case" {
 				st.sentenceCase = true
+				continue
+			}
+			if _, ok := workspacePlugins[name]; ok {
+				addWorkspace(name, nil)
 				continue
 			}
 			warn("plugins: %s: no release-me equivalent, left out", name)
@@ -631,7 +676,7 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 			SpecialWords []string `json:"specialWords"`
 		}
 		if err := json.Unmarshal(p, &plugin); err != nil {
-			return "", st, fmt.Errorf("migrate: plugins: %w", err)
+			return "", st, nil, fmt.Errorf("migrate: plugins: %w", err)
 		}
 		if plugin.Type == "sentence-case" {
 			st.sentenceCase = true
@@ -639,6 +684,14 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 				warn("plugins: sentence-case: specialWords: release-me keeps gRPC, npm and any first word "+
 					"already holding an upper case letter as written, %s left out", strings.Join(plugin.SpecialWords, ", "))
 			}
+			continue
+		}
+		if _, ok := workspacePlugins[plugin.Type]; ok {
+			var options map[string]json.RawMessage
+			if err := json.Unmarshal(p, &options); err != nil {
+				return "", st, nil, fmt.Errorf("migrate: plugins: %w", err)
+			}
+			addWorkspace(plugin.Type, options)
 			continue
 		}
 		if plugin.Type != "linked-versions" {
@@ -654,7 +707,7 @@ func translatePlugins(raw json.RawMessage, components []component, warn func(str
 		}
 		versioning = "locked"
 	}
-	return versioning, st, nil
+	return versioning, st, workspaces, nil
 }
 
 // labels reads every name in a release-please comma separated label list.
@@ -809,6 +862,7 @@ type topLevel struct {
 	style       style
 	title       string
 	sharedTitle string
+	workspaces  []string
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -833,6 +887,13 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.sharedTitle != "" {
 		add(doc, "release-pull-request-shared-title", scalar(top.sharedTitle))
+	}
+	if len(top.workspaces) > 0 {
+		list := &yaml.Node{Kind: yaml.SequenceNode, Style: yaml.FlowStyle}
+		for _, w := range top.workspaces {
+			list.Content = append(list.Content, scalar(w))
+		}
+		add(doc, "workspaces", list)
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
 	add(labels, "pending", labelNode(top.pending))

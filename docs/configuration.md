@@ -385,6 +385,63 @@ The mention prefix a comment on the release pull request names to issue a `relea
 `release-notes` command, default `@release-me`. See
 [comment commands](overrides.md#comment-commands). Cannot be empty.
 
+## `workspaces`
+
+The package managers whose manifests link components to each other, default none:
+
+- `node`, an npm, pnpm or yarn workspace, read from each component's `<path>/package.json`;
+- `cargo`, a Cargo workspace, read from each component's `<path>/Cargo.toml`.
+
+A component without that manifest is no member of the workspace. Without a component at path
+`.`, the manifest at the repository root, such as a virtual Cargo workspace's `Cargo.toml`, is
+read too: its dependencies on a released component move,
+`[workspace.dependencies]` included, but it releases nothing itself.
+
+```yaml
+release-pull-request: shared
+workspaces: [node]
+components:
+  core:
+    path: packages/core
+  web:
+    path: packages/web
+```
+
+A component that releases moves every other component's dependency on it, declared under
+`dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies` by the package
+name, to its new version, and that dependent releases with it in the same release pull request:
+a patch bump on its own last tag in `independent`, the family's version in `linked`, and in
+`locked` every component releases anyway. A dependent of a dependent releases too. Each
+dependent's changelog gets a `- **deps:** update <package> to <version>` line under Bug Fixes.
+A range keeps its operator and protocol: `^1.2.0` becomes `^1.3.0`, `workspace:~1.2.0`
+becomes `workspace:~1.3.0`, while one naming no single version, such as `workspace:*`, `*`,
+`file:../core` or `>=1.0.0 <2`, stays as written and still releases the dependent. A
+component's own version moves through its `files` as always. `next` and `changelog` report a
+component's own changes only: the dependents join the release at `pr`.
+
+For `node`, the dependency objects must open on a line of their own and declare one
+dependency per line, the layout npm, pnpm and yarn write; `pr` fails naming the file and the
+dependency otherwise.
+
+For `cargo`, a dependency on a crate by its `[package]` name, or through `package =` when
+renamed, links under `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, their
+`[target.<cfg>.…]` forms and `[workspace.dependencies]`. Its version moves as a plain
+requirement, `acme-core = "1.2.0"`, inside a one-line inline table,
+`{ path = "../core", version = "=1.2.0" }`, or as the `version` of a
+`[dependencies.acme-core]` table, keeping its operator; `1.2`, a partial version, becomes the
+full new one. A dependency without a version, `{ workspace = true }` or a bare `path`, stays as
+written and still releases the dependent. A dependency spread over several lines is not read.
+
+Lockfiles, `package-lock.json`, `pnpm-lock.yaml` or `Cargo.lock`, are not updated.
+
+A dependent releases together with its dependency, so `workspaces` needs `components` and
+one release pull request for all of them, `release-pull-request: shared` or
+`versioning: locked`; an unknown or repeated package manager is a configuration error too.
+
+Inherited `workspace = true` dependencies resolve renamed package aliases from the root
+workspace declarations. The root keeps the version requirement, and the child keeps its
+workspace declaration unchanged.
+
 ## `components`
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
