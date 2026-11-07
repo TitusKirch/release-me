@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/ostendorf-cloud/release-me/internal/config"
+	"github.com/ostendorf-cloud/release-me/internal/releasepr"
 	"github.com/ostendorf-cloud/release-me/internal/updater"
 	"gopkg.in/yaml.v3"
 )
@@ -70,7 +71,7 @@ var packageKeys = []string{
 // level and that this translation reads or deliberately leaves out.
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "extra-label", "separate-pull-requests", "$schema",
-	"bootstrap-sha", "last-release-sha",
+	"bootstrap-sha", "last-release-sha", "pull-request-title-pattern", "group-pull-request-title-pattern",
 }
 
 // FromReleasePlease translates release-please-config.json and
@@ -219,6 +220,24 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	opts := topLevel{
 		versioning: versioning, sharedPR: sharedPR, pending: pending, tagged: tagged, extra: extra, style: st,
 	}
+	if opts.title, err = titlePattern(topValues["pull-request-title-pattern"], "pull-request-title-pattern",
+		releasepr.TitlePerComponent, warn); err != nil {
+		return Result{}, err
+	}
+	if raw, ok := topValues["group-pull-request-title-pattern"]; ok {
+		if !sharedPR && versioning != "locked" {
+			warn("group-pull-request-title-pattern: release-me opens one release pull request per component here, left out")
+		} else {
+			kind := releasepr.TitleShared
+			if versioning == "locked" {
+				kind = releasepr.TitleLocked
+			}
+			if opts.sharedTitle, err = titlePattern(raw, "group-pull-request-title-pattern", kind, warn); err != nil {
+				return Result{}, err
+			}
+		}
+	}
+
 	out, err := render(components, opts)
 	if err != nil {
 		return Result{}, err
@@ -653,6 +672,28 @@ func labels(raw json.RawMessage, fallback, key string) ([]string, error) {
 	return out, nil
 }
 
+// titlePattern translates a release-please title pattern into release-me's:
+// release-please's ${scope} renders the branch in parentheses and its
+// ${component} the name after a space, both "" where it has none, and
+// release-me names the branch and the component without either. A pattern
+// release-me refuses, one without every value release reads back, is warned
+// about and left out. "" when raw is nil.
+func titlePattern(raw json.RawMessage, key string, kind releasepr.TitleKind, warn func(string, ...any)) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	var pattern string
+	if err := json.Unmarshal(raw, &pattern); err != nil {
+		return "", fmt.Errorf("migrate: %s: %w", key, err)
+	}
+	translated := strings.NewReplacer("${scope}", "(${branch})", "${component}", " ${component}").Replace(pattern)
+	if err := config.CheckTitlePattern(translated, kind); err != nil {
+		warn("%s: %q %v; release-me reads every component and its version back from the title, left out", key, translated, err)
+		return "", nil
+	}
+	return translated, nil
+}
+
 // sanitizeName turns a release-please component name into one
 // config.ValidateComponentName accepts: every character it refuses becomes
 // "-", a leading "." or "-" and a trailing "." or ".lock" are dropped and
@@ -753,12 +794,14 @@ func repoPath(pkgPath, file string) string {
 // topLevel is every top-level release-me key the translation writes besides
 // the components.
 type topLevel struct {
-	versioning string
-	sharedPR   bool
-	pending    []string
-	tagged     []string
-	extra      []string
-	style      style
+	versioning  string
+	sharedPR    bool
+	pending     []string
+	tagged      []string
+	extra       []string
+	style       style
+	title       string
+	sharedTitle string
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -777,6 +820,12 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.sharedPR {
 		add(doc, "release-pull-request", scalar("shared"))
+	}
+	if top.title != "" {
+		add(doc, "release-pull-request-title", scalar(top.title))
+	}
+	if top.sharedTitle != "" {
+		add(doc, "release-pull-request-shared-title", scalar(top.sharedTitle))
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
 	add(labels, "pending", labelNode(top.pending))

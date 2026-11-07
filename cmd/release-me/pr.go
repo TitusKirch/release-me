@@ -251,11 +251,16 @@ func doPRComponent(
 	}
 	section := changelog.RenderHeading(versionStr, date, link) + "\n\n" + entriesBody + "\n"
 
-	title := releasepr.Title(comp.Name, versionStr)
-	body := releasepr.Body(versionStr, tag, bodyGuide(cfg), notes, versionOverride, section)
+	title, err := renderTitle(cfg.TitlePatterns(),
+		releasepr.TitleValues{Version: versionStr, Component: comp.Name, Branch: base}, "component "+comp.Name)
+	if err != nil {
+		return err
+	}
+	body := releasepr.Body(versionStr, tag, bodyGuide(cfg), notes, versionOverride, section) +
+		releasepr.TitlePatternMarker(cfg.TitlePatterns()[0], releasepr.TitlePerComponent)
 
 	switch {
-	case existing != nil && !plan.changed && body == existing.Body:
+	case existing != nil && !plan.changed && body == existing.Body && title == existing.Title:
 		recordPR(ctx, dryRun, *existing, comp.Branch, []string{comp.Name})
 		printLine(stdout, comp.Name, multi, "release pull request up to date")
 		return nil
@@ -445,8 +450,13 @@ func doPRLocked(
 		tags = append(tags, m.comp.TagPrefix+versionStr)
 	}
 
-	title := tagrelease.LockedTitle(versionStr, names)
-	body := releasepr.Body(versionStr, strings.Join(tags, ", "), bodyGuide(cfg), notes, versionOverride, section)
+	title, err := renderTitle(cfg.SharedTitlePatterns(),
+		releasepr.TitleValues{Version: versionStr, Components: names, Branch: base}, "locked family")
+	if err != nil {
+		return err
+	}
+	body := releasepr.Body(versionStr, strings.Join(tags, ", "), bodyGuide(cfg), notes, versionOverride, section) +
+		releasepr.TitlePatternMarker(cfg.SharedTitlePatterns()[0], cfg.SharedTitleKind())
 
 	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, "locked family", names, existing, plan, date, title, body, dryRun, stdout)
 }
@@ -462,7 +472,7 @@ func publishSharedPR(
 	existing *forge.PullRequest, plan *releasePlan, date time.Time, title, body string, dryRun bool, stdout io.Writer,
 ) error {
 	switch {
-	case existing != nil && !plan.changed && body == existing.Body:
+	case existing != nil && !plan.changed && body == existing.Body && title == existing.Title:
 		recordPR(ctx, dryRun, *existing, branch, components)
 		fmt.Fprintln(stdout, "release pull request up to date")
 		return nil
