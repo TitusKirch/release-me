@@ -177,9 +177,54 @@ func TestCountsAttributesACommitThroughItsFilesAndItsFooter(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			for name, path := range components {
-				if got := history.Counts(tc.paths, tc.named, name, path); got != tc.want[name] {
+				if got := history.Counts(tc.paths, tc.named, name, path, nil); got != tc.want[name] {
 					t.Errorf("Counts(%q, %q, %q, %q) = %v, want %v", tc.paths, tc.named, name, path, got, tc.want[name])
 				}
+			}
+		})
+	}
+}
+
+func TestCountsLeavesARootComponentOnlyTheFilesOutsideTheOthers(t *testing.T) {
+	t.Parallel()
+	others := []string{"packages/web", "packages/api"}
+	cases := []struct {
+		name  string
+		paths []string
+		named []string
+		want  bool
+	}{
+		{
+			name:  "a commit changing only another component's files counts for none",
+			paths: []string{"packages/api/handler.go", "packages/web/pricing.vue"},
+			want:  false,
+		},
+		{
+			name:  "a commit changing a file outside the others counts",
+			paths: []string{"packages/api/handler.go", "README.md"},
+			want:  true,
+		},
+		{
+			name:  "a directory named like another component's path is outside it",
+			paths: []string{"packages/web-tools/build.sh"},
+			want:  true,
+		},
+		{
+			name:  "a commit naming the root component counts whatever it changed",
+			paths: []string{"packages/web/pricing.vue"},
+			named: []string{"acme"},
+			want:  true,
+		},
+		{
+			name: "an empty commit counts for the root component",
+			want: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := history.Counts(tc.paths, tc.named, "acme", ".", others); got != tc.want {
+				t.Fatalf("Counts(%q, %q, %q, %q, %q) = %v, want %v", tc.paths, tc.named, "acme", ".", others, got, tc.want)
 			}
 		})
 	}
