@@ -211,6 +211,9 @@ type ChangelogStyle struct {
 	// SentenceCase is "changelog-sentence-case", default false: upper case
 	// the first letter of every entry's description.
 	SentenceCase bool
+	// Authors is "changelog-authors", default false: credit each entry's
+	// author after its description.
+	Authors bool
 }
 
 // Labels is the "labels" key: the label names release-me expects on the
@@ -618,6 +621,7 @@ type raw struct {
 	ChangelogSource               *string    `yaml:"changelog-source"`
 	ChangelogType                 *string    `yaml:"changelog-type"`
 	ChangelogSentenceCase         *bool      `yaml:"changelog-sentence-case"`
+	ChangelogAuthors              *bool      `yaml:"changelog-authors"`
 	Labels                        *rawLabels `yaml:"labels"`
 	Author                        *rawAuthor `yaml:"author"`
 	MajorTag                      *bool      `yaml:"major-tag"`
@@ -814,6 +818,9 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.ChangelogSentenceCase != nil {
 		cfg.ChangelogStyle.SentenceCase = *r.ChangelogSentenceCase
+	}
+	if r.ChangelogAuthors != nil {
+		cfg.ChangelogStyle.Authors = *r.ChangelogAuthors
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {
