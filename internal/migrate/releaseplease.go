@@ -62,11 +62,35 @@ type rpPackage struct {
 
 // packageKeys are the release-please settings that may appear on a package
 // and as top-level defaults, and that this translation carries over.
-var packageKeys = []string{
+var packageKeys = append([]string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
 	"initial-version", "extra-files", "version-file", "changelog-type", "include-commit-authors",
 	"changelog-host",
+}, releaseFlagKeys()...)
+
+// releaseFlag is a boolean release-please package setting release-me reads
+// under the same key, top level and per component, and release-me's own
+// default for it: a value equal to the default is left out of
+// release-me.yaml.
+type releaseFlag struct {
+	key string
+	def bool
+}
+
+// releaseFlags are the release-flag settings this translation carries
+// over, in the order release-me.yaml lists them.
+var releaseFlags = []releaseFlag{
+	{key: "skip-github-release", def: false},
+}
+
+// releaseFlagKeys returns the key of every entry in releaseFlags.
+func releaseFlagKeys() []string {
+	keys := make([]string, 0, len(releaseFlags))
+	for _, f := range releaseFlags {
+		keys = append(keys, f.key)
+	}
+	return keys
 }
 
 // topLevelKeys are the release-please settings that only exist at the top
@@ -314,6 +338,9 @@ type component struct {
 	includeCommitAuthors bool
 	// changelogHost is release-please's changelog-host, "" for none.
 	changelogHost string
+	// flags holds every releaseFlags key's value for this package: the
+	// one release-please was given, else release-me's default.
+	flags map[string]bool
 }
 
 // file is one release-me "files" entry.
@@ -413,6 +440,16 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		changelogType:             changelogType,
 		includeCommitAuthors:      includeAuthors,
 		changelogHost:             changelogHost,
+		flags:                     make(map[string]bool, len(releaseFlags)),
+	}
+	for _, flag := range releaseFlags {
+		value := flag.def
+		if raw, ok := p.settings[flag.key]; ok {
+			if err := json.Unmarshal(raw, &value); err != nil {
+				return component{}, fmt.Errorf("migrate: package %s: %s: %w", p.path, flag.key, err)
+			}
+		}
+		c.flags[flag.key] = value
 	}
 
 	// A version file the release type implies is carried over only where it
@@ -1024,13 +1061,24 @@ func render(components []component, top topLevel) ([]byte, error) {
 	if shared.changelogType {
 		add(doc, "changelog-type", scalar(config.ChangelogTypeGitHub))
 	}
+	// A release flag every component carries with the same value, other
+	// than release-me's default, is written once at the top level too.
+	topFlags := make(map[string]bool, len(releaseFlags))
+	for _, flag := range releaseFlags {
+		value := components[0].flags[flag.key]
+		same := slices.IndexFunc(components, func(c component) bool { return c.flags[flag.key] != value }) == -1
+		if same && value != flag.def {
+			add(doc, flag.key, boolean(value))
+			topFlags[flag.key] = true
+		}
+	}
 
 	if len(components) == 1 && components[0].path == "." && components[0].tagPrefix == "v" {
 		c := components[0]
 		if c.changelog != "CHANGELOG.md" {
 			add(doc, "changelog", scalar(c.changelog))
 		}
-		addSettings(doc, c, shared, add)
+		addSettings(doc, c, shared, topFlags, add)
 	} else {
 		comps := &yaml.Node{Kind: yaml.MappingNode}
 		for _, c := range components {
@@ -1042,7 +1090,7 @@ func render(components []component, top topLevel) ([]byte, error) {
 			if c.changelog != stdpath.Join(c.path, "CHANGELOG.md") {
 				add(m, "changelog", scalar(c.changelog))
 			}
-			addSettings(m, c, shared, add)
+			addSettings(m, c, shared, topFlags, add)
 			add(comps, c.name, m)
 		}
 		add(doc, "components", comps)
@@ -1071,9 +1119,13 @@ type sharedRules struct {
 
 // addSettings writes the settings release-me reads per component or at the
 // top level alike: initial-version, bump-minor-pre-major,
-// bump-patch-for-minor-pre-major, changelog-type and files. A setting
-// shared names is left out, the top level already carries it.
-func addSettings(m *yaml.Node, c component, shared sharedRules, add func(*yaml.Node, string, *yaml.Node)) {
+// bump-patch-for-minor-pre-major, changelog-type, the release flags and
+// files. A setting shared names is left out, the top level already
+// carries it; a release flag is also left out where it is release-me's
+// default.
+func addSettings(
+	m *yaml.Node, c component, shared sharedRules, topFlags map[string]bool, add func(*yaml.Node, string, *yaml.Node),
+) {
 	if c.initialVersion != "" {
 		add(m, "initial-version", scalar(c.initialVersion))
 	}
@@ -1085,6 +1137,11 @@ func addSettings(m *yaml.Node, c component, shared sharedRules, add func(*yaml.N
 	}
 	if c.changelogType == config.ChangelogTypeGitHub && !shared.changelogType {
 		add(m, "changelog-type", scalar(c.changelogType))
+	}
+	for _, flag := range releaseFlags {
+		if value := c.flags[flag.key]; !topFlags[flag.key] && value != flag.def {
+			add(m, flag.key, boolean(value))
+		}
 	}
 	if len(c.files) > 0 {
 		list := &yaml.Node{Kind: yaml.SequenceNode}

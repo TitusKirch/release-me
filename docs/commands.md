@@ -129,6 +129,10 @@ publish step fail after an earlier run tagged and drafted it, so this reprints t
 `released-tag` marker for it, without creating anything again, letting the workflow's asset
 step retry. Off, the default, this never runs: a published release has nothing left to resume.
 
+With `skip-github-release: true`, `release` tags the merge commit, swaps the label and prints
+the `released-tag` marker as usual, but creates no GitHub release, for a workflow that creates
+it from the tag itself. See [configuration](configuration.md#skip-github-release).
+
 With `major-tag: true`, every stable release additionally creates or force-moves the major
 tag, `vX` for the implicit `main` component or its tag prefix followed by `X` for a configured
 one, onto the same commit. A tag that does not exist yet is created; one that does is moved,
@@ -193,6 +197,9 @@ only the files outside the other components' paths, where release-please's root 
 counted every commit. It also carries over:
 
 - `bump-minor-pre-major`, `bump-patch-for-minor-pre-major` and `initial-version`;
+- `skip-github-release`, at the top level when every package carries the same value, on the
+  component otherwise; release-me still creates the tag, unlike release-please, so remove
+  any external tagging step the old workflow needed;
 - the version file of a `node` (`package.json`), `rust` (`Cargo.toml`), `maven` (`pom.xml`, its
   project version or else its parent's), `simple` (its `version-file`, default `version.txt`,
   through `plain`) or `helm` (`Chart.yaml`) package where that file exists, `node` being

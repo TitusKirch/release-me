@@ -167,6 +167,7 @@ files:
 | `release-pull-request-shared-title` | Title pattern of the release pull request every component shares. | `chore: release ${releases}`, locked `chore: release v${version} (${components})` | No |
 | `signoff` | `Name <email>` the release commit carries a `Signed-off-by:` trailer for. | none | No |
 | `draft-until-assets-attach` | Drafts every release instead of publishing it immediately. | `false` | No |
+| `skip-github-release` | Tags a merged release pull request without creating a GitHub release. | `false` | No |
 | `comment-mention` | Mention prefix for `release-as`/`release-notes` comment commands. | `@release-me` | No |
 | `workspaces` | Package managers whose local dependencies release a dependent with its dependency. | none | No |
 | `delete-release-branch` | Deletes a release branch once `release` has tagged and released it. | `true` | No |
