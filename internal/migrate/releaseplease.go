@@ -66,7 +66,7 @@ var packageKeys = append([]string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
 	"initial-version", "extra-files", "version-file", "changelog-type", "include-commit-authors",
-	"changelog-host",
+	"changelog-host", "prerelease-type", "prerelease",
 }, releaseFlagKeys()...)
 
 // releaseFlag is a boolean release-please package setting release-me reads
@@ -341,6 +341,10 @@ type component struct {
 	// flags holds every releaseFlags key's value for this package: the
 	// one release-please was given, else release-me's default.
 	flags map[string]bool
+	// preReleaseType is release-please's prerelease-type, a type
+	// release-me selects through a label, "" when it is left out or
+	// cannot carry over.
+	preReleaseType string
 }
 
 // file is one release-me "files" entry.
@@ -356,8 +360,9 @@ type file struct {
 func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any)) (component, error) {
 	var (
 		releaseType, packageName, componentName, separator, changelogPath string
-		initialVersion, changelogType, changelogHost                      string
+		initialVersion, changelogType, changelogHost, preReleaseType      string
 		versionFileName                                                   string
+		preRelease                                                        bool
 		includeComponent, includeV                                        = true, true
 		bumpMinor, bumpPatchForMinor, includeAuthors                      bool
 	)
@@ -370,7 +375,8 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"include-component-in-tag": &includeComponent, "include-v-in-tag": &includeV,
 		"bump-minor-pre-major": &bumpMinor, "bump-patch-for-minor-pre-major": &bumpPatchForMinor,
 		"changelog-type": &changelogType, "include-commit-authors": &includeAuthors,
-		"changelog-host": &changelogHost,
+		"changelog-host":  &changelogHost,
+		"prerelease-type": &preReleaseType, "prerelease": &preRelease,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -383,6 +389,8 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 	if releaseType == "" {
 		releaseType = "node"
 	}
+	preReleaseType = translatePreReleaseType(p.path, preReleaseType, preRelease, warn)
+
 	// release-please names a package after its component, else its package
 	// name, a node package's scope stripped, else the name package.json
 	// carries.
@@ -436,6 +444,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		changelog:                 repoPath(p.path, changelogPath),
 		bumpMinorPreMajor:         bumpMinor,
 		bumpPatchForMinorPreMajor: bumpPatchForMinor,
+		preReleaseType:            preReleaseType,
 		initialVersion:            initialVersion,
 		changelogType:             changelogType,
 		includeCommitAuthors:      includeAuthors,
@@ -592,6 +601,40 @@ func translateChangelogHost(components []component, warn func(string, ...any)) s
 		return ""
 	}
 	return valid
+}
+
+// preReleaseTypeName matches a type name release-me.yaml's
+// prerelease-types accepts: one semver pre-release identifier.
+var preReleaseTypeName = regexp.MustCompile(`^[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*$`)
+
+// translatePreReleaseType carries release-please's prerelease-type over as
+// a pre-release type release-me selects through its label: alpha, beta and
+// rc stay on, any other valid name becomes a prerelease-types entry.
+// release-please cuts it on every release with prerelease true;
+// release-me cuts it while the label is on the release pull request, so
+// either way the difference is warned about. A name release-me cannot
+// carry is left out.
+func translatePreReleaseType(pkgPath, preReleaseType string, preRelease bool, warn func(string, ...any)) string {
+	if preReleaseType == "" {
+		if preRelease {
+			warn("package %s: prerelease: release-me cuts a pre-release only while the release pull request "+
+				"carries a pre-release type label, left out", pkgPath)
+		}
+		return ""
+	}
+	if !preReleaseTypeName.MatchString(preReleaseType) {
+		warn("package %s: prerelease-type %s: not a pre-release type release-me can carry, left out", pkgPath, preReleaseType)
+		return ""
+	}
+	warn("package %s: prerelease-type %s: release-me cuts it only while the release pull request carries the label %q",
+		pkgPath, preReleaseType, preReleaseLabel(preReleaseType))
+	return preReleaseType
+}
+
+// preReleaseLabel is the label a translated pre-release type is selected
+// with, release-me's own "release: <type>" shape.
+func preReleaseLabel(preReleaseType string) string {
+	return "release: " + preReleaseType
 }
 
 // translateExtraFiles carries over the extra-files entries an updater can
@@ -1026,8 +1069,21 @@ func render(components []component, top topLevel) ([]byte, error) {
 	if len(top.extra) > 0 {
 		add(labels, "extra", labelNode(top.extra))
 	}
+	// alpha, beta and rc stay off unless a package's prerelease-type
+	// names one; any other type becomes a prerelease-types entry, in the
+	// order the packages first name it.
+	var others []string
+	for _, c := range components {
+		if c.preReleaseType != "" && !slices.Contains(others, c.preReleaseType) {
+			others = append(others, c.preReleaseType)
+		}
+	}
 	for _, t := range []string{"alpha", "beta", "rc"} {
-		add(labels, t, boolean(false))
+		if slices.Contains(others, t) {
+			add(labels, t, scalar(preReleaseLabel(t)))
+		} else {
+			add(labels, t, boolean(false))
+		}
 	}
 	add(doc, "labels", labels)
 	if top.style.sentenceCase {
@@ -1038,6 +1094,14 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.style.host != "" {
 		add(doc, "changelog-host", scalar(top.style.host))
+	}
+	others = slices.DeleteFunc(others, func(t string) bool { return t == "alpha" || t == "beta" || t == "rc" })
+	if len(others) > 0 {
+		types := &yaml.Node{Kind: yaml.MappingNode}
+		for _, t := range others {
+			add(types, t, scalar(preReleaseLabel(t)))
+		}
+		add(doc, "prerelease-types", types)
 	}
 
 	// A pre-major rule carried by every component is written once, at the
