@@ -236,6 +236,7 @@ func doPRComponent(
 		return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 	}
 	defer plan.cleanup()
+	plan.requireSignoff(ctx, cfg.Signoff)
 
 	notes := ""
 	if existing != nil {
@@ -293,7 +294,7 @@ func doPRComponent(
 			return nil
 		}
 
-		if err := plan.write(ctx, cfg, existing, comp.Branch, date, title); err != nil {
+		if err := plan.write(ctx, cfg, existing, comp.Branch, date, releasepr.CommitMessage(title, cfg.Signoff)); err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
 
@@ -449,6 +450,7 @@ func doPRLocked(
 		return fmt.Errorf("release-me: locked family: %w", err)
 	}
 	defer plan.cleanup()
+	plan.requireSignoff(ctx, cfg.Signoff)
 
 	notes := ""
 	if existing != nil {
@@ -524,7 +526,7 @@ func publishSharedPR(
 			return nil
 		}
 
-		if err := plan.write(ctx, cfg, existing, branch, date, title); err != nil {
+		if err := plan.write(ctx, cfg, existing, branch, date, releasepr.CommitMessage(title, cfg.Signoff)); err != nil {
 			return fmt.Errorf("release-me: %s: %w", who, err)
 		}
 
@@ -923,6 +925,18 @@ func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelog
 		}
 	}
 	return true
+}
+
+// requireSignoff refreshes an existing release commit whose desired trailer
+// changed even when every generated file and the PR body already match.
+func (p *releasePlan) requireSignoff(ctx context.Context, signoff string) {
+	if p.changed || signoff == "" {
+		return
+	}
+	trailers, err := gitOutput(ctx, p.tmp, "show", "-s", "--format=%(trailers:key=Signed-off-by,valueonly)", compareRef)
+	if err != nil || !slices.Contains(strings.Split(trailers, "\n"), signoff) {
+		p.changed = true
+	}
 }
 
 // headingReadsBack reports whether the heading write renders for version

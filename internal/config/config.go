@@ -5,7 +5,7 @@
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, hidden-types,
 // fallback-type, token-env, files, changelog, changelog-source,
 // changelog-type, the changelog style keys ChangelogStyle lists, labels,
-// author, major-tag, versioning, release-pull-request-title,
+// author, major-tag, versioning, signoff, release-pull-request-title,
 // release-pull-request-shared-title, draft-until-assets-attach,
 // comment-mention, delete-release-branch, workspaces, always-link-local
 // and components.
@@ -326,6 +326,9 @@ type Config struct {
 	// releasepr.DefaultSharedTitlePattern otherwise. Load checks it for the
 	// configured versioning mode.
 	ReleasePullRequestSharedTitle string
+	// Signoff is the top-level "signoff" key: "Name <email>" the release
+	// commit's message carries a "Signed-off-by:" trailer for, "" for none.
+	Signoff string
 	// DraftUntilAssetsAttach is the top-level "draft-until-assets-attach"
 	// key, default false: when true, release creates every release as a
 	// draft instead of publishing it immediately, and resumes publishing
@@ -643,6 +646,7 @@ type raw struct {
 	ReleasePullRequest            *string    `yaml:"release-pull-request"`
 	ReleasePullRequestLayout      *string    `yaml:"release-pull-request-layout"`
 	ReleasePullRequestGuide       *bool      `yaml:"release-pull-request-guide"`
+	Signoff                       *string    `yaml:"signoff"`
 	DraftUntilAssetsAttach        *bool      `yaml:"draft-until-assets-attach"`
 	CommentMention                *string    `yaml:"comment-mention"`
 	ReleasePullRequestTitle       *string    `yaml:"release-pull-request-title"`
@@ -946,6 +950,14 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: release-pull-request-shared-title %q %w", path, *r.ReleasePullRequestSharedTitle, err)
 		}
 		cfg.ReleasePullRequestSharedTitle = *r.ReleasePullRequestSharedTitle
+	}
+	if r.Signoff != nil {
+		if *r.Signoff != "" {
+			if err := releasepr.CheckSignoff(*r.Signoff); err != nil {
+				return Config{}, fmt.Errorf("config: parse %s: signoff %q %w", path, *r.Signoff, err)
+			}
+		}
+		cfg.Signoff = *r.Signoff
 	}
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach
