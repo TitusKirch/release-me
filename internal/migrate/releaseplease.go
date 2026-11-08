@@ -66,6 +66,7 @@ var packageKeys = []string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
 	"initial-version", "extra-files", "version-file", "changelog-type", "include-commit-authors",
+	"changelog-host",
 }
 
 // topLevelKeys are the release-please settings that only exist at the top
@@ -190,6 +191,7 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 	case slices.ContainsFunc(components, func(c component) bool { return c.includeCommitAuthors }):
 		warn("include-commit-authors: release-me credits authors for every component or none, left out")
 	}
+	st.host = translateChangelogHost(components, warn)
 	// release-please groups every package into one release pull request
 	// unless separate-pull-requests is true; release-me's own default is one
 	// per component, so the grouped default is written out. locked always
@@ -285,6 +287,8 @@ type component struct {
 	changelogType string
 	// includeCommitAuthors is release-please's include-commit-authors.
 	includeCommitAuthors bool
+	// changelogHost is release-please's changelog-host, "" for none.
+	changelogHost string
 }
 
 // file is one release-me "files" entry.
@@ -300,7 +304,7 @@ type file struct {
 func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any)) (component, error) {
 	var (
 		releaseType, packageName, componentName, separator, changelogPath string
-		initialVersion, changelogType                                     string
+		initialVersion, changelogType, changelogHost                      string
 		versionFileName                                                   string
 		includeComponent, includeV                                        = true, true
 		bumpMinor, bumpPatchForMinor, includeAuthors                      bool
@@ -314,6 +318,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"include-component-in-tag": &includeComponent, "include-v-in-tag": &includeV,
 		"bump-minor-pre-major": &bumpMinor, "bump-patch-for-minor-pre-major": &bumpPatchForMinor,
 		"changelog-type": &changelogType, "include-commit-authors": &includeAuthors,
+		"changelog-host": &changelogHost,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -382,6 +387,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		initialVersion:            initialVersion,
 		changelogType:             changelogType,
 		includeCommitAuthors:      includeAuthors,
+		changelogHost:             changelogHost,
 	}
 
 	// A version file the release type implies is carried over only where it
@@ -503,6 +509,27 @@ func translatePom(c *component, pkgPath string, readFile ReadFile, warn func(str
 			break
 		}
 	}
+}
+
+// translateChangelogHost carries over a changelog-host every component
+// shares: release-me links every component's changelog on one host.
+func translateChangelogHost(components []component, warn func(string, ...any)) string {
+	host := components[0].changelogHost
+	for _, c := range components[1:] {
+		if c.changelogHost != host {
+			warn("changelog-host: release-me links every component on one host, left out")
+			return ""
+		}
+	}
+	if host == "" {
+		return ""
+	}
+	valid, err := config.ValidateChangelogHost(host)
+	if err != nil {
+		warn("changelog-host: %s, left out", err)
+		return ""
+	}
+	return valid
 }
 
 // translateExtraFiles carries over the extra-files entries an updater can
@@ -636,6 +663,8 @@ func xpathKey(xpath string) (string, bool) {
 type style struct {
 	sentenceCase bool
 	authors      bool
+	// host is release-please's changelog-host, "" for none.
+	host string
 }
 
 // workspacePlugins maps each release-please workspace plugin to the
@@ -935,6 +964,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.style.authors {
 		add(doc, "changelog-authors", boolean(true))
+	}
+	if top.style.host != "" {
+		add(doc, "changelog-host", scalar(top.style.host))
 	}
 
 	// A pre-major rule carried by every component is written once, at the

@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	stdpath "path"
 	"slices"
@@ -214,6 +215,11 @@ type ChangelogStyle struct {
 	// Authors is "changelog-authors", default false: credit each entry's
 	// author after its description.
 	Authors bool
+	// Host is "changelog-host", "" by default: the web address every
+	// changelog link points at instead of the forge's own, such as a
+	// GitHub Enterprise Server's "https://github.example.com". No
+	// trailing slash.
+	Host string
 }
 
 // Labels is the "labels" key: the label names release-me expects on the
@@ -622,6 +628,7 @@ type raw struct {
 	ChangelogType                 *string    `yaml:"changelog-type"`
 	ChangelogSentenceCase         *bool      `yaml:"changelog-sentence-case"`
 	ChangelogAuthors              *bool      `yaml:"changelog-authors"`
+	ChangelogHost                 *string    `yaml:"changelog-host"`
 	Labels                        *rawLabels `yaml:"labels"`
 	Author                        *rawAuthor `yaml:"author"`
 	MajorTag                      *bool      `yaml:"major-tag"`
@@ -821,6 +828,14 @@ func Load(path string) (cfg Config, err error) {
 	}
 	if r.ChangelogAuthors != nil {
 		cfg.ChangelogStyle.Authors = *r.ChangelogAuthors
+	}
+	if r.ChangelogHost != nil {
+		host, err := ValidateChangelogHost(*r.ChangelogHost)
+		if err != nil {
+			// The value is left out: it may carry credentials.
+			return Config{}, fmt.Errorf("config: parse %s: changelog-host %w", path, err)
+		}
+		cfg.ChangelogStyle.Host = host
 	}
 	if r.Labels != nil {
 		if r.Labels.Pending != nil {
@@ -1030,6 +1045,29 @@ func validateChangelogType(value string) error {
 		return fmt.Errorf("changelog-type %q is not %s or %s", value, ChangelogTypeDefault, ChangelogTypeGitHub)
 	}
 	return nil
+}
+
+// ValidateChangelogHost checks a "changelog-host" and returns it without a
+// trailing slash. It rejects anything but an absolute http or https
+// address with a host and nothing past its path: a query or a fragment
+// would end up in the middle of every link. It also rejects whitespace,
+// "(" and ")", which end a markdown link target early, so the changelog
+// heading's compare link would no longer read back. migrate calls it to
+// vet a release-please changelog-host.
+func ValidateChangelogHost(host string) (string, error) {
+	if strings.ContainsAny(host, " \t\n()") {
+		return "", errors.New("contains whitespace or a parenthesis, which break a changelog link")
+	}
+	u, err := url.Parse(host)
+	switch {
+	case err != nil:
+		return "", errors.New("does not parse as an address")
+	case u.Scheme != "http" && u.Scheme != "https", u.Host == "":
+		return "", errors.New("is not an absolute http or https address")
+	case u.RawQuery != "" || u.Fragment != "" || u.User != nil:
+		return "", errors.New("carries a query, a fragment or credentials")
+	}
+	return strings.TrimRight(host, "/"), nil
 }
 
 // decodeComponents converts the "components" mapping node into []Component,
