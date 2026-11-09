@@ -87,35 +87,37 @@ func doPRShared(
 
 	reportSupersededPRs(ctx, f, owner, repoName, all, branch, logger, stdout)
 
-	if cfg.DraftUntilAssetsAttach {
-		needsSweep := false
-		for _, comp := range all {
-			needsSweep = needsSweep || !comp.ForceTagCreation
+	needsSweep := false
+	for _, comp := range all {
+		needsSweep = needsSweep || !comp.ForceTagCreation
+	}
+	// A legacy branch can hold a merged release whose deferred tag is
+	// still absent, as a draft or as a published release GitHub left
+	// untagged, or a merged release still pending; finish either before
+	// opening a shared release pull request. Only a component that defers
+	// its tag can leave that state behind, so the sweep is skipped when
+	// every one of them forces tag creation, whatever
+	// "draft-until-assets-attach" is set to.
+	if needsSweep {
+		own, err := remoteBranches(ctx, dir, "release-me/*")
+		if err != nil {
+			return fmt.Errorf("release-me: shared release pull request: list legacy branches: %w", err)
 		}
-		// A legacy branch can hold an unpublished deferred draft or a
-		// merged release still pending; finish either before opening a
-		// shared release pull request.
-		if needsSweep {
-			own, err := remoteBranches(ctx, dir, "release-me/*")
-			if err != nil {
-				return fmt.Errorf("release-me: shared release pull request: list legacy branches: %w", err)
+		for _, comp := range all {
+			legacy := config.PerComponentBranch(comp.Name)
+			if legacy == branch {
+				continue
 			}
-			for _, comp := range all {
-				legacy := config.PerComponentBranch(comp.Name)
-				if legacy == branch {
-					continue
-				}
-				if _, ok := own[legacy]; !ok {
-					continue
-				}
-				deferral, err := mergedReleaseDeferral(ctx, f, owner, repoName, legacy, cfg, logger)
-				if err != nil {
-					return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
-				}
-				if deferral != "" {
-					fmt.Fprintln(stdout, deferral)
-					return nil
-				}
+			if _, ok := own[legacy]; !ok {
+				continue
+			}
+			deferral, err := mergedReleaseDeferral(ctx, f, owner, repoName, legacy, cfg, logger)
+			if err != nil {
+				return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
+			}
+			if deferral != "" {
+				fmt.Fprintln(stdout, deferral)
+				return nil
 			}
 		}
 	}

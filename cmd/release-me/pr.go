@@ -594,14 +594,23 @@ func lockedPreReleaseEntries(
 
 // mergedReleaseDeferral returns a message when branch carries a closed,
 // merged pull request still carrying every one of the pending labels, or a
-// tagged release whose deferred tag is absent and whose release remains an
-// unpublished draft. An empty message means a new release pull request may
-// be opened. Only the newest merged, tagged pull request is probed for a
-// deferred draft, keeping remote lookups bounded as the release history
-// grows. The pending labels signal a release already
-// decided, not yet tagged. doRelease recognizes the exact same pull
-// request by the exact same signal to tag it, so as long as it still
-// carries the label, nothing else may release in its place.
+// tagged release whose deferred tag is absent. An empty message means a new
+// release pull request may be opened. Only the newest merged, tagged pull
+// request is probed for a missing deferred tag, keeping remote lookups
+// bounded as the release history grows.
+//
+// That probe runs whatever "draft-until-assets-attach" is set to, because a
+// deferred tag can go missing without a draft ever existing: with drafts
+// off the release is published right away, and if GitHub then creates no
+// tag, nothing local would notice. It costs nothing where no component
+// defers its tag, which is the default: unpublishedDeferredRelease skips
+// every component with ForceTagCreation on before it makes a single forge
+// call.
+//
+// The pending labels signal a release already decided, not yet tagged.
+// doRelease recognizes the exact same pull request by the exact same
+// signal to tag it, so as long as it still carries the label, nothing else
+// may release in its place.
 //
 // This is the case right after a release pull request's merge lands on
 // the default branch: that same push's run invocation calls doPR before
@@ -632,7 +641,7 @@ func mergedReleaseDeferral(ctx context.Context, f forge.Forge, owner, repoName, 
 			newestTagged = &pr
 		}
 	}
-	if cfg.DraftUntilAssetsAttach && newestTagged != nil {
+	if newestTagged != nil {
 		deferral, err := unpublishedDeferredRelease(ctx, f, owner, repoName, cfg, *newestTagged)
 		if err != nil {
 			return "", err
@@ -654,7 +663,9 @@ func mergedReleaseDeferral(ctx context.Context, f forge.Forge, owner, repoName, 
 // Two states hold a new pull request back, both of them reachable only
 // while the tag a component deferred to the release publish is still
 // absent. The first is a release still waiting as a draft: publishing it
-// creates the tag, so the next run moves on. The second is a release that
+// creates the tag, so the next run moves on. A draft is reachable even
+// with "draft-until-assets-attach" off now, because it can have been
+// created while that key was still on. The second is a release that
 // is already published while its tag is still missing, which is the state
 // GitHub is not supposed to leave behind at all: creating a release with a
 // target commitish is assumed to create the tag on publish, and that
