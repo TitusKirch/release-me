@@ -212,9 +212,31 @@ func (f *Forge) MoveTag(ctx context.Context, owner, repo, tag, sha string) error
 // "gh release edit <tag> --draft=false", rather than wait on a webhook
 // that never comes.
 //
-// target is sent as target_commitish only when set: GitHub ignores it for
-// a tag that already exists, and creates the tag on it once the release is
-// published otherwise.
+// target is sent as target_commitish only when set. What GitHub documents
+// about that field is the half that is verified: the REST reference for
+// creating a release says it "Specifies the commitish value that
+// determines where the Git tag is created from" and is "Unused if the Git
+// tag already exists", so a tag of the same name that is already in the
+// repository is never redirected through this path, whatever target holds.
+//
+// What GitHub does not document is when the tag appears for a release
+// whose tag does not exist yet. That a draft created this way stays
+// untagged until it is published, and only then gets its tag on target, is
+// an assumption release-me makes, not documented behaviour, and it has not
+// been verified against a live repository either. Searched without finding
+// it stated: the REST reference for creating and for updating a release,
+// the public GraphQL schema, which exposes no release mutation at all, the
+// documentation pages "About releases" and "Managing releases in a
+// repository", the immutable releases page, the GitHub Changelog and the
+// gh CLI manual. The only direct statement of it found anywhere is a
+// community forum post with no staff answer, so a later reader does not
+// need to repeat that search.
+//
+// The "force-tag-creation: false" path therefore does not rely on the
+// assumption holding. A published release whose tag never appeared is
+// caught by unpublishedDeferredRelease in cmd/release-me, which holds the
+// next release pull request back and names the missing tag instead of
+// releasing the same version a second time.
 func (f *Forge) CreateRelease(
 	ctx context.Context, owner, repo, tag, target, name, body string, prerelease, draft bool,
 ) (forge.Release, error) {

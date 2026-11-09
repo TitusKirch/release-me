@@ -631,9 +631,12 @@ always has, so a draft's tag exists while the draft waits. `false` leaves the ta
 instead, the release-please default: the release is created with the merge commit as its
 target, and GitHub creates the tag on it when the release is published, right away for a
 published release, on publish for a draft from
-[`draft-until-assets-attach`](#draft-until-assets-attach). The run then reports
-`drafted <tag>, tagged on publish`. Until that publish the tag does not exist: a later step
-must not expect it, a rerun cannot tell a draft it tagged before, and the
+[`draft-until-assets-attach`](#draft-until-assets-attach). That tag creation on publish is
+GitHub behaviour release-me relies on but GitHub does not document anywhere, and it is not
+verified against a live repository either. If the tag does not appear after a publish, `pr`
+reports the missing tag and waits instead of releasing the same version again.
+The run then reports `drafted <tag>, tagged on publish`. Until that publish the tag does not
+exist: a later step must not expect it, a rerun cannot tell a draft it tagged before, and the
 [major tag](#major-tag) already points at the merge commit. The draft is still found by its tag
 name, so the resume of `draft-until-assets-attach` and the guard against a second draft work
 the same. A component overrides it through its own `force-tag-creation` key.

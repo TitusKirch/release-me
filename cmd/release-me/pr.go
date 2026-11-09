@@ -633,13 +633,14 @@ func mergedReleaseDeferral(ctx context.Context, f forge.Forge, owner, repoName, 
 		}
 	}
 	if cfg.DraftUntilAssetsAttach && newestTagged != nil {
-		deferred, err := unpublishedDeferredRelease(ctx, f, owner, repoName, cfg, *newestTagged)
+		deferral, err := unpublishedDeferredRelease(ctx, f, owner, repoName, cfg, *newestTagged)
 		if err != nil {
 			return "", err
 		}
-		if deferred {
-			logger.Debug("merged release has an unpublished deferred tag, deferring to release", "head", branch, "number", newestTagged.Number)
-			return fmt.Sprintf("waiting for unpublished release %q from pull request #%d; publish or delete its draft to continue", newestTagged.Title, newestTagged.Number), nil
+		if deferral != "" {
+			logger.Debug("merged release has an unpublished deferred tag, deferring to release",
+				"head", branch, "number", newestTagged.Number, "deferral", deferral)
+			return deferral, nil
 		}
 	}
 	return "", nil
@@ -647,7 +648,29 @@ func mergedReleaseDeferral(ctx context.Context, f forge.Forge, owner, repoName, 
 
 // unpublishedDeferredRelease checks the version the merged PR actually
 // released, rather than the next version recomputed from a still-missing tag.
-func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoName string, cfg config.Config, pr forge.PullRequest) (bool, error) {
+// It returns the message the caller prints, or an empty string when a new
+// release pull request may be opened.
+//
+// Two states hold a new pull request back, both of them reachable only
+// while the tag a component deferred to the release publish is still
+// absent. The first is a release still waiting as a draft: publishing it
+// creates the tag, so the next run moves on. The second is a release that
+// is already published while its tag is still missing, which is the state
+// GitHub is not supposed to leave behind at all: creating a release with a
+// target commitish is assumed to create the tag on publish, and that
+// assumption is not documented anywhere authoritative, see
+// forge/github.CreateRelease. This branch is where a wrong assumption
+// surfaces. Nothing reaches it while GitHub does create the tag, because
+// TagExists is true then and the loop continues before any release lookup.
+//
+// Both states defer rather than return an error, because deferring is the
+// conservative answer to each of them. It never opens a pull request for a
+// version that is already released, a transient race between the publish
+// and the tag creation resolves itself on the next run, and an assumption
+// that is permanently wrong shows a named, repeated message on every run
+// instead of a silent loop that reopens the same release pull request and
+// re-releases the same version forever.
+func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoName string, cfg config.Config, pr forge.PullRequest) (string, error) {
 	versions := map[string]string{}
 	components := cfg.Resolve()
 	for _, comp := range components {
@@ -673,7 +696,7 @@ func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoN
 		tag := comp.TagPrefix + v
 		exists, err := f.TagExists(ctx, owner, repoName, tag)
 		if err != nil {
-			return false, fmt.Errorf("component %s pull request #%d: check deferred tag %s: %w", comp.Name, pr.Number, tag, err)
+			return "", fmt.Errorf("component %s pull request #%d: check deferred tag %s: %w", comp.Name, pr.Number, tag, err)
 		}
 		if exists {
 			continue
@@ -683,13 +706,18 @@ func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoN
 			continue
 		}
 		if err != nil {
-			return false, fmt.Errorf("component %s pull request #%d: check deferred draft %s: %w", comp.Name, pr.Number, tag, err)
+			return "", fmt.Errorf("component %s pull request #%d: check deferred draft %s: %w", comp.Name, pr.Number, tag, err)
 		}
 		if rel.Draft {
-			return true, nil
+			return fmt.Sprintf("waiting for unpublished release %q from pull request #%d; publish or delete its draft to continue", pr.Title, pr.Number), nil
 		}
+		return fmt.Sprintf(
+			"the release from pull request #%d is published but its tag %s does not exist, so GitHub did not create it; "+
+				"create %s on the release's target commit, or delete the release so the next run recreates it",
+			pr.Number, tag, tag,
+		), nil
 	}
-	return false, nil
+	return "", nil
 }
 
 // resolveBaseBranch reads the repository's default branch from the forge,

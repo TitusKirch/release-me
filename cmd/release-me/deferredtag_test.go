@@ -91,11 +91,15 @@ func TestDeferredDraftDeferralRequiresAnAbsentTagAndAnUnpublishedRelease(t *test
 		tagExists, draft, force bool
 		missing                 bool
 		title                   string
-		want                    bool
+		want                    string
 	}{
-		{name: "unpublished draft", draft: true, want: true},
+		{name: "unpublished draft", draft: true, want: `waiting for unpublished release "chore(main): release v1.1.0" from pull request #9; publish or delete its draft to continue`},
 		{name: "tag already exists", tagExists: true, draft: true},
-		{name: "published release"},
+		{
+			name: "published release whose tag never appeared",
+			want: "the release from pull request #9 is published but its tag v1.1.0 does not exist, so GitHub did not create it; " +
+				"create v1.1.0 on the release's target commit, or delete the release so the next run recreates it",
+		},
 		{name: "deleted draft", missing: true},
 		{name: "forced tag creation", draft: true, force: true},
 		{name: "unrelated title", draft: true, title: "feat: add a command"},
@@ -114,9 +118,60 @@ func TestDeferredDraftDeferralRequiresAnAbsentTagAndAnUnpublishedRelease(t *test
 			}
 			got, err := unpublishedDeferredRelease(t.Context(), f, "owner", "repo", cfg, forge.PullRequest{Number: 9, Title: title})
 			if err != nil || got != tc.want {
-				t.Fatalf("deferred=%v,%v;want %v", got, err, tc.want)
+				t.Fatalf("deferral = %q, %v; want %q", got, err, tc.want)
 			}
 		})
+	}
+}
+
+func TestRunReportsAPublishedDeferredReleaseWhoseTagNeverAppeared(t *testing.T) {
+	dir, remote := newPRRepo(t)
+	writeConfig(t, dir, "")
+	writeFiles(t, dir, "chore: scaffold packages", map[string]string{"api/README.md": "api\n"})
+	cfg := loadConfig(t, dir)
+	runGit(t, dir, "tag", "v1.0.0")
+	writeFiles(t, dir, "feat: export reports", map[string]string{"api/export.go": "package api\n"})
+	cfg.ForceTagCreation = false
+	cfg.DraftUntilAssetsAttach = true
+	f := newFake()
+	var out bytes.Buffer
+	if err := doRun(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.CreatedPullRequests) != 1 {
+		t.Fatalf("first PRs = %+v", f.CreatedPullRequests)
+	}
+	created := f.CreatedPullRequests[0]
+	runGit(t, dir, "fetch", "-q", remote, "refs/heads/"+created.Head)
+	runGit(t, dir, "merge", "-q", "--no-ff", "FETCH_HEAD", "-m", "Merge release pull request")
+	merged := headSHA(t, dir)
+	f.ListResponses = []forgetest.ListResponse{{Head: created.Head, State: "closed", PullRequests: []forge.PullRequest{{Number: 9, Title: created.Title, Body: created.Body, Merged: true, HeadSHA: merged, Labels: []string{"release: pending"}}}}}
+	f.MergeCommits = map[int]string{9: merged}
+	f.PRLabels = map[int][]string{9: {"release: pending"}}
+	if err := doRun(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.CreatedReleases) == 0 || len(f.CreatedTags) != 0 {
+		t.Fatalf("draft releases = %+v, tags = %+v", f.CreatedReleases, f.CreatedTags)
+	}
+	f.ListResponses[0].PullRequests[0].Labels = f.PRLabels[9]
+
+	// The draft was published, yet GitHub left no tag behind: the state
+	// release-me's deferred tag path assumes cannot happen.
+	f.ReleaseDrafts["v1.1.0"] = false
+	if f.ExistingTags["v1.1.0"] {
+		t.Fatal("the deferred tag exists, so the published and untagged state is not set up")
+	}
+
+	out.Reset()
+	if err := doRun(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.CreatedPullRequests) != 1 {
+		t.Fatalf("opened another release pull request: %+v", f.CreatedPullRequests)
+	}
+	if !bytes.Contains(out.Bytes(), []byte("its tag v1.1.0 does not exist")) {
+		t.Fatalf("missing report of the absent tag: %s", out.String())
 	}
 }
 
