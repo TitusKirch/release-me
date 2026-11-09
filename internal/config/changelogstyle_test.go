@@ -29,6 +29,7 @@ func TestLoadReadsTheChangelogStyleKeys(t *testing.T) {
 			content: "changelog-host: https://github.example.com\n",
 			want:    config.ChangelogStyle{Host: "https://github.example.com"},
 		},
+		{name: "changelog-date-format", content: "changelog-date-format: \"%d.%m.%Y\"\n", want: config.ChangelogStyle{DateFormat: "%d.%m.%Y"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -47,7 +48,7 @@ func TestLoadReadsTheChangelogStyleKeys(t *testing.T) {
 func TestResolveGivesEveryComponentTheTopLevelChangelogStyle(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, "changelog-sentence-case: true\nchangelog-authors: true\n"+
-		"changelog-host: https://github.example.com\n"+
+		"changelog-host: https://github.example.com\nchangelog-date-format: \"%d.%m.%Y\"\n"+
 		"components:\n  api:\n    path: api\n  web:\n    path: web\n")
 
 	cfg, err := config.Load(path)
@@ -70,6 +71,7 @@ func TestLoadRejectsAChangelogStyleKeyInsideAComponent(t *testing.T) {
 		{name: "changelog-sentence-case", key: "changelog-sentence-case: true\n"},
 		{name: "changelog-authors", key: "changelog-authors: true\n"},
 		{name: "changelog-host", key: "changelog-host: https://github.example.com\n"},
+		{name: "changelog-date-format", key: "changelog-date-format: \"%Y\"\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -118,5 +120,13 @@ func TestLoadRejectsAChangelogHostThatBreaksALink(t *testing.T) {
 				t.Fatalf("Load() error = %v, want the credentials left out", err)
 			}
 		})
+	}
+}
+
+func TestLoadRejectsAnUnknownChangelogDateFormatDirective(t *testing.T) {
+	t.Parallel()
+	_, err := config.Load(writeFile(t, "changelog-date-format: \"%Y-%m-%d %H:%M\"\n"))
+	if err == nil || !strings.Contains(err.Error(), `changelog-date-format "%Y-%m-%d %H:%M" uses an unknown directive`) {
+		t.Fatalf("Load() error = %v, want the unknown directive named", err)
 	}
 }

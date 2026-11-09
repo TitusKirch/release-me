@@ -58,5 +58,5 @@ func renderSection(
 		return "", err
 	}
 	link := compareURL(f, owner, repoName, rel.fromTag, tag)
-	return changelog.RenderHeading(rel.version.Version, time.Now(), link) + "\n\n" + body + "\n", nil
+	return changelog.RenderHeading(rel.version.Version, time.Now(), link, rel.options.DateFormat) + "\n\n" + body + "\n", nil
 }
