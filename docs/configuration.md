@@ -57,8 +57,44 @@ version.
 ## `hidden-types`
 
 Hides entries of these types from the changelog, default `chore`, `docs`, `ci`, `style`,
-`refactor`, `test`, `build`, `other`. Only `feat`, `fix`, `perf`, `revert` and a breaking
-change ever render a section; a type outside those five never renders, hidden or not.
+`refactor`, `test`, `build`, `other`. Without [`changelog-sections`](#changelog-sections), only
+`feat`, `fix`, `perf`, `revert` and a breaking change ever render a section; a type outside
+those five never renders, hidden or not.
+
+## `changelog-sections`
+
+Renames, reorders or adds the sections after `Breaking Changes`, release-please's shape: a list
+of `type`, `section` and an optional `hidden`, default `false`. Left out, the sections are
+`Features` (`feat`), `Bug Fixes` (`fix`), `Performance` (`perf`) and `Reverts` (`revert`). Given,
+the list replaces them:
+
+```yaml
+changelog-sections:
+  - type: feat
+    section: Features
+  - type: fix
+    section: Bug Fixes
+  - type: deps
+    section: Dependencies
+  - type: chore
+    hidden: true
+```
+
+- Sections render in the list's order. Types sharing a `section` render under one heading,
+  where that heading first appears.
+- A type the list names decides its own visibility: listed with a `section`, it renders even
+  when `hidden-types` names it; listed with `hidden: true`, it never renders. `section` is
+  required unless `hidden` is `true`, and ignored when it is `true`.
+- A type the list leaves out renders nowhere, the same as a type outside the default sections
+  today. A breaking change always renders under `Breaking Changes`, first, unless its type is
+  hidden.
+- An empty list, `changelog-sections: []`, keeps `Breaking Changes` only.
+
+A type listed twice, an entry without a `type` and a `section` spanning more than one line are
+configuration errors. A component overrides the list through its own `changelog-sections` key.
+Renaming a section changes the next release only: `CHANGELOG.md` keeps every earlier section as
+it was written, and an open release pull request picks the new headings up on the next `pr`
+run.
 
 ## `changelog-sentence-case`
 
@@ -705,8 +741,8 @@ component's `path` or lies outside it is a configuration error.
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `release-as` (only with `versioning: independent`),
-`hidden-types`, `files`, `major-tag`, `changelog-source`, `changelog-type`,
-`skip-github-release`, `skip-changelog` and `changelog`, plus its own
+`hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
+`changelog-type`, `skip-github-release`, `skip-changelog` and `changelog`, plus its own
 [`exclude-paths`](#exclude-paths), which the top-level key cannot apply beside configured
 components. A key left out of a component falls back to the top-level setting above. A
 repository without `components` is one component named `main` at path `.`, tag prefix `v`,
