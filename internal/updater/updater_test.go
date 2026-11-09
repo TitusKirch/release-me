@@ -183,6 +183,14 @@ func TestUpdatersRegistersEveryUpdaterWithTheRightKeyRequirement(t *testing.T) {
 		{updater.GemfileLock, true},
 		{updater.XML, true},
 		{updater.Plain, false},
+		{updater.Python, false},
+		{updater.Ruby, false},
+		{updater.Elixir, false},
+		{updater.OCaml, false},
+		{updater.R, false},
+		{updater.Bazel, false},
+		{updater.Dart, false},
+		{updater.Sfdx, false},
 	}
 	for _, tc := range cases {
 		entry, ok := updater.Updaters[tc.name]

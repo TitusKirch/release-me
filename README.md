@@ -181,7 +181,7 @@ files:
 | `components` | Maps a name to a path and optional per-component overrides. | none, one implicit `main` component | No |
 
 See [the configuration reference](docs/configuration.md) for every key's full behavior, the
-twelve `files` updater types, and the `components` rules.
+twenty `files` updater types, and the `components` rules.
 
 ## Agent skills
 
