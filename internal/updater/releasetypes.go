@@ -42,6 +42,16 @@ func replaceFirstLineOutside(content string, pattern *regexp.Regexp, version str
 // release types' version files assign.
 const quotedValue = `("[^"]*"|'[^']*')`
 
+// quotedScanValue matches a double quoted string and singleQuotedScanValue
+// a single quoted one, backslash escapes honoured in both. They are the
+// values the Elixir and Bazel scanners hand off to: those find the keyword
+// themselves, skipping escapes as they go, so the pattern that reads the
+// value off has to skip them the same way.
+const (
+	quotedScanValue       = `"(?:[^"\\]|\\.)*"`
+	singleQuotedScanValue = `'(?:[^'\\]|\\.)*'`
+)
+
 // pythonVersion matches the version assignment of a Python package's
 // version files: "__version__ = \"1.2.3\"" in an __init__.py or a
 // version.py, the keyword argument "version=\"1.2.3\"," in setup.py, and
@@ -83,7 +93,7 @@ func UpdateRuby(content, version string) (string, error) {
 var (
 	elixirAttribute = regexp.MustCompile(`^(\s*@version\s+)("[^"]*")(.*)$`)
 	elixirProject   = regexp.MustCompile(`(?m)^[ \t]*defp?\s+project(?:\s*\(\s*\))?\s*(?:do\b|,\s*do:)`)
-	elixirKeyword   = regexp.MustCompile(`version:\s*("[^"]*")`)
+	elixirKeyword   = regexp.MustCompile(`version:\s*(` + quotedScanValue + `)`)
 )
 
 // UpdateElixir replaces the version of a mix.exs: its @version module
@@ -334,7 +344,7 @@ func UpdateR(content, version string) (string, error) {
 // bazelVersion its version attribute.
 var (
 	bazelModule  = regexp.MustCompile(`(?m)^module\s*\(`)
-	bazelVersion = regexp.MustCompile(`\bversion\s*=\s*` + quotedValue)
+	bazelVersion = regexp.MustCompile(`\bversion\s*=\s*(` + quotedScanValue + `|` + singleQuotedScanValue + `)`)
 )
 
 // UpdateBazel replaces the version attribute of a MODULE.bazel's module()

@@ -139,6 +139,13 @@ func TestReleaseTypeUpdatersBumpTheVersionOfTheirFile(t *testing.T) {
 			to:      `    [app: :release_notes, version: "1.5.0-rc.1"]`,
 		},
 		{
+			name:    "elixir replaces a version string holding an escaped quote whole",
+			updater: updater.Elixir,
+			content: "defmodule ReleaseNotes.MixProject do\n  def project do\n    [app: :release_notes, version: \"1.4.0\\\"x\", elixir: \"~> 1.16\"]\n  end\nend\n",
+			from:    `    [app: :release_notes, version: "1.4.0\"x", elixir: "~> 1.16"]`,
+			to:      `    [app: :release_notes, version: "1.5.0-rc.1", elixir: "~> 1.16"]`,
+		},
+		{
 			name:    "ocaml bumps an opam file's version field",
 			updater: updater.OCaml,
 			content: "opam-version: \"2.0\"\nversion: \"1.4.0\"\nsynopsis: \"Release notes\"\ndepends: [\n  \"dune\" {>= \"3.0\"}\n]\n",
@@ -171,6 +178,13 @@ func TestReleaseTypeUpdatersBumpTheVersionOfTheirFile(t *testing.T) {
 			updater: updater.Bazel,
 			content: "module(\n    name = \"rules_release\",\n    # (keep the version in sync)\n    version = \"1.4.0\",\n    compatibility_level = 1,\n)\n\nbazel_dep(name = \"platforms\", version = \"0.0.10\")\n",
 			from:    `    version = "1.4.0",`,
+			to:      `    version = "1.5.0-rc.1",`,
+		},
+		{
+			name:    "bazel replaces a version string holding an escaped quote whole",
+			updater: updater.Bazel,
+			content: "module(\n    name = \"rules_release\",\n    version = \"1.4.0\\\"x\",\n)\n",
+			from:    `    version = "1.4.0\"x",`,
 			to:      `    version = "1.5.0-rc.1",`,
 		},
 		{
