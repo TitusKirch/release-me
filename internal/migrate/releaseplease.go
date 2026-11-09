@@ -65,8 +65,8 @@ type rpPackage struct {
 var packageKeys = append([]string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
-	"initial-version", "extra-files", "version-file", "changelog-type", "include-commit-authors",
-	"changelog-host", "prerelease-type", "prerelease",
+	"initial-version", "extra-files", "version-file", "exclude-paths", "changelog-type",
+	"include-commit-authors", "changelog-host", "prerelease-type", "prerelease",
 }, releaseFlagKeys()...)
 
 // releaseFlag is a boolean release-please package setting release-me reads
@@ -345,6 +345,9 @@ type component struct {
 	// release-me selects through a label, "" when it is left out or
 	// cannot carry over.
 	preReleaseType string
+	// excludePaths are the package's exclude-paths that lie inside it,
+	// cleaned, relative to the repository root as in release-please.
+	excludePaths []string
 }
 
 // file is one release-me "files" entry.
@@ -538,6 +541,13 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		}
 		c.files = append(c.files, files...)
 	}
+	if raw, ok := p.settings["exclude-paths"]; ok {
+		exclude, err := translateExcludePaths(p.path, raw, warn)
+		if err != nil {
+			return component{}, err
+		}
+		c.excludePaths = exclude
+	}
 	return c, nil
 }
 
@@ -635,6 +645,32 @@ func translatePreReleaseType(pkgPath, preReleaseType string, preRelease bool, wa
 // with, release-me's own "release: <type>" shape.
 func preReleaseLabel(preReleaseType string) string {
 	return "release: " + preReleaseType
+}
+
+// translateExcludePaths carries over the exclude-paths of the package at
+// pkgPath. release-please reads them relative to the repository root, as
+// release-me does; one that does not lie inside the package excludes
+// nothing there, the shape a top-level default listing every package's
+// subpaths leaves on each package, and is left out.
+func translateExcludePaths(pkgPath string, raw json.RawMessage, warn func(string, ...any)) ([]string, error) {
+	var paths []string
+	if err := json.Unmarshal(raw, &paths); err != nil {
+		return nil, fmt.Errorf("migrate: package %s: exclude-paths: %w", pkgPath, err)
+	}
+	var out []string
+	for _, p := range paths {
+		clean := cleanPackagePath(p)
+		inside := clean != "." && clean != ".." && !strings.HasPrefix(clean, "../") &&
+			(pkgPath == "." || strings.HasPrefix(clean, pkgPath+"/"))
+		if !inside {
+			warn("package %s: exclude-paths: %s does not lie inside the package, left out", pkgPath, p)
+			continue
+		}
+		if !slices.Contains(out, clean) {
+			out = append(out, clean)
+		}
+	}
+	return out, nil
 }
 
 // translateExtraFiles carries over the extra-files entries an updater can
@@ -1144,6 +1180,7 @@ func render(components []component, top topLevel) ([]byte, error) {
 			add(doc, "changelog", scalar(c.changelog))
 		}
 		addSettings(doc, c, shared, topFlags, add)
+		addExcludePaths(doc, c, add)
 	} else {
 		comps := &yaml.Node{Kind: yaml.MappingNode}
 		for _, c := range components {
@@ -1156,6 +1193,7 @@ func render(components []component, top topLevel) ([]byte, error) {
 				add(m, "changelog", scalar(c.changelog))
 			}
 			addSettings(m, c, shared, topFlags, add)
+			addExcludePaths(m, c, add)
 			add(comps, c.name, m)
 		}
 		add(doc, "components", comps)
@@ -1234,6 +1272,19 @@ func labelNode(names []string) *yaml.Node {
 		list.Content = append(list.Content, scalar(n))
 	}
 	return list
+}
+
+// addExcludePaths writes the component's exclude-paths, at the top level for
+// the implicit main component and on the component otherwise.
+func addExcludePaths(m *yaml.Node, c component, add func(*yaml.Node, string, *yaml.Node)) {
+	if len(c.excludePaths) == 0 {
+		return
+	}
+	list := &yaml.Node{Kind: yaml.SequenceNode}
+	for _, p := range c.excludePaths {
+		list.Content = append(list.Content, scalar(p))
+	}
+	add(m, "exclude-paths", list)
 }
 
 // scalar is a plain string node; yaml.v3 quotes it where YAML needs that,
