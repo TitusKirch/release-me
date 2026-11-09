@@ -131,6 +131,11 @@ publish step fail after an earlier run tagged and drafted it, so this reprints t
 `released-tag` marker for it, without creating anything again, letting the workflow's asset
 step retry. Off, the default, this never runs: a published release has nothing left to resume.
 
+With `force-tag-creation: false`, `release` creates no tag itself: the release names the merge
+commit as its target and GitHub tags it when the release is published, so a draft reports
+`drafted <tag>, tagged on publish` and has no tag until then. See
+[configuration](configuration.md#force-tag-creation).
+
 With `skip-github-release: true`, `release` tags the merge commit, swaps the label and prints
 the `released-tag` marker as usual, but creates no GitHub release, for a workflow that creates
 it from the tag itself. See [configuration](configuration.md#skip-github-release).
@@ -199,6 +204,9 @@ only the files outside the other components' paths, where release-please's root 
 counted every commit. It also carries over:
 
 - `bump-minor-pre-major`, `bump-patch-for-minor-pre-major` and `initial-version`;
+- `force-tag-creation`, at the top level when every package carries the same value, on the
+  component otherwise. When absent, release-me's default `true` is kept, rather than
+  release-please's `false`; without drafts both create the tag during the release run;
 - `skip-github-release`, at the top level when every package carries the same value, on the
   component otherwise; release-me still creates the tag, unlike release-please, so remove
   any external tagging step the old workflow needed;

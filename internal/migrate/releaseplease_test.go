@@ -723,6 +723,7 @@ func TestFromReleasePleaseCarriesAlwaysLinkLocalOver(t *testing.T) {
 
 func TestFromReleasePleaseCarriesTheGitHubReleaseSettingsOver(t *testing.T) {
 	t.Parallel()
+	forceTag := func(c config.ResolvedComponent) bool { return c.ForceTagCreation }
 	skip := func(c config.ResolvedComponent) bool { return c.SkipGitHubRelease }
 	cases := []struct {
 		name       string
@@ -731,6 +732,25 @@ func TestFromReleasePleaseCarriesTheGitHubReleaseSettingsOver(t *testing.T) {
 		get        func(config.ResolvedComponent) bool
 		want       []bool
 	}{
+		{
+			name:       "leaves out force-tag-creation for a published release",
+			configJSON: `{"packages": {".": {"release-type": "go"}}}`,
+			get:        forceTag, want: []bool{true},
+		},
+		{
+			name:       "carries force-tag-creation turned off explicitly",
+			configJSON: `{"force-tag-creation": false, "packages": {".": {"release-type": "go"}}}`,
+			wantYAML:   "\nforce-tag-creation: false\n",
+			get:        forceTag, want: []bool{false},
+		},
+		{
+			name: "writes force-tag-creation on the one package that turns it off",
+			configJSON: `{"packages": {
+			  "api": {"component": "api", "release-type": "go"},
+			  "web": {"component": "web", "release-type": "go", "force-tag-creation": false}}}`,
+			wantYAML: "    path: web\n    tag-prefix: web-v\n    force-tag-creation: false\n",
+			get:      forceTag, want: []bool{true, false},
+		},
 		{
 			name:       "writes skip-github-release once for a root package",
 			configJSON: `{"skip-github-release": true, "packages": {".": {"release-type": "go"}}}`,

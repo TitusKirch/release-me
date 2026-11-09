@@ -121,9 +121,13 @@ type Forge interface {
 	// assets attach, and release-me cannot detect that setting itself.
 	// A draft is exempt from immutability either way, so a caller that
 	// does ask for one can still attach assets before publishing it.
+	// target is the commit the forge creates tag on when tag does not
+	// exist yet, once the release is published: right away for a
+	// published release, on publish for a draft. "" leaves it to the
+	// forge's default, for a caller that created tag itself first.
 	// It returns the release it created. ErrReleaseExists is returned
 	// when a release for tag already exists.
-	CreateRelease(ctx context.Context, owner, repo, tag, name, body string, prerelease, draft bool) (Release, error)
+	CreateRelease(ctx context.Context, owner, repo, tag, target, name, body string, prerelease, draft bool) (Release, error)
 
 	// Release reads the release for tag, draft or published.
 	// ErrReleaseNotFound is returned when tag has no release at all. A

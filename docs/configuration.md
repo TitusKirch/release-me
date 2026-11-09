@@ -624,6 +624,35 @@ See [release](commands.md#release) for what `true` changes, and
 setting needs: `publish.yaml`'s own webhook-triggered asset step for `false`, `release.yaml`
 attaching and publishing the release itself for `true`.
 
+## `force-tag-creation`
+
+Creates the tag on the merge commit before the release, default `true`, the way release-me
+always has, so a draft's tag exists while the draft waits. `false` leaves the tag to GitHub
+instead, the release-please default: the release is created with the merge commit as its
+target, and GitHub creates the tag on it when the release is published, right away for a
+published release, on publish for a draft from
+[`draft-until-assets-attach`](#draft-until-assets-attach). That tag creation on publish is
+GitHub behaviour release-me relies on but GitHub does not document anywhere, and it is not
+verified against a live repository either. If the tag does not appear after a publish, `pr`
+reports the missing tag and waits instead of releasing the same version again.
+The run then reports `drafted <tag>, tagged on publish`. Until that publish the tag does not
+exist: a later step must not expect it, a rerun cannot tell a draft it tagged before, and the
+[major tag](#major-tag) already points at the merge commit. The draft is still found by its tag
+name, so the resume of `draft-until-assets-attach` and the guard against a second draft work
+the same. A component overrides it through its own `force-tag-creation` key.
+
+Keep `force-tag-creation: true` when using this repository's
+`scripts/publish-release-assets.sh` with `draft-until-assets-attach`: the script checks out
+the tag and GoReleaser resolves it before publishing, so both need an existing git ref.
+A workflow that defers the tag must build from the release's `targetCommitish` instead of
+checking out the tag, and use tooling that can build without that tag ref.
+
+While a deferred version tag is absent and its release is an unpublished draft, `pr` waits
+for `release` to resume that draft. It does not open another pull request for the same version,
+including after switching per-component releases to a shared pull request. Publishing the
+draft creates the tag and unblocks `pr`; deleting the draft also unblocks it, so the next
+run can create the release again.
+
 ## `skip-github-release`
 
 Tags a merged release pull request without creating a GitHub release, default `false`, for a
@@ -764,7 +793,8 @@ component's `path` or lies outside it is a configuration error.
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `release-as` (only with `versioning: independent`),
 `hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
-`changelog-type`, `skip-github-release`, `skip-changelog` and `changelog`, plus its own
+`changelog-type`, `force-tag-creation`, `skip-github-release`, `skip-changelog` and
+`changelog`, plus its own
 [`exclude-paths`](#exclude-paths), which the top-level key cannot apply beside configured
 components. A key left out of a component falls back to the top-level setting above. A
 repository without `components` is one component named `main` at path `.`, tag prefix `v`,

@@ -75,7 +75,11 @@ var packageKeys = append([]string{
 // releaseFlag is a boolean release-please package setting release-me reads
 // under the same key, top level and per component, and release-me's own
 // default for it: a value equal to the default is left out of
-// release-me.yaml.
+// release-me.yaml. An absent source key also adopts this target default.
+// For force-tag-creation that deliberately differs from release-please:
+// this migration does not carry draft over, so both defaults create the
+// tag during immediate publication. A setting with different absence
+// semantics needs a separate source default.
 type releaseFlag struct {
 	key string
 	def bool
@@ -84,6 +88,7 @@ type releaseFlag struct {
 // releaseFlags are the release-flag settings this translation carries
 // over, in the order release-me.yaml lists them.
 var releaseFlags = []releaseFlag{
+	{key: "force-tag-creation", def: true},
 	{key: "skip-github-release", def: false},
 }
 

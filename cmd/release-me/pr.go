@@ -186,12 +186,12 @@ func doPRComponent(
 	}
 
 	if existing == nil {
-		pending, err := mergedPendingRelease(ctx, f, owner, repoName, comp.Branch, cfg.Labels.Pending, logger)
+		deferral, err := mergedReleaseDeferral(ctx, f, owner, repoName, comp.Branch, cfg, logger)
 		if err != nil {
 			return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
 		}
-		if pending {
-			printLine(stdout, comp.Name, multi, "nothing to release")
+		if deferral != "" {
+			printLine(stdout, comp.Name, multi, deferral)
 			return nil
 		}
 	}
@@ -368,12 +368,12 @@ func doPRLocked(
 	}
 
 	if existing == nil {
-		pending, err := mergedPendingRelease(ctx, f, owner, repoName, branch, cfg.Labels.Pending, logger)
+		deferral, err := mergedReleaseDeferral(ctx, f, owner, repoName, branch, cfg, logger)
 		if err != nil {
 			return fmt.Errorf("release-me: locked family: %w", err)
 		}
-		if pending {
-			fmt.Fprintln(stdout, "nothing to release")
+		if deferral != "" {
+			fmt.Fprintln(stdout, deferral)
 			return nil
 		}
 	}
@@ -592,11 +592,25 @@ func lockedPreReleaseEntries(
 	return versionStr, out, nil
 }
 
-// mergedPendingRelease reports whether branch already carries a closed,
-// merged pull request still carrying every one of pendingLabels: a release already
-// decided, not yet tagged. doRelease recognizes the exact same pull
-// request by the exact same signal to tag it, so as long as it still
-// carries the label, nothing else may release in its place.
+// mergedReleaseDeferral returns a message when branch carries a closed,
+// merged pull request still carrying every one of the pending labels, or a
+// tagged release whose deferred tag is absent. An empty message means a new
+// release pull request may be opened. Only the newest merged, tagged pull
+// request is probed for a missing deferred tag, keeping remote lookups
+// bounded as the release history grows.
+//
+// That probe runs whatever "draft-until-assets-attach" is set to, because a
+// deferred tag can go missing without a draft ever existing: with drafts
+// off the release is published right away, and if GitHub then creates no
+// tag, nothing local would notice. It costs nothing where no component
+// defers its tag, which is the default: unpublishedDeferredRelease skips
+// every component with ForceTagCreation on before it makes a single forge
+// call.
+//
+// The pending labels signal a release already decided, not yet tagged.
+// doRelease recognizes the exact same pull request by the exact same
+// signal to tag it, so as long as it still carries the label, nothing else
+// may release in its place.
 //
 // This is the case right after a release pull request's merge lands on
 // the default branch: that same push's run invocation calls doPR before
@@ -608,19 +622,113 @@ func lockedPreReleaseEntries(
 // stays blind to that tag until the next checkout. Recognizing the
 // merged, still pending pull request directly, the same way doRelease
 // already does, needs no local git state at all.
-func mergedPendingRelease(ctx context.Context, f forge.Forge, owner, repoName, branch string, pendingLabels []string, logger *slog.Logger) (bool, error) {
+func mergedReleaseDeferral(ctx context.Context, f forge.Forge, owner, repoName, branch string, cfg config.Config, logger *slog.Logger) (string, error) {
 	closed, err := f.PullRequests(ctx, owner, repoName, branch, "closed")
 	if err != nil {
-		return false, fmt.Errorf("list closed pull requests on %s: %w", branch, err)
+		return "", fmt.Errorf("list closed pull requests on %s: %w", branch, err)
 	}
+	var newestTagged *forge.PullRequest
 	for _, pr := range closed {
-		if pr.Merged && tagrelease.HasAll(pr.Labels, pendingLabels) {
+		if !pr.Merged {
+			continue
+		}
+		if tagrelease.HasAll(pr.Labels, cfg.Labels.Pending) {
 			logger.Debug("merged pull request still pending, deferring to release",
 				"head", branch, "number", pr.Number)
-			return true, nil
+			return "nothing to release", nil
+		}
+		if tagrelease.HasAll(pr.Labels, cfg.Labels.Tagged) && (newestTagged == nil || pr.Number > newestTagged.Number) {
+			newestTagged = &pr
 		}
 	}
-	return false, nil
+	if newestTagged != nil {
+		deferral, err := unpublishedDeferredRelease(ctx, f, owner, repoName, cfg, *newestTagged)
+		if err != nil {
+			return "", err
+		}
+		if deferral != "" {
+			logger.Debug("merged release has an unpublished deferred tag, deferring to release",
+				"head", branch, "number", newestTagged.Number, "deferral", deferral)
+			return deferral, nil
+		}
+	}
+	return "", nil
+}
+
+// unpublishedDeferredRelease checks the version the merged PR actually
+// released, rather than the next version recomputed from a still-missing tag.
+// It returns the message the caller prints, or an empty string when a new
+// release pull request may be opened.
+//
+// Two states hold a new pull request back, both of them reachable only
+// while the tag a component deferred to the release publish is still
+// absent. The first is a release still waiting as a draft: publishing it
+// creates the tag, so the next run moves on. A draft is reachable even
+// with "draft-until-assets-attach" off now, because it can have been
+// created while that key was still on. The second is a release that
+// is already published while its tag is still missing, which is the state
+// GitHub is not supposed to leave behind at all: creating a release with a
+// target commitish is assumed to create the tag on publish, and that
+// assumption is not documented anywhere authoritative, see
+// forge/github.CreateRelease. This branch is where a wrong assumption
+// surfaces. Nothing reaches it while GitHub does create the tag, because
+// TagExists is true then and the loop continues before any release lookup.
+//
+// Both states defer rather than return an error, because deferring is the
+// conservative answer to each of them. It never opens a pull request for a
+// version that is already released, a transient race between the publish
+// and the tag creation resolves itself on the next run, and an assumption
+// that is permanently wrong shows a named, repeated message on every run
+// instead of a silent loop that reopens the same release pull request and
+// re-releases the same version forever.
+func unpublishedDeferredRelease(ctx context.Context, f forge.Forge, owner, repoName string, cfg config.Config, pr forge.PullRequest) (string, error) {
+	versions := map[string]string{}
+	components := cfg.Resolve()
+	for _, comp := range components {
+		if v, ok := tagrelease.VersionFromTitle(pr.Title, comp.Name); ok {
+			versions[comp.Name] = v
+		}
+	}
+	if titled, ok := tagrelease.ParseSharedTitle(pr.Title); ok {
+		for _, r := range titled {
+			versions[r.Name] = r.Version
+		}
+	}
+	if v, names, ok := tagrelease.VersionFromLockedTitle(pr.Title); ok {
+		for _, name := range names {
+			versions[name] = v
+		}
+	}
+	for _, comp := range components {
+		v := versions[comp.Name]
+		if comp.ForceTagCreation || v == "" {
+			continue
+		}
+		tag := comp.TagPrefix + v
+		exists, err := f.TagExists(ctx, owner, repoName, tag)
+		if err != nil {
+			return "", fmt.Errorf("component %s pull request #%d: check deferred tag %s: %w", comp.Name, pr.Number, tag, err)
+		}
+		if exists {
+			continue
+		}
+		rel, err := f.Release(ctx, owner, repoName, tag)
+		if errors.Is(err, forge.ErrReleaseNotFound) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("component %s pull request #%d: check deferred draft %s: %w", comp.Name, pr.Number, tag, err)
+		}
+		if rel.Draft {
+			return fmt.Sprintf("waiting for unpublished release %q from pull request #%d; publish or delete its draft to continue", pr.Title, pr.Number), nil
+		}
+		return fmt.Sprintf(
+			"the release from pull request #%d is published but its tag %s does not exist, so GitHub did not create it; "+
+				"create %s on the release's target commit, or delete the release so the next run recreates it",
+			pr.Number, tag, tag,
+		), nil
+	}
+	return "", nil
 }
 
 // resolveBaseBranch reads the repository's default branch from the forge,

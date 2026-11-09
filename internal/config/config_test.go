@@ -109,6 +109,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
+				ForceTagCreation:         true,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
 			},
@@ -167,6 +168,7 @@ files:
 				ReleasePullRequest:       config.ReleasePullRequestShared,
 				DraftUntilAssetsAttach:   true,
 				CommentMention:           config.DefaultCommentMention,
+				ForceTagCreation:         true,
 				ReleasePullRequestLayout: config.LayoutDetails,
 				DeleteReleaseBranch:      false,
 				AlwaysLinkLocal:          true,
@@ -197,6 +199,7 @@ files:
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
+				ForceTagCreation:         true,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
 			},
@@ -221,6 +224,7 @@ files:
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
+				ForceTagCreation:         true,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
 			},
@@ -245,6 +249,7 @@ files:
 				ReleasePullRequestLayout: config.DefaultReleasePullRequestLayout,
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
+				ForceTagCreation:         true,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
 			},
@@ -572,7 +577,7 @@ func TestResolveReturnsTheImplicitMainComponentWithoutAComponentsKey(t *testing.
 		Name: "main", Path: ".", TagPrefix: "v", Branch: "release-me/main",
 		ChangelogPath: "CHANGELOG.md", Multi: false,
 		InitialVersion: config.DefaultInitialVersion, HiddenTypes: config.DefaultHiddenTypes,
-		ChangelogSource: config.DefaultChangelogSource,
+		ChangelogSource: config.DefaultChangelogSource, ForceTagCreation: true,
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resolve() = %+v, want %+v", got, want)
@@ -610,14 +615,14 @@ components:
 			ChangelogPath: "backend/CHANGELOG.md", Multi: true,
 			InitialVersion: "0.5.0", BumpMinorPreMajor: true, BumpPatchForMinorPreMajor: true,
 			HiddenTypes:     []string{"chore", "docs"},
-			ChangelogSource: config.DefaultChangelogSource,
+			ChangelogSource: config.DefaultChangelogSource, ForceTagCreation: true,
 		},
 		{
 			Name: "frontend", Path: "frontend", TagPrefix: "frontend/v", Branch: "release-me/frontend",
 			ChangelogPath: "frontend/CHANGELOG.md", Multi: true,
 			InitialVersion: "0.2.0", BumpMinorPreMajor: false, BumpPatchForMinorPreMajor: false, ReleaseAs: "v1.0.0", HiddenTypes: []string{"chore"},
 			Files:           []config.File{{Path: "frontend/package.json", Updater: "marker"}},
-			ChangelogSource: config.DefaultChangelogSource,
+			ChangelogSource: config.DefaultChangelogSource, ForceTagCreation: true,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -663,6 +668,7 @@ const releaseKeysConfig = `components:
 
 func TestResolveAppliesTheGitHubReleaseKeysFromTheTopLevelAndPerComponentOverride(t *testing.T) {
 	t.Parallel()
+	forceTag := func(c config.ResolvedComponent) bool { return c.ForceTagCreation }
 	skip := func(c config.ResolvedComponent) bool { return c.SkipGitHubRelease }
 	cases := []struct {
 		name    string
@@ -670,6 +676,16 @@ func TestResolveAppliesTheGitHubReleaseKeysFromTheTopLevelAndPerComponentOverrid
 		get     func(config.ResolvedComponent) bool
 		want    []bool
 	}{
+		{name: "force-tag-creation is on by default", get: forceTag, want: []bool{true}},
+		{
+			name: "force-tag-creation turns off for the implicit main component", content: "force-tag-creation: false\n",
+			get: forceTag, want: []bool{false},
+		},
+		{
+			name:    "a component turns force-tag-creation off for itself alone",
+			content: releaseKeysConfig + "    force-tag-creation: false\n",
+			get:     forceTag, want: []bool{true, false},
+		},
 		{name: "skip-github-release is off by default", get: skip, want: []bool{false}},
 		{
 			name: "skip-github-release applies to the implicit main component", content: "skip-github-release: true\n",

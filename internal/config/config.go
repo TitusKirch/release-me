@@ -7,9 +7,9 @@
 // changelog-type, skip-changelog, the changelog style keys ChangelogStyle
 // lists, labels, prerelease-types, author, major-tag, versioning, signoff,
 // release-pull-request-title, release-pull-request-shared-title,
-// draft-until-assets-attach, skip-github-release, comment-mention,
-// delete-release-branch, workspaces, always-link-local, exclude-paths and
-// components.
+// draft-until-assets-attach, force-tag-creation, skip-github-release,
+// comment-mention, delete-release-branch, workspaces, always-link-local,
+// exclude-paths and components.
 package config
 
 import (
@@ -405,6 +405,13 @@ type Config struct {
 	// applies to the whole repository, there is no per-component
 	// override. See docs/adr/0001-draft-releases-until-assets-attach.md.
 	DraftUntilAssetsAttach bool
+	// ForceTagCreation is the top-level "force-tag-creation" key, default
+	// true: release creates the tag itself, before the release, even for
+	// a draft. False leaves the tag to GitHub, which creates it from the
+	// release's target commit once the release is published, immediately
+	// for a published release, on publish for a draft. A component
+	// overrides it through its own "force-tag-creation" key.
+	ForceTagCreation bool
 	// SkipGitHubRelease is the top-level "skip-github-release" key,
 	// default false: when true, release tags a merged release pull request
 	// and swaps its label but creates no GitHub release, for a repository
@@ -452,8 +459,8 @@ type Config struct {
 // and optional overrides of the top-level initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, release-as,
 // hidden-types, files, major-tag, changelog-source, changelog-type,
-// skip-changelog and skip-github-release, plus its own tag-prefix,
-// changelog path and exclude-paths. A nil
+// skip-changelog, force-tag-creation and skip-github-release, plus its own
+// tag-prefix, changelog path and exclude-paths. A nil
 // field was left out of release-me.yaml and falls back to the top-level
 // value, the same left-out-versus-zero-value distinction Load applies to
 // the top level itself.
@@ -470,6 +477,7 @@ type Component struct {
 	ChangelogType             *string
 	SkipChangelog             *bool
 	ChangelogSource           *string
+	ForceTagCreation          *bool
 	SkipGitHubRelease         *bool
 	ChangelogSections         *[]ChangelogSection
 	// TagPrefix is the component's "tag-prefix" key, nil when it was left
@@ -525,6 +533,9 @@ type ResolvedComponent struct {
 	OtherPaths []string
 	// ChangelogStyle is the top level's, the same for every component.
 	ChangelogStyle ChangelogStyle
+	// ForceTagCreation is true when release creates this component's tag
+	// itself, false when it leaves the tag to GitHub's release publish.
+	ForceTagCreation bool
 	// SkipGitHubRelease is true when release tags this component without
 	// creating a GitHub release for the tag.
 	SkipGitHubRelease bool
@@ -560,6 +571,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
 			ChangelogStyle:            cfg.ChangelogStyle,
+			ForceTagCreation:          cfg.ForceTagCreation,
 			SkipGitHubRelease:         cfg.SkipGitHubRelease,
 			ExcludePaths:              cfg.ExcludePaths,
 			ChangelogSections:         cfg.ChangelogSections,
@@ -596,6 +608,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
 			ChangelogStyle:            cfg.ChangelogStyle,
+			ForceTagCreation:          cfg.ForceTagCreation,
 			SkipGitHubRelease:         cfg.SkipGitHubRelease,
 			ExcludePaths:              c.ExcludePaths,
 			ChangelogSections:         cfg.ChangelogSections,
@@ -639,6 +652,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 					rc.OtherPaths = append(rc.OtherPaths, other.Path)
 				}
 			}
+		}
+		if c.ForceTagCreation != nil {
+			rc.ForceTagCreation = *c.ForceTagCreation
 		}
 		if c.SkipGitHubRelease != nil {
 			rc.SkipGitHubRelease = *c.SkipGitHubRelease
@@ -787,6 +803,7 @@ type raw struct {
 	ReleasePullRequestGuide       *bool                  `yaml:"release-pull-request-guide"`
 	Signoff                       *string                `yaml:"signoff"`
 	DraftUntilAssetsAttach        *bool                  `yaml:"draft-until-assets-attach"`
+	ForceTagCreation              *bool                  `yaml:"force-tag-creation"`
 	SkipGitHubRelease             *bool                  `yaml:"skip-github-release"`
 	CommentMention                *string                `yaml:"comment-mention"`
 	ReleasePullRequestTitle       *string                `yaml:"release-pull-request-title"`
@@ -820,6 +837,7 @@ type rawComponent struct {
 	ChangelogType             *string                `yaml:"changelog-type"`
 	SkipChangelog             *bool                  `yaml:"skip-changelog"`
 	ChangelogSource           *string                `yaml:"changelog-source"`
+	ForceTagCreation          *bool                  `yaml:"force-tag-creation"`
 	SkipGitHubRelease         *bool                  `yaml:"skip-github-release"`
 	ChangelogSections         *[]rawChangelogSection `yaml:"changelog-sections"`
 	TagPrefix                 *string                `yaml:"tag-prefix"`
@@ -846,6 +864,7 @@ func Default() Config {
 		ReleasePullRequestLayout: DefaultReleasePullRequestLayout,
 		ReleasePullRequestGuide:  true,
 		CommentMention:           DefaultCommentMention,
+		ForceTagCreation:         true,
 		DeleteReleaseBranch:      true,
 		AlwaysLinkLocal:          true,
 	}
@@ -1140,6 +1159,9 @@ func Load(path string) (cfg Config, err error) {
 	if r.DraftUntilAssetsAttach != nil {
 		cfg.DraftUntilAssetsAttach = *r.DraftUntilAssetsAttach
 	}
+	if r.ForceTagCreation != nil {
+		cfg.ForceTagCreation = *r.ForceTagCreation
+	}
 	if r.SkipGitHubRelease != nil {
 		cfg.SkipGitHubRelease = *r.SkipGitHubRelease
 	}
@@ -1412,6 +1434,7 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag, ChangelogType: rc.ChangelogType,
 			SkipChangelog:   rc.SkipChangelog,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
+			ForceTagCreation:  rc.ForceTagCreation,
 			SkipGitHubRelease: rc.SkipGitHubRelease,
 		}
 		if rc.Files != nil {
