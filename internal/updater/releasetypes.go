@@ -16,12 +16,24 @@ import (
 // so a quoted value stays quoted the same way. It reports whether a line
 // matched.
 func replaceFirstLine(content string, pattern *regexp.Regexp, version string) (string, bool) {
+	return replaceFirstLineOutside(content, pattern, version, nil)
+}
+
+// replaceFirstLineOutside is replaceFirstLine restricted to a value that
+// lies outside skip, the spans of content no value may be taken from, such
+// as the heredocs of a mix.exs.
+func replaceFirstLineOutside(content string, pattern *regexp.Regexp, version string, skip []span) (string, bool) {
 	lines := strings.Split(content, "\n")
+	offset := 0
 	for i, line := range lines {
-		if m := pattern.FindStringSubmatch(line); m != nil {
-			lines[i] = m[1] + quoteLike(m[2], version) + m[3]
+		// The value is the pattern's second group, so its span is the
+		// third index pair FindStringSubmatchIndex reports.
+		if m := pattern.FindStringSubmatchIndex(line); m != nil && !inSpan(skip, offset+m[4]) {
+			start, stop := m[4], m[5]
+			lines[i] = line[:start] + quoteLike(line[start:stop], version) + line[stop:]
 			return strings.Join(lines, "\n"), true
 		}
+		offset += len(line) + 1
 	}
 	return "", false
 }
@@ -77,13 +89,16 @@ var (
 // UpdateElixir replaces the version of a mix.exs: its @version module
 // attribute where it has one, which project/0 then refers to, otherwise
 // the string of the "version:" keyword of the list project/0 returns, as
-// release-please's mix.exs updater does. An error is returned when neither
-// is found.
+// release-please's mix.exs updater does. Nothing a heredoc holds is read,
+// so a mix.exs whose documentation shows a version, an @version attribute
+// or a whole project/0 definition keeps that example and has its real
+// version bumped. An error is returned when neither is found.
 func UpdateElixir(content, version string) (string, error) {
-	if out, ok := replaceFirstLine(content, elixirAttribute, version); ok {
+	heredocs := elixirHeredocs(content)
+	if out, ok := replaceFirstLineOutside(content, elixirAttribute, version, heredocs); ok {
 		return out, nil
 	}
-	if out, ok := replaceElixirKeyword(content, version); ok {
+	if out, ok := replaceElixirKeyword(content, version, heredocs); ok {
 		return out, nil
 	}
 	return "", fmt.Errorf("updater: elixir: no @version attribute or version keyword holding a string found")
@@ -92,50 +107,59 @@ func UpdateElixir(content, version string) (string, error) {
 // replaceElixirKeyword replaces the string of the "version:" keyword in the
 // list mix.exs's project/0 returns. The search is scoped to that list, the
 // way UpdateBazel scopes its search to the module() call, so that a version
-// example in a @moduledoc, a comment or another function cannot be taken
-// for the project's own version, and so that the keyword is found wherever
-// it sits on its line. It reports whether the keyword was found.
-func replaceElixirKeyword(content, version string) (string, bool) {
-	head := elixirProject.FindStringIndex(content)
-	if head == nil {
-		return "", false
+// example in a comment or another function cannot be taken for the
+// project's own version, and so that the keyword is found wherever it sits
+// on its line. A definition head inside one of heredocs is not a
+// definition but documentation of one, so it is skipped rather than
+// scoped to. It reports whether the keyword was found.
+func replaceElixirKeyword(content, version string, heredocs []span) (string, bool) {
+	for _, head := range elixirProject.FindAllStringIndex(content, -1) {
+		if inSpan(heredocs, head[0]) {
+			continue
+		}
+		open := strings.IndexByte(content[head[1]:], '[')
+		if open < 0 {
+			return "", false
+		}
+		open += head[1] + 1
+		end := closingDelimiter(content, open, '[', ']', heredocs)
+		if end < 0 {
+			return "", false
+		}
+		m := elixirVersionKeyword(content, open, end, heredocs)
+		if m == nil {
+			return "", false
+		}
+		return content[:m[2]] + quoteLike(content[m[2]:m[3]], version) + content[m[3]:], true
 	}
-	open := strings.IndexByte(content[head[1]:], '[')
-	if open < 0 {
-		return "", false
-	}
-	open += head[1] + 1
-	end := closingDelimiter(content, open, '[', ']')
-	if end < 0 {
-		return "", false
-	}
-	m := elixirVersionKeyword(content[open:end])
-	if m == nil {
-		return "", false
-	}
-	start, stop := open+m[2], open+m[3]
-	return content[:start] + quoteLike(content[start:stop], version) + content[stop:], true
+	return "", false
 }
 
 // elixirVersionKeyword locates the top-level "version:" keyword and its
-// string span in the keyword list list, skipping comments, other strings
-// and nested expressions such as a dependency's own version.
-func elixirVersionKeyword(list string) []int {
+// string span in the keyword list content holds between from and to,
+// skipping comments, heredocs, other strings and nested expressions such
+// as a dependency's own version. The span it returns is an index into
+// content, not into the list.
+func elixirVersionKeyword(content string, from, to int, heredocs []span) []int {
 	depth := 0
-	for i := 0; i < len(list); i++ {
-		switch c := list[i]; c {
+	for i := from; i < to; i++ {
+		if end := spanEnd(heredocs, i); end > i {
+			i = end - 1
+			continue
+		}
+		switch c := content[i]; c {
 		case '#':
-			for i < len(list) && list[i] != '\n' {
+			for i < to && content[i] != '\n' {
 				i++
 			}
 		case '\'', '"':
 			quote := c
-			for i++; i < len(list); i++ {
-				if list[i] == '\\' {
+			for i++; i < to; i++ {
+				if content[i] == '\\' {
 					i++
 					continue
 				}
-				if list[i] == quote {
+				if content[i] == quote {
 					break
 				}
 			}
@@ -144,14 +168,14 @@ func elixirVersionKeyword(list string) []int {
 		case ')', ']', '}':
 			depth--
 		default:
-			if depth == 0 && strings.HasPrefix(list[i:], "version:") {
-				if i > 0 {
-					prev := list[i-1]
+			if depth == 0 && strings.HasPrefix(content[i:to], "version:") {
+				if i > from {
+					prev := content[i-1]
 					if prev == '_' || prev == ':' || prev >= 'a' && prev <= 'z' || prev >= 'A' && prev <= 'Z' || prev >= '0' && prev <= '9' {
 						continue
 					}
 				}
-				if m := elixirKeyword.FindStringSubmatchIndex(list[i:]); m != nil && m[0] == 0 {
+				if m := elixirKeyword.FindStringSubmatchIndex(content[i:to]); m != nil && m[0] == 0 {
 					for n := range m {
 						m[n] += i
 					}
@@ -161,6 +185,115 @@ func elixirVersionKeyword(list string) []int {
 		}
 	}
 	return nil
+}
+
+// span is a half open byte range of a file's content, [start, end).
+type span struct {
+	start, end int
+}
+
+// inSpan reports whether pos lies in one of spans.
+func inSpan(spans []span, pos int) bool {
+	for _, s := range spans {
+		if pos >= s.start && pos < s.end {
+			return true
+		}
+	}
+	return false
+}
+
+// spanEnd returns the end of the span that starts at pos, or pos itself
+// when none does, so that a scanner can skip a span it runs into.
+func spanEnd(spans []span, pos int) int {
+	for _, s := range spans {
+		if s.start == pos {
+			return s.end
+		}
+	}
+	return pos
+}
+
+// elixirHeredocs returns the spans content's heredocs cover, both the
+// triple double quote and the triple single quote kind, each from its
+// opening delimiter to the end of its closing one.
+//
+// A heredoc opens where its delimiter is the last thing on a line and
+// closes on the next line that holds nothing but whitespace before the
+// same delimiter. That is why heredocs do not nest: inside a heredoc body
+// the delimiter either closes it or is plain text, and the other kind of
+// delimiter is always plain text. An unterminated heredoc runs to the end
+// of content, which keeps a file Elixir itself would refuse from having
+// anything read out of it.
+func elixirHeredocs(content string) []span {
+	var spans []span
+	var delimiter string
+	start := 0
+	for offset := 0; offset < len(content); {
+		line := content[offset:]
+		if n := strings.IndexByte(line, '\n'); n >= 0 {
+			line = line[:n]
+		}
+		next := offset + len(line) + 1
+		switch {
+		case delimiter != "":
+			if rest := strings.TrimLeft(line, " \t"); strings.HasPrefix(rest, delimiter) {
+				spans = append(spans, span{start, offset + len(line) - len(rest) + len(delimiter)})
+				delimiter = ""
+			}
+		default:
+			if i, d := elixirHeredocOpener(line); d != "" {
+				delimiter, start = d, offset+i
+			}
+		}
+		offset = next
+	}
+	if delimiter != "" {
+		spans = append(spans, span{start, len(content)})
+	}
+	return spans
+}
+
+// elixirHeredocOpener returns the index and the kind of the heredoc
+// delimiter that opens at the end of line, or an empty kind when the line
+// opens none. A heredoc opens only where its delimiter is the last thing
+// on its line, so a one line string such as @moduledoc "..." opens none,
+// and only outside a comment, so a comment about a heredoc opens none
+// either.
+func elixirHeredocOpener(line string) (int, string) {
+	trimmed := strings.TrimRight(line, " \t\r")
+	for _, d := range []string{`"""`, `'''`} {
+		if !strings.HasSuffix(trimmed, d) {
+			continue
+		}
+		at := len(trimmed) - len(d)
+		if commented(line, at) {
+			return 0, ""
+		}
+		return at, d
+	}
+	return 0, ""
+}
+
+// commented reports whether a "#" comment has started in line before at,
+// the strings line holds skipped so that a "#" inside one does not count.
+func commented(line string, at int) bool {
+	var quote byte
+	for i := 0; i < at; i++ {
+		switch c := line[i]; {
+		case quote != 0:
+			switch c {
+			case '\\':
+				i++
+			case quote:
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '#':
+			return true
+		}
+	}
+	return false
 }
 
 // opamVersion matches an opam file's top-level "version: \"1.2.3\"" field,
@@ -213,7 +346,7 @@ func UpdateBazel(content, version string) (string, error) {
 	if loc == nil {
 		return "", fmt.Errorf("updater: bazel: no module() call found")
 	}
-	end := closingDelimiter(content, loc[1], '(', ')')
+	end := closingDelimiter(content, loc[1], '(', ')', nil)
 	if end < 0 {
 		return "", fmt.Errorf("updater: bazel: the module() call is never closed")
 	}
@@ -272,12 +405,19 @@ func bazelVersionArgument(call string) []int {
 }
 
 // closingDelimiter returns the index of the close byte that closes the
-// group whose body starts at from, skipping delimiters inside strings and
-// "#" comments, or -1 when the group is never closed.
-func closingDelimiter(content string, from int, open, close byte) int {
+// group whose body starts at from, skipping delimiters inside strings,
+// inside "#" comments and inside one of skip's spans, or -1 when the group
+// is never closed. skip is nil for a language without heredocs.
+func closingDelimiter(content string, from int, open, close byte, skip []span) int {
 	depth := 1
 	var quote byte
 	for i := from; i < len(content); i++ {
+		if quote == 0 {
+			if end := spanEnd(skip, i); end > i {
+				i = end - 1
+				continue
+			}
+		}
 		c := content[i]
 		switch {
 		case quote != 0:
