@@ -150,6 +150,7 @@ files:
 | `fallback-type` | Type assigned to text that does not parse as a conventional commit. | `other` | No |
 | `token-env` | Environment variable holding the GitHub token. | `GITHUB_TOKEN` | No |
 | `changelog` | Changelog file path. | `CHANGELOG.md` | No |
+| `skip-changelog` | Leaves the changelog file alone; the release pull request still carries the section. | `false` | No |
 | `changelog-source` | Which commits become changelog entries. | `first-parent` | No |
 | `changelog-type` | Changelog from the entries (`default`) or GitHub's generated release notes (`github`). | `default` | No |
 | `changelog-host` | Web address every changelog link points at. | the forge's own | No |

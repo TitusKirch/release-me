@@ -4,8 +4,8 @@
 // Package config loads release-me.yaml: initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, hidden-types,
 // fallback-type, token-env, files, changelog, changelog-source,
-// changelog-type, the changelog style keys ChangelogStyle lists, labels,
-// prerelease-types, author, major-tag, versioning, signoff,
+// changelog-type, skip-changelog, the changelog style keys ChangelogStyle
+// lists, labels, prerelease-types, author, major-tag, versioning, signoff,
 // release-pull-request-title, release-pull-request-shared-title,
 // draft-until-assets-attach, skip-github-release, comment-mention,
 // delete-release-branch, workspaces, always-link-local, exclude-paths and
@@ -331,6 +331,11 @@ type Config struct {
 	// ChangelogTypeDefault. A component overrides it through its own
 	// "changelog-type" key.
 	ChangelogType string
+	// SkipChangelog is the top-level "skip-changelog" key, default false:
+	// when true, pr leaves the changelog file alone, the release pull
+	// request and the release still carry the changelog. A component
+	// overrides it through its own "skip-changelog" key.
+	SkipChangelog bool
 	// Versioning is the top-level "versioning" key: how the configured
 	// components' versions relate to each other, default
 	// VersioningIndependent. It applies to the whole family; there is no
@@ -427,8 +432,9 @@ type Config struct {
 // Component is one entry of the "components" key: a name mapped to a path
 // and optional overrides of the top-level initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, hidden-types, files,
-// major-tag, changelog-source and skip-github-release, plus its own
-// tag-prefix, changelog path and exclude-paths. A nil
+// major-tag, changelog-source, changelog-type, skip-changelog and
+// skip-github-release, plus its own tag-prefix, changelog path and
+// exclude-paths. A nil
 // field was left out of release-me.yaml and falls back to the top-level
 // value, the same left-out-versus-zero-value distinction Load applies to
 // the top level itself.
@@ -442,6 +448,7 @@ type Component struct {
 	Files                     *[]File
 	MajorTag                  *bool
 	ChangelogType             *string
+	SkipChangelog             *bool
 	ChangelogSource           *string
 	SkipGitHubRelease         *bool
 	// TagPrefix is the component's "tag-prefix" key, nil when it was left
@@ -483,6 +490,9 @@ type ResolvedComponent struct {
 	// ChangelogType is one of the ChangelogType* constants, or "" for
 	// ChangelogTypeDefault: where this component's changelog comes from.
 	ChangelogType string
+	// SkipChangelog is true when pr leaves this component's changelog
+	// file alone.
+	SkipChangelog bool
 	// ChangelogSource is one of the ChangelogSource* constants: which
 	// commits become this component's changelog entries.
 	ChangelogSource string
@@ -521,6 +531,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
 			ChangelogType:             cfg.ChangelogType,
+			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
 			ChangelogStyle:            cfg.ChangelogStyle,
 			SkipGitHubRelease:         cfg.SkipGitHubRelease,
@@ -554,6 +565,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			Files:                     cfg.Files,
 			MajorTag:                  cfg.MajorTag,
 			ChangelogType:             cfg.ChangelogType,
+			SkipChangelog:             cfg.SkipChangelog,
 			ChangelogSource:           cfg.ChangelogSource,
 			ChangelogStyle:            cfg.ChangelogStyle,
 			SkipGitHubRelease:         cfg.SkipGitHubRelease,
@@ -579,6 +591,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.ChangelogType != nil {
 			rc.ChangelogType = *c.ChangelogType
+		}
+		if c.SkipChangelog != nil {
+			rc.SkipChangelog = *c.SkipChangelog
 		}
 		if c.ChangelogSource != nil {
 			rc.ChangelogSource = *c.ChangelogSource
@@ -718,6 +733,7 @@ type raw struct {
 	Labels                        *rawLabels `yaml:"labels"`
 	Author                        *rawAuthor `yaml:"author"`
 	MajorTag                      *bool      `yaml:"major-tag"`
+	SkipChangelog                 *bool      `yaml:"skip-changelog"`
 	Versioning                    *string    `yaml:"versioning"`
 	ReleasePullRequest            *string    `yaml:"release-pull-request"`
 	ReleasePullRequestLayout      *string    `yaml:"release-pull-request-layout"`
@@ -754,6 +770,7 @@ type rawComponent struct {
 	Files                     *[]rawFile `yaml:"files"`
 	MajorTag                  *bool      `yaml:"major-tag"`
 	ChangelogType             *string    `yaml:"changelog-type"`
+	SkipChangelog             *bool      `yaml:"skip-changelog"`
 	ChangelogSource           *string    `yaml:"changelog-source"`
 	SkipGitHubRelease         *bool      `yaml:"skip-github-release"`
 	TagPrefix                 *string    `yaml:"tag-prefix"`
@@ -998,6 +1015,9 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, fmt.Errorf("config: parse %s: %w", path, err)
 		}
 		cfg.ChangelogType = *r.ChangelogType
+	}
+	if r.SkipChangelog != nil {
+		cfg.SkipChangelog = *r.SkipChangelog
 	}
 	if r.Versioning != nil {
 		cfg.Versioning = Versioning(*r.Versioning)
@@ -1280,6 +1300,7 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			Name:         name, Path: componentPath, InitialVersion: rc.InitialVersion,
 			BumpMinorPreMajor: rc.BumpMinorPreMajor, BumpPatchForMinorPreMajor: rc.BumpPatchForMinorPreMajor,
 			HiddenTypes: rc.HiddenTypes, MajorTag: rc.MajorTag, ChangelogType: rc.ChangelogType,
+			SkipChangelog:   rc.SkipChangelog,
 			ChangelogSource: rc.ChangelogSource, TagPrefix: rc.TagPrefix, Changelog: rc.Changelog,
 			SkipGitHubRelease: rc.SkipGitHubRelease,
 		}

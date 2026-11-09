@@ -230,7 +230,9 @@ func doPRComponent(
 		return err
 	}
 	link := compareURL(f, owner, repoName, fromTag, tag)
-	update := changelogUpdate{path: comp.ChangelogPath, version: versionStr, entriesBody: entriesBody, compareURL: link}
+	update := changelogUpdate{
+		path: comp.ChangelogPath, version: versionStr, entriesBody: entriesBody, compareURL: link, skip: comp.SkipChangelog,
+	}
 	plan, err := planReleaseBranch(ctx, dir, []changelogUpdate{update}, filesAt(comp.Files, versionStr), comp.Branch)
 	if err != nil {
 		return fmt.Errorf("release-me: component %s: %w", comp.Name, err)
@@ -440,6 +442,7 @@ func doPRLocked(
 		changelogs = append(changelogs, changelogUpdate{
 			path: m.comp.ChangelogPath, version: versionStr, entriesBody: entriesBody,
 			compareURL: compareURL(f, owner, repoName, releases[m.comp.Name].fromTag, m.comp.TagPrefix+versionStr),
+			skip:       m.comp.SkipChangelog,
 		})
 		bodyParts = append(bodyParts, releasepr.ComponentChangelog{Name: m.comp.Name, Version: versionStr, Section: entriesBody})
 		files = append(files, filesAt(m.comp.Files, versionStr)...)
@@ -769,6 +772,10 @@ type changelogUpdate struct {
 	entriesBody string
 	compareURL  string
 	baseline    string
+	// skip is true for a component with "skip-changelog": the file at
+	// path is neither compared nor written, the section still renders
+	// into the release pull request body.
+	skip bool
 }
 
 // fileUpdate is one configured file doPR bumps, with the version it bumps
@@ -829,6 +836,10 @@ func planReleaseBranch(ctx context.Context, dir string, changelogs []changelogUp
 
 	plan.changelogs = make([]changelogUpdate, len(changelogs))
 	for i, c := range changelogs {
+		if c.skip {
+			plan.changelogs[i] = c
+			continue
+		}
 		baseline, err := os.ReadFile(filepath.Join(tmp, c.path))
 		if err != nil && !os.IsNotExist(err) {
 			plan.cleanup()
@@ -903,6 +914,14 @@ func sameAsReleaseBranch(ctx context.Context, tmp string, changelogs []changelog
 	}
 
 	for _, c := range changelogs {
+		if c.skip {
+			branchContent, branchExists := gitShowFile(ctx, tmp, compareRef, c.path)
+			headContent, headExists := gitShowFile(ctx, tmp, "HEAD", c.path)
+			if branchExists != headExists || branchContent != headContent {
+				return false
+			}
+			continue
+		}
 		changelogContent, ok := gitShowFile(ctx, tmp, compareRef, c.path)
 		if !ok {
 			return false
@@ -964,6 +983,9 @@ func (p *releasePlan) write(
 	}
 
 	for _, c := range p.changelogs {
+		if c.skip {
+			continue
+		}
 		section := changelog.RenderHeading(c.version, date, c.compareURL, cfg.ChangelogStyle.DateFormat) + "\n\n" + c.entriesBody + "\n"
 		fullChangelogPath := filepath.Join(p.tmp, c.path)
 		// A configured changelog may name a directory that does not exist
@@ -984,7 +1006,7 @@ func (p *releasePlan) write(
 	if err := gitRun(ctx, p.tmp, "add", "-A"); err != nil {
 		return fmt.Errorf("release-me: stage release branch: %w", err)
 	}
-	if _, err := gitOutputEnv(ctx, p.tmp, commitEnv(cfg), "commit", "--quiet", "-m", commitMessage); err != nil {
+	if _, err := gitOutputEnv(ctx, p.tmp, commitEnv(cfg), "commit", "--quiet", "--allow-empty", "-m", commitMessage); err != nil {
 		return fmt.Errorf("release-me: commit release branch: %w", err)
 	}
 

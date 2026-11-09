@@ -65,8 +65,8 @@ type rpPackage struct {
 var packageKeys = append([]string{
 	"release-type", "package-name", "component", "include-component-in-tag", "include-v-in-tag",
 	"tag-separator", "changelog-path", "bump-minor-pre-major", "bump-patch-for-minor-pre-major",
-	"initial-version", "extra-files", "version-file", "exclude-paths", "changelog-type",
-	"include-commit-authors", "changelog-host", "prerelease-type", "prerelease",
+	"initial-version", "extra-files", "skip-changelog", "version-file", "exclude-paths",
+	"changelog-type", "include-commit-authors", "changelog-host", "prerelease-type", "prerelease",
 }, releaseFlagKeys()...)
 
 // releaseFlag is a boolean release-please package setting release-me reads
@@ -364,6 +364,8 @@ type component struct {
 	// excludePaths are the package's exclude-paths that lie inside it,
 	// cleaned, relative to the repository root as in release-please.
 	excludePaths []string
+	// skipChangelog is release-please's skip-changelog.
+	skipChangelog bool
 }
 
 // file is one release-me "files" entry.
@@ -381,7 +383,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		releaseType, packageName, componentName, separator, changelogPath string
 		initialVersion, changelogType, changelogHost, preReleaseType      string
 		versionFileName                                                   string
-		preRelease                                                        bool
+		preRelease, skipChangelog                                         bool
 		includeComponent, includeV                                        = true, true
 		bumpMinor, bumpPatchForMinor, includeAuthors                      bool
 	)
@@ -396,6 +398,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		"changelog-type": &changelogType, "include-commit-authors": &includeAuthors,
 		"changelog-host":  &changelogHost,
 		"prerelease-type": &preReleaseType, "prerelease": &preRelease,
+		"skip-changelog": &skipChangelog,
 	} {
 		raw, ok := p.settings[key]
 		if !ok {
@@ -468,6 +471,7 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		changelogType:             changelogType,
 		includeCommitAuthors:      includeAuthors,
 		changelogHost:             changelogHost,
+		skipChangelog:             skipChangelog,
 		flags:                     make(map[string]bool, len(releaseFlags)),
 	}
 	for _, flag := range releaseFlags {
@@ -1158,8 +1162,8 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 
 	// A pre-major rule carried by every component is written once, at the
-	// top level, instead of repeated per component. So is a changelog-type
-	// every component carries alike.
+	// top level, instead of repeated per component. So are changelog-type
+	// and skip-changelog every component carries alike.
 	shared := sharedRules{
 		bumpMinorPreMajor: !slices.ContainsFunc(components, func(c component) bool { return !c.bumpMinorPreMajor }),
 		bumpPatchForMinorPreMajor: !slices.ContainsFunc(components, func(c component) bool {
@@ -1168,6 +1172,7 @@ func render(components []component, top topLevel) ([]byte, error) {
 		changelogType: !slices.ContainsFunc(components, func(c component) bool {
 			return c.changelogType != config.ChangelogTypeGitHub
 		}),
+		skipChangelog: !slices.ContainsFunc(components, func(c component) bool { return !c.skipChangelog }),
 	}
 	if shared.bumpMinorPreMajor {
 		add(doc, "bump-minor-pre-major", boolean(true))
@@ -1177,6 +1182,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if shared.changelogType {
 		add(doc, "changelog-type", scalar(config.ChangelogTypeGitHub))
+	}
+	if shared.skipChangelog {
+		add(doc, "skip-changelog", boolean(true))
 	}
 	// A release flag every component carries with the same value, other
 	// than release-me's default, is written once at the top level too.
@@ -1228,20 +1236,22 @@ func render(components []component, top topLevel) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// sharedRules names the pre-major rules and the changelog-type every
-// component carries alike, which render writes once at the top level.
+// sharedRules names the per-component settings every component carries
+// alike, which render writes once at the top level instead of repeating
+// per component: the pre-major rules, changelog-type and skip-changelog.
 type sharedRules struct {
 	bumpMinorPreMajor         bool
 	bumpPatchForMinorPreMajor bool
 	changelogType             bool
+	skipChangelog             bool
 }
 
 // addSettings writes the settings release-me reads per component or at the
 // top level alike: initial-version, bump-minor-pre-major,
-// bump-patch-for-minor-pre-major, changelog-type, the release flags and
-// files. A setting shared names is left out, the top level already
-// carries it; a release flag is also left out where it is release-me's
-// default.
+// bump-patch-for-minor-pre-major, changelog-type, skip-changelog, the
+// release flags and files. A setting shared names is left out, the top
+// level already carries it; a release flag is also left out where it is
+// release-me's default.
 func addSettings(
 	m *yaml.Node, c component, shared sharedRules, topFlags map[string]bool, add func(*yaml.Node, string, *yaml.Node),
 ) {
@@ -1256,6 +1266,9 @@ func addSettings(
 	}
 	if c.changelogType == config.ChangelogTypeGitHub && !shared.changelogType {
 		add(m, "changelog-type", scalar(c.changelogType))
+	}
+	if c.skipChangelog && !shared.skipChangelog {
+		add(m, "skip-changelog", boolean(true))
 	}
 	for _, flag := range releaseFlags {
 		if value := c.flags[flag.key]; !topFlags[flag.key] && value != flag.def {
