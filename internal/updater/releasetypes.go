@@ -65,24 +65,102 @@ func UpdateRuby(content, version string) (string, error) {
 }
 
 // elixirAttribute matches mix.exs's "@version \"1.2.3\"" module attribute,
-// elixirKeyword the "version: \"1.2.3\"" keyword in its project/0.
+// elixirProject the head of its project/0 definition in each of the shapes
+// Elixir accepts, and elixirKeyword the "version: \"1.2.3\"" keyword of the
+// list project/0 returns.
 var (
 	elixirAttribute = regexp.MustCompile(`^(\s*@version\s+)("[^"]*")(.*)$`)
-	elixirKeyword   = regexp.MustCompile(`^(\s*version:\s*)("[^"]*")(.*)$`)
+	elixirProject   = regexp.MustCompile(`(?m)^[ \t]*defp?\s+project(?:\s*\(\s*\))?\s*(?:do\b|,\s*do:)`)
+	elixirKeyword   = regexp.MustCompile(`version:\s*("[^"]*")`)
 )
 
 // UpdateElixir replaces the version of a mix.exs: its @version module
 // attribute where it has one, which project/0 then refers to, otherwise
-// the string of the "version:" keyword, as release-please's mix.exs updater
-// does. An error is returned when neither is found.
+// the string of the "version:" keyword of the list project/0 returns, as
+// release-please's mix.exs updater does. An error is returned when neither
+// is found.
 func UpdateElixir(content, version string) (string, error) {
 	if out, ok := replaceFirstLine(content, elixirAttribute, version); ok {
 		return out, nil
 	}
-	if out, ok := replaceFirstLine(content, elixirKeyword, version); ok {
+	if out, ok := replaceElixirKeyword(content, version); ok {
 		return out, nil
 	}
 	return "", fmt.Errorf("updater: elixir: no @version attribute or version keyword holding a string found")
+}
+
+// replaceElixirKeyword replaces the string of the "version:" keyword in the
+// list mix.exs's project/0 returns. The search is scoped to that list, the
+// way UpdateBazel scopes its search to the module() call, so that a version
+// example in a @moduledoc, a comment or another function cannot be taken
+// for the project's own version, and so that the keyword is found wherever
+// it sits on its line. It reports whether the keyword was found.
+func replaceElixirKeyword(content, version string) (string, bool) {
+	head := elixirProject.FindStringIndex(content)
+	if head == nil {
+		return "", false
+	}
+	open := strings.IndexByte(content[head[1]:], '[')
+	if open < 0 {
+		return "", false
+	}
+	open += head[1] + 1
+	end := closingDelimiter(content, open, '[', ']')
+	if end < 0 {
+		return "", false
+	}
+	m := elixirVersionKeyword(content[open:end])
+	if m == nil {
+		return "", false
+	}
+	start, stop := open+m[2], open+m[3]
+	return content[:start] + quoteLike(content[start:stop], version) + content[stop:], true
+}
+
+// elixirVersionKeyword locates the top-level "version:" keyword and its
+// string span in the keyword list list, skipping comments, other strings
+// and nested expressions such as a dependency's own version.
+func elixirVersionKeyword(list string) []int {
+	depth := 0
+	for i := 0; i < len(list); i++ {
+		switch c := list[i]; c {
+		case '#':
+			for i < len(list) && list[i] != '\n' {
+				i++
+			}
+		case '\'', '"':
+			quote := c
+			for i++; i < len(list); i++ {
+				if list[i] == '\\' {
+					i++
+					continue
+				}
+				if list[i] == quote {
+					break
+				}
+			}
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		default:
+			if depth == 0 && strings.HasPrefix(list[i:], "version:") {
+				if i > 0 {
+					prev := list[i-1]
+					if prev == '_' || prev == ':' || prev >= 'a' && prev <= 'z' || prev >= 'A' && prev <= 'Z' || prev >= '0' && prev <= '9' {
+						continue
+					}
+				}
+				if m := elixirKeyword.FindStringSubmatchIndex(list[i:]); m != nil && m[0] == 0 {
+					for n := range m {
+						m[n] += i
+					}
+					return m
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // opamVersion matches an opam file's top-level "version: \"1.2.3\"" field,
@@ -135,7 +213,7 @@ func UpdateBazel(content, version string) (string, error) {
 	if loc == nil {
 		return "", fmt.Errorf("updater: bazel: no module() call found")
 	}
-	end := closingParen(content, loc[1])
+	end := closingDelimiter(content, loc[1], '(', ')')
 	if end < 0 {
 		return "", fmt.Errorf("updater: bazel: the module() call is never closed")
 	}
@@ -193,10 +271,10 @@ func bazelVersionArgument(call string) []int {
 	return nil
 }
 
-// closingParen returns the index of the ")" that closes the call whose
-// arguments start at from, skipping parentheses inside strings and
-// comments, or -1 when the call is never closed.
-func closingParen(content string, from int) int {
+// closingDelimiter returns the index of the close byte that closes the
+// group whose body starts at from, skipping delimiters inside strings and
+// "#" comments, or -1 when the group is never closed.
+func closingDelimiter(content string, from int, open, close byte) int {
 	depth := 1
 	var quote byte
 	for i := from; i < len(content); i++ {
@@ -215,9 +293,9 @@ func closingParen(content string, from int) int {
 			for i < len(content) && content[i] != '\n' {
 				i++
 			}
-		case c == '(':
+		case c == open:
 			depth++
-		case c == ')':
+		case c == close:
 			depth--
 			if depth == 0 {
 				return i
