@@ -40,6 +40,20 @@ func Touches(ctx context.Context, dir, sha string) ([]string, error) {
 	return paths, nil
 }
 
+// Exists reports whether path, a file or directory relative to the
+// repository root, is in the tree of the commit sha. The repository root,
+// ".", always is.
+func Exists(ctx context.Context, dir, sha, path string) (bool, error) {
+	if path == "." {
+		return true, nil
+	}
+	out, err := run(ctx, dir, "ls-tree", sha, "--", path)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
 // Belongs reports whether any of paths, the shape Touches returns, falls
 // under componentPath, equal to it or nested inside it, and outside every
 // path in exclude: the paths whose changes do not count for the component,

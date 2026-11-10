@@ -377,3 +377,37 @@ func TestTouchesReturnsNoPathsForAnEmptyCommit(t *testing.T) {
 		t.Fatalf("Touches() = %q, want no paths for an empty commit", paths)
 	}
 }
+
+func TestExistsFindsAPathInTheTreeOfOneCommit(t *testing.T) {
+	dir := newRepo(t)
+	commitEntry(t, dir, "feat: publish the docs site", "")
+	before := strings.TrimSpace(runGitOutput(t, dir, "rev-parse", "HEAD"))
+	writeFile(t, dir, "packages/wiki/index.ts", "export {}\n")
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "feat(wiki): add the wiki package")
+	after := strings.TrimSpace(runGitOutput(t, dir, "rev-parse", "HEAD"))
+
+	cases := []struct {
+		name string
+		sha  string
+		path string
+		want bool
+	}{
+		{name: "the repository root exists in every commit", sha: before, path: ".", want: true},
+		{name: "a directory is missing from a commit older than it", sha: before, path: "packages/wiki", want: false},
+		{name: "a directory exists from the commit that added it", sha: after, path: "packages/wiki", want: true},
+		{name: "a file exists from the commit that added it", sha: after, path: "packages/wiki/index.ts", want: true},
+		{name: "a sibling of the directory is missing", sha: after, path: "packages/api", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := history.Exists(context.Background(), dir, tc.sha, tc.path)
+			if err != nil {
+				t.Fatalf("Exists() error = %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("Exists(%s) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}

@@ -179,9 +179,10 @@ With `components`, a commit counts for every component whose `path` it touches. 
 reach a component beyond that, to attribute a change after the fact, a docs-only `feat` for
 one:
 
-- A commit that changes no files counts for every component, the way release-please treats an
-  empty commit. A merge commit is compared against its first parent, so it is empty only when
-  its whole branch is.
+- A commit that changes no files counts for every component whose `path` exists at that
+  commit, the way release-please treats an empty commit. One from before a component's `path`
+  existed stays out of its first changelog, unless a footer names it. A merge commit is
+  compared against its first parent, so it is empty only when its whole branch is.
 - A `Release-Component: <name>` footer attributes the commit to the named component on top of
   the components its files touch. The key is case-insensitive, the footer may repeat, and one
   footer may list several names separated by commas. On an empty commit, the footer narrows it
