@@ -763,7 +763,7 @@ signoff: "Release Bot <release-bot@example.com>"
 <release-bot@example.com>` trailer, the line `git commit --signoff` writes, for a repository
 whose DCO check requires one on every commit. The trailer is part of the message, so it is the
 same whichever way the commit is created, and it changes neither the commit's author nor its
-committer, which [`author`](#author) sets. Anything other than a name and an email in angle
+committer, which are the token's own, see [`author`](#author). Anything other than a name and an email in angle
 brackets on one line is a configuration error. Enabling or changing `signoff` also refreshes
 an already open release commit whose trailer is missing or names the previous identity.
 An unchanged rerun then leaves that commit alone.
