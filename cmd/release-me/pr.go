@@ -1128,7 +1128,10 @@ func (p *releasePlan) write(
 		set(path, p.desiredFiles[path])
 	}
 
+	// A symlink and its target both listed resolve to one path, which gets
+	// one tree entry: the later one wins, as it did writing to disk.
 	files := make([]forge.CommitFile, 0, len(order))
+	entry := make(map[string]int, len(order))
 	for _, path := range order {
 		target, err := releaseFileTarget(ctx, p.tmp, path)
 		if err != nil {
@@ -1138,7 +1141,13 @@ func (p *releasePlan) write(
 		if err != nil {
 			return fmt.Errorf("release-me: release branch %s: %w", branch, err)
 		}
-		files = append(files, forge.CommitFile{Path: target, Content: []byte(contents[path]), Executable: executable})
+		file := forge.CommitFile{Path: target, Content: []byte(contents[path]), Executable: executable}
+		if i, seen := entry[target]; seen {
+			files[i] = file
+			continue
+		}
+		entry[target] = len(files)
+		files = append(files, file)
 	}
 
 	sha, err := f.CommitBranch(ctx, owner, repoName, forge.BranchCommit{Branch: branch, Parent: parent, Message: commitMessage, Files: files})

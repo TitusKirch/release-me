@@ -88,3 +88,36 @@ func TestAPIReleaseCommitPreservesTrackedSymlinks(t *testing.T) {
 		})
 	}
 }
+
+// TestAPIReleaseCommitWritesASymlinkAndItsTargetOnce covers both listed
+// under files: they resolve to one path, which must reach the tree once.
+func TestAPIReleaseCommitWritesASymlinkAndItsTargetOnce(t *testing.T) {
+	dir, remote := newPRRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeAndCommit(t, dir, "internal/VERSION", "VERSION=0.0.1 # release-me: version\n", "chore: add version")
+	if err := os.Symlink("internal/VERSION", filepath.Join(dir, "VERSION")); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "VERSION")
+	runGit(t, dir, "commit", "-qm", "feat: add version link")
+	f := newPRFake(remote)
+	cfg := config.Default()
+	cfg.Files = []config.File{{Path: "VERSION", Updater: "marker"}, {Path: "internal/VERSION", Updater: "marker"}}
+
+	var stdout bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	var targets int
+	for _, file := range f.CommitBranchCalls[0].Commit.Files {
+		if file.Path == "internal/VERSION" {
+			targets++
+		}
+	}
+	if targets != 1 {
+		t.Fatalf("files = %+v, want internal/VERSION once", f.CommitBranchCalls[0].Commit.Files)
+	}
+}
