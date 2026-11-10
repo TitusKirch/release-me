@@ -54,6 +54,56 @@ does. In `independent`, a component's own `release-as` key replaces the top-leve
 component only. `linked` and `locked` refuse a component's own key, since the family shares one
 version.
 
+## `versioning-strategy`
+
+How a release bumps the version, default `default`:
+
+| Value | Version of a release |
+| --- | --- |
+| `default` | Bumped by its highest change: major for a breaking change, minor for a `feat`, patch for a `fix`, `perf` or `revert`. |
+| `always-bump-patch` | The patch bumped, whatever its changes are. |
+| `always-bump-minor` | The minor bumped. |
+| `always-bump-major` | The major bumped. |
+| `service-pack` | A service pack of the last version, `X.Y.Z-sp.N`. |
+| `dependency-manifest` | Bumped as `default`, and at least as far as a dependency update among its changes. |
+
+The changes still decide whether there is a release at all: a range of only hidden types, a
+`chore` alone for one, releases nothing under any strategy but `dependency-manifest`, where a
+dependency update counts. A [Release-As footer](overrides.md#release-as-footer), a
+[comment command](overrides.md#comment-commands) and `initial-version` for a first release win
+over the strategy, the same as over the default bump. `bump-minor-pre-major` and
+`bump-patch-for-minor-pre-major` apply to `default` and `dependency-manifest` only: an
+always-bump strategy bumps the part it names below `1.0.0` too, as in release-please. `next`
+names the strategy in its reason, `1.3.0 (fix, always-bump-minor)`. Any other value is a
+configuration error. A component overrides it through its own `versioning-strategy` key; a
+`locked` or `linked` family computes its one shared version with the top-level value. A
+dependent that releases only because a [workspace](#workspaces) dependency does ignores its own
+strategy and takes a plain patch instead, since it has no changes of its own to bump by.
+
+The key is release-please's `versioning`, renamed because release-me's own
+[`versioning`](#versioning) already names how a family's versions relate. release-please's
+`service-pack` and `dependency-manifest` are Java specific; release-me carries over what each
+means for any repository:
+
+- `service-pack` ships a maintenance release of the last version without moving it:
+  `1.2.3-sp.1`, then `1.2.3-sp.2`, `N` counting up from the last `sp` tag of `1.2.3`, the
+  counter a [pre-release](commands.md#pre-releases) type keeps. Each service pack collects the
+  entries since the previous one, and there is no release until a change since it bumps the
+  version. Semver orders `1.2.3-sp.1` below `1.2.3`, so release-me treats it as the pre-release
+  it is to semver: the GitHub release is a pre-release, the major tag stays, and the next
+  stable tag still counts from `1.2.3`. A pre-release label on its release pull request
+  replaces `sp` with that type, `1.2.3-rc.1`. It applies with `versioning: independent` only;
+  `linked` and `locked` refuse it, since a family shares one version line.
+- `dependency-manifest` raises the bump to the largest dependency update among the changes,
+  whatever their type, so `chore(deps): bump react from 18.3.1 to 19.0.0` releases a major
+  one. release-please reads the update from a Java manifest; release-me reads it from the
+  title Dependabot and Renovate give the change: Dependabot's `bump <name> from <old> to <new>`
+  bumps by the highest part that changed, Renovate's `update dependency <name> to v<new>` and
+  `update module <name> to v<new>`, which name no old version, by the new version's shape, as
+  release-please does: `X.0.0` major, `X.Y.0` minor, anything else patch. The reason names the
+  dependency, `2.0.0 (dependency react major update)`. The changelog entry keeps its own
+  type, so a hidden `chore` stays hidden.
+
 ## `hidden-types`
 
 Hides entries of these types from the changelog, default `chore`, `docs`, `ci`, `style`,
@@ -802,8 +852,10 @@ A component that releases moves every other component's dependency on it, declar
 `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies` by the package
 name, to its new version, and that dependent releases with it in the same release pull request:
 a patch bump on its own last tag in `independent`, the family's version in `linked`, and in
-`locked` every component releases anyway. A dependent of a dependent releases too. Each
-dependent's changelog gets a `- **deps:** update <package> to <version>` line under Bug Fixes.
+`locked` every component releases anyway. A dependent of a dependent releases too. In
+`independent`, the dependent's own `versioning-strategy` is ignored for that patch, since it
+has no changes of its own to bump by. Each dependent's changelog gets a
+`- **deps:** update <package> to <version>` line under Bug Fixes.
 A range keeps its operator and protocol: `^1.2.0` becomes `^1.3.0`, `workspace:~1.2.0`
 becomes `workspace:~1.3.0`, while one naming no single version, such as `workspace:*`, `*`,
 `file:../core` or `>=1.0.0 <2`, stays as written and still releases the dependent. A
@@ -893,9 +945,9 @@ component's `path` or lies outside it is a configuration error.
 
 Maps a name to a `path` and optional overrides of `initial-version`, `bump-minor-pre-major`,
 `bump-patch-for-minor-pre-major`, `release-as` (only with `versioning: independent`),
-`hidden-types`, `changelog-sections`, `files`, `major-tag`, `changelog-source`,
-`changelog-type`, `force-tag-creation`, `include-v-in-release-name`, `skip-github-release`,
-`draft`, `skip-changelog` and `changelog`, plus its own
+`versioning-strategy`, `hidden-types`, `changelog-sections`, `files`, `major-tag`,
+`changelog-source`, `changelog-type`, `force-tag-creation`, `include-v-in-release-name`,
+`skip-github-release`, `draft`, `skip-changelog` and `changelog`, plus its own
 [`exclude-paths`](#exclude-paths), which the top-level key cannot apply beside configured
 components. A key left out of a component falls back to the top-level setting above. A
 repository without `components` is one component named `main` at path `.`, tag prefix `v`,

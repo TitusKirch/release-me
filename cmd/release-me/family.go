@@ -129,7 +129,7 @@ func familyReleases(cfg config.Config, members []familyMember, logger *slog.Logg
 	forcedByKey := result.Reason == version.ReasonReleaseAsKey
 	releases = make(map[string]release, len(members))
 	for _, m := range members {
-		if cfg.Versioning == config.VersioningLinked && !forcedByKey && !version.Changed(m.changes) {
+		if cfg.Versioning == config.VersioningLinked && !forcedByKey && !version.Changed(m.changes, cfg.VersioningStrategy) {
 			if _, forces, _ := version.ReleaseAs(highest, highestOK, m.changes); !forces {
 				continue
 			}
