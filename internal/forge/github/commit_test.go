@@ -168,6 +168,41 @@ func TestCommitBranch(t *testing.T) {
 	}
 }
 
+// TestCommitBranchKeepsTheParentsTreeWhenNoFileChanges covers a release
+// with skip-changelog and no version file: the commit still exists, on the
+// parent's tree, without a request to build an empty one.
+func TestCommitBranchKeepsTheParentsTreeWhenNoFileChanges(t *testing.T) {
+	t.Parallel()
+	srv := &gitDataServer{bodies: map[string][]map[string]any{}}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v3/repos/owner/repo/git/commits/"+parentSHA, func(w http.ResponseWriter, r *http.Request) {
+		srv.record(t, r)
+		fmt.Fprintf(w, `{"sha": %q, "tree": {"sha": %q}}`, parentSHA, parentTree)
+	})
+	mux.HandleFunc("POST /api/v3/repos/owner/repo/git/commits", func(w http.ResponseWriter, r *http.Request) {
+		srv.record(t, r)
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprintf(w, `{"sha": %q}`, newCommit)
+	})
+	f := newTestForge(t, mux)
+
+	sha, err := f.CommitBranch(context.Background(), "owner", "repo", forge.BranchCommit{
+		Branch:  "release-me/main",
+		Parent:  parentSHA,
+		Message: "chore(main): release v0.2.0",
+	})
+	if err != nil {
+		t.Fatalf("CommitBranch() error = %v", err)
+	}
+	if sha != newCommit {
+		t.Fatalf("CommitBranch() = %s, want %s", sha, newCommit)
+	}
+	commits := srv.calls("POST /api/v3/repos/owner/repo/git/commits")
+	if len(commits) != 1 || commits[0]["tree"] != parentTree {
+		t.Fatalf("commits = %v, want one on the parent's tree %s", commits, parentTree)
+	}
+}
+
 func TestCommitSignature(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

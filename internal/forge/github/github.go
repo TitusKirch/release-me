@@ -250,14 +250,20 @@ func (f *Forge) CommitBranch(ctx context.Context, owner, repo string, c forge.Br
 		})
 	}
 
-	tree, _, err := f.client.Git.CreateTree(ctx, owner, repo, parent.GetTree().GetSHA(), entries)
-	if err != nil {
-		return "", fmt.Errorf("github: branch %s: create tree: %w", c.Branch, err)
+	// A commit changing no file, a release with skip-changelog and no
+	// version file, stays on the parent's tree: there is nothing to build.
+	treeSHA := parent.GetTree().GetSHA()
+	if len(entries) > 0 {
+		tree, _, err := f.client.Git.CreateTree(ctx, owner, repo, treeSHA, entries)
+		if err != nil {
+			return "", fmt.Errorf("github: branch %s: create tree: %w", c.Branch, err)
+		}
+		treeSHA = tree.GetSHA()
 	}
 
 	commit, _, err := f.client.Git.CreateCommit(ctx, owner, repo, gogithub.Commit{
 		Message: new(c.Message),
-		Tree:    &gogithub.Tree{SHA: tree.SHA},
+		Tree:    &gogithub.Tree{SHA: new(treeSHA)},
 		Parents: []*gogithub.Commit{{SHA: new(c.Parent)}},
 	}, nil)
 	if err != nil {
