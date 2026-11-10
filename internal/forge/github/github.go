@@ -208,9 +208,9 @@ func (f *Forge) MoveTag(ctx context.Context, owner, repo, tag, sha string) error
 // CommitBranch implements forge.Forge through the Git Data REST API: a
 // blob per file, a tree on top of the parent's and a commit with that
 // one parent. No reference moves. The commit is sent without author or
-// committer, so GitHub fills both from the token. GitHub signs it only when neither is set and the token is a GitHub App
-// installation token, secrets.GITHUB_TOKEN included; for a personal
-// access token or an OAuth token the commit stays unsigned, which
+// committer, so GitHub fills both from the token. GitHub signs it only
+// when neither is set and the token is a GitHub App installation token,
+// secrets.GITHUB_TOKEN included; for a personal access token or an OAuth token the commit stays unsigned, which
 // CommitSignature reports.
 //
 // GraphQL's createCommitOnBranch would sign too, for a fine-grained
