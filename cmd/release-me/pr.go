@@ -75,6 +75,7 @@ func runPR(args []string, stdout, stderr io.Writer) int {
 // branch are checked once, shared by every component; a failure there
 // stops before any component writes anything.
 func doPR(ctx context.Context, dir string, cfg config.Config, component string, f forge.Forge, logger *slog.Logger, dryRun bool, stdout io.Writer) error {
+	warnIgnoredAuthor(cfg, logger)
 	owner, repoName, err := history.Remote(ctx, dir)
 	if err != nil {
 		return fmt.Errorf("release-me: origin remote: %w", err)

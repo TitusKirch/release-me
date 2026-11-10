@@ -108,7 +108,7 @@ for a GitHub App token, the user for a personal access token, `github-actions[bo
 `secrets.GITHUB_TOKEN`. The `author` configuration key, the `author-name`, `author-email` and
 `app-slug` action inputs and the `GIT_AUTHOR_*` and `GIT_COMMITTER_*` environment variables no
 longer change the release commit. They are still accepted, so an existing configuration or
-workflow keeps working unchanged; `check` warns about an `author` key that is set.
+workflow keeps working unchanged; `check` and `pr` warn about an `author` key that is set.
 
 The commit's parent must already exist on GitHub: `pr` builds on the checkout's `HEAD`, the
 default branch's tip in a workflow triggered by a push to it. A local run on top of unpushed

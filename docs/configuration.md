@@ -391,8 +391,8 @@ pre-release, as release-please's `prerelease: true` does.
 `release-me[bot]@users.noreply.github.com`, but ignored. The forge creates the release commit
 under the token's own identity, since GitHub signs it only when no author is passed, see
 [signed release commits](commands.md#signed-release-commits). The keys still load, so an
-existing configuration keeps working, and `check` warns about each one that is set, naming it
-as ignored. `GIT_AUTHOR_*` and `GIT_COMMITTER_*` in the environment change nothing either.
+existing configuration keeps working, and `check` and `pr` warn about each one that is set,
+naming it as ignored. `GIT_AUTHOR_*` and `GIT_COMMITTER_*` in the environment change nothing either.
 
 ## `files`
 

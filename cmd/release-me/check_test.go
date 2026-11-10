@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -210,5 +211,24 @@ func TestWarnIgnoredAuthorNamesEverySetAuthorKey(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestDoPRWarnsAboutAnIgnoredAuthorKey covers a repository whose workflow
+// runs pr and never check: pr is the command that stopped applying the
+// key, so the warning reaches it there too, and the run still succeeds.
+func TestDoPRWarnsAboutAnIgnoredAuthorKey(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	commitEntry(t, dir, "feat: add the next command")
+	cfg := config.Default()
+	cfg.Author.Set = []string{"author.name"}
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	if err := doPR(t.Context(), dir, cfg, "", newPRFake(origin), logger, false, io.Discard); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+	if !strings.Contains(logs.String(), "author.name is ignored") {
+		t.Fatalf("logs = %q, want a warning naming author.name as ignored", logs.String())
 	}
 }

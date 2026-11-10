@@ -161,7 +161,7 @@ files:
 | `labels.extra` | Labels `pr` adds to every release pull request it opens. | none | No |
 | `labels.alpha` / `labels.beta` / `labels.rc` | Pre-release type labels. | `release: alpha` / `release: beta` / `release: rc` | No |
 | `prerelease-types` | Further pre-release types, each mapped to the label that selects it. | none | No |
-| `author.name` / `author.email` | Ignored, still accepted; `check` warns when set. | `release-me` / `release-me[bot]@users.noreply.github.com` | No |
+| `author.name` / `author.email` | Ignored, still accepted; `check` and `pr` warn when set. | `release-me` / `release-me[bot]@users.noreply.github.com` | No |
 | `files` | Files `pr` bumps to the next version. | none | No |
 | `major-tag` | Moves the major tag on every stable release. | `false` | No |
 | `versioning` | How components' versions relate to each other. | `independent` | No |

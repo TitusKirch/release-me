@@ -87,8 +87,10 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 // created through the forge under the token's own identity, the only way
 // GitHub signs it. The key still loads, since Load rejects unknown keys
 // and an existing configuration must keep working, so this warning is
-// the one signal a repository gets that its configured identity is gone.
-// A warning, never a missing item: check still passes.
+// the one signal a repository gets that its configured identity is gone,
+// from check and from pr, the command that stopped applying it. A
+// repository whose workflow never runs check hears it from pr. A warning,
+// never a missing item: both still succeed.
 func warnIgnoredAuthor(cfg config.Config, logger *slog.Logger) {
 	for _, key := range cfg.Author.Set {
 		logger.Warn(key+" is ignored: pr creates the release commit through the forge under the token's own identity",
