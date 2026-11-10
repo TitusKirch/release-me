@@ -42,6 +42,42 @@ func TestRunMigrateTranslatesTheRepositorysReleasePleaseConfig(t *testing.T) {
 	}
 }
 
+// TestRunMigrateShowsARefusedDeferredTagWithoutAGitHubRelease covers a
+// release-please configuration carrying both keys release-me refuses
+// together: migrate translates them, the load check catches the
+// combination, and the translation is printed for a human to correct
+// instead of landing as a release-me.yaml no command can load.
+func TestRunMigrateShowsARefusedDeferredTagWithoutAGitHubRelease(t *testing.T) {
+	dir := newRepo(t)
+	writeFiles(t, dir, "chore: configure release-please", map[string]string{
+		"release-please-config.json": `{"packages": {
+		  ".": {"force-tag-creation": false, "skip-github-release": true}}}`,
+		".release-please-manifest.json": `{".": "1.4.0"}`,
+		"package.json":                  `{"name": "@acme/api", "version": "1.4.0"}`,
+	})
+	runGit(t, dir, "tag", "v1.4.0")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"migrate", "release-please"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1, stderr: %s", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want nothing printed", stdout.String())
+	}
+	for _, want := range []string{
+		"the translated release-me.yaml does not load",
+		"force-tag-creation",
+		"skip-github-release",
+		"the refused translation, to correct by hand:",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr = %s, want it to contain %q", stderr.String(), want)
+		}
+	}
+}
+
 func TestRunMigrateRejectsAMissingOrUnknownSource(t *testing.T) {
 	for _, args := range [][]string{{"migrate"}, {"migrate", "semantic-release"}} {
 		var stdout, stderr bytes.Buffer

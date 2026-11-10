@@ -469,6 +469,80 @@ func TestLoadRefusesAComponentServicePackOutsideIndependentVersioning(t *testing
 	}
 }
 
+// TestLoadRefusesADeferredTagWithoutAGitHubRelease covers the one
+// combination that can only ever lose a release: force-tag-creation off
+// leaves the tag to the release's publish step, skip-github-release creates
+// no release, so nothing creates the tag while the merged release pull
+// request is relabelled as tagged anyway. Both ways of reaching it are
+// refused, the top-level keys and a component's own overrides, and the
+// combinations that keep one of the two safe still load.
+func TestLoadRefusesADeferredTagWithoutAGitHubRelease(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		content  string
+		wantErr  bool
+		wantName string
+	}{
+		{
+			name:    "the top-level keys",
+			content: "force-tag-creation: false\nskip-github-release: true\n",
+			wantErr: true,
+		},
+		{
+			name: "a component's own keys",
+			content: "components:\n  api:\n    path: api\n" +
+				"    force-tag-creation: false\n    skip-github-release: true\n",
+			wantErr: true, wantName: "component api",
+		},
+		{
+			name: "a component inheriting the deferred tag and skipping its release",
+			content: "force-tag-creation: false\ncomponents:\n  api:\n    path: api\n" +
+				"    skip-github-release: true\n",
+			wantErr: true, wantName: "component api",
+		},
+		{
+			name: "a component inheriting the skipped release and deferring its tag",
+			content: "skip-github-release: true\ncomponents:\n  api:\n    path: api\n" +
+				"    force-tag-creation: false\n",
+			wantErr: true, wantName: "component api",
+		},
+		{name: "a deferred tag with its release", content: "force-tag-creation: false\n"},
+		{name: "a skipped release with its own tag", content: "skip-github-release: true\n"},
+		{
+			name: "a component deferring its tag beside one skipping its release",
+			content: "components:\n  api:\n    path: api\n    force-tag-creation: false\n" +
+				"  web:\n    path: web\n    skip-github-release: true\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := writeFile(t, tc.content)
+
+			_, err := config.Load(path)
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("Load() error = %v, want the configuration to load", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("Load() error = nil, want the combination refused")
+			}
+			want := []string{"force-tag-creation", "skip-github-release"}
+			if tc.wantName != "" {
+				want = append(want, tc.wantName)
+			}
+			for _, w := range want {
+				if !strings.Contains(err.Error(), w) {
+					t.Fatalf("Load() error = %q, want it to name %q", err, w)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadReadsComponentsInConfigOrder(t *testing.T) {
 	t.Parallel()
 	path := writeFile(t, `components:

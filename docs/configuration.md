@@ -812,6 +812,10 @@ exist: a later step must not expect it, a rerun cannot tell a draft it tagged be
 name, so the resume of `draft-until-assets-attach` and the guard against a second draft work
 the same. A component overrides it through its own `force-tag-creation` key.
 
+`force-tag-creation: false` together with [`skip-github-release`](#skip-github-release) is
+refused when release-me.yaml loads, at the top level and for every component it resolves to:
+the tag is left to a release that is never created, so nothing would ever create it.
+
 Keep `force-tag-creation: true` when using this repository's
 `scripts/publish-release-assets.sh` with `draft-until-assets-attach`: the script checks out
 the tag and GoReleaser resolves it before publishing, so both need an existing git ref.
@@ -840,8 +844,10 @@ reads the action's `tags` output. Everything else still happens: the tag, the
 [major tag](#major-tag), the label swap from `pending` to `tagged`, the `released-tag` marker
 and every action output, so a later step knows which tag to release. With
 [`draft-until-assets-attach`](#draft-until-assets-attach) on, a component that skips its
-release has no draft to attach assets to or to resume. A component overrides it through its
-own `skip-github-release` key.
+release has no draft to attach assets to or to resume, and [`draft`](#draft) has no effect at
+all. [`force-tag-creation: false`](#force-tag-creation) beside this key is refused when
+release-me.yaml loads: it leaves the tag to a release that is never created. A component
+overrides it through its own `skip-github-release` key.
 
 Unlike release-please, release-me creates the tag even with this key on. After migrating,
 remove any external tagging step that release-please needed for `skip-github-release`.
