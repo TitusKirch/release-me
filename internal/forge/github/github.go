@@ -210,13 +210,14 @@ func (f *Forge) MoveTag(ctx context.Context, owner, repo, tag, sha string) error
 // one parent. No reference moves. The commit is sent without author or
 // committer, so GitHub fills both from the token. GitHub signs it only
 // when neither is set and the token is a GitHub App installation token,
-// secrets.GITHUB_TOKEN included; for a personal access token or an OAuth token the commit stays unsigned, which
-// CommitSignature reports.
+// secrets.GITHUB_TOKEN included; for a personal access token or an
+// OAuth token the commit stays unsigned, which CommitSignature reports.
 //
-// GraphQL's createCommitOnBranch would sign too, for a fine-grained
-// personal access token as well, but it only appends to a branch's
-// current tip: it cannot rebuild a release branch from the default
-// branch's tip, which every push to an existing release branch does.
+// GraphQL's createCommitOnBranch is documented to sign its commits "if
+// supported", without saying which credentials that covers, but it only
+// appends to a branch's current tip: it cannot rebuild a release branch
+// from the default branch's tip, which every push to an existing release
+// branch does.
 // Resetting the branch to the default branch's tip first and appending
 // after is no way around that: for a moment the open release pull
 // request's head is a commit its base already contains, which GitHub may
