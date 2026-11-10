@@ -254,9 +254,6 @@ func TestDoPRCommitsTheReleaseBranchThroughTheForgeAsTheTokensIdentity(t *testin
 			if call.Owner != "owner" || call.Repo != "repo" || call.Commit.Branch != mainBranch || call.Commit.Parent != head {
 				t.Fatalf("call = %+v, want owner/repo, branch %s, parent %s", call, mainBranch, head)
 			}
-			if call.Commit.ExpectedHead != "" {
-				t.Fatalf("ExpectedHead = %q, want none for a fresh branch", call.Commit.ExpectedHead)
-			}
 			if got := bareBranchAuthor(t, origin); got != forgetest.FakeAuthor {
 				t.Fatalf("author = %q, want the forge's own %q", got, forgetest.FakeAuthor)
 			}
@@ -447,9 +444,8 @@ func TestDoPRLeasesAnUpdateOnThePullRequestsHeadAndNamesItOnFailure(t *testing.T
 			}
 
 			last := f.CommitBranchCalls[len(f.CommitBranchCalls)-1].Commit
-			if last.Parent != head || last.ExpectedHead != expected {
-				t.Fatalf("commit = parent %s, expected head %s, want parent %s, expected head %s",
-					last.Parent, last.ExpectedHead, head, expected)
+			if last.Parent != head {
+				t.Fatalf("commit parent = %s, want %s", last.Parent, head)
 			}
 			after := bareBranchSHA(t, origin)
 			if moved := after != before; moved != tc.wantMoved {

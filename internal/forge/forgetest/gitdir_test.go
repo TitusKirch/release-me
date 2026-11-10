@@ -55,49 +55,35 @@ func TestFakeCommitBranchWritesIntoGitDir(t *testing.T) {
 	cases := []struct {
 		name string
 		// setup prepares the release branch in remote and returns the
-		// commit to build on and the expected head to pass.
-		setup     func(t *testing.T, remote, base, next string) (parent, expected string)
+		// commit to build on.
+		setup     func(t *testing.T, remote, base, next string) (parent string)
 		wantErrIs error
 	}{
 		{
 			name: "creates commit objects for a fresh branch",
-			setup: func(*testing.T, string, string, string) (string, string) {
-				return "", ""
+			setup: func(*testing.T, string, string, string) string {
+				return ""
 			},
 		},
 		{
 			name: "leaves an existing ancestor branch untouched",
-			setup: func(t *testing.T, remote, base, next string) (string, string) {
+			setup: func(t *testing.T, remote, base, next string) string {
 				gitIn(t, remote, "update-ref", "refs/heads/release-me/main", base)
-				return next, ""
+				return next
 			},
 		},
 		{
 			name: "creates objects without rewinding an existing branch",
-			setup: func(t *testing.T, remote, base, next string) (string, string) {
+			setup: func(t *testing.T, remote, base, next string) string {
 				gitIn(t, remote, "update-ref", "refs/heads/release-me/main", next)
-				return base, ""
-			},
-		},
-		{
-			name: "leaves a branch at the expected head untouched",
-			setup: func(t *testing.T, remote, base, next string) (string, string) {
-				gitIn(t, remote, "update-ref", "refs/heads/release-me/main", next)
-				return base, next
-			},
-		},
-		{
-			name: "leaves a moved branch untouched",
-			setup: func(t *testing.T, remote, base, next string) (string, string) {
-				gitIn(t, remote, "update-ref", "refs/heads/release-me/main", next)
-				return base, base
+				return base
 			},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			remote, base, next := newRemote(t)
-			parent, expected := tc.setup(t, remote, base, next)
+			parent := tc.setup(t, remote, base, next)
 			if parent == "" {
 				parent = next
 			}
@@ -111,7 +97,6 @@ func TestFakeCommitBranchWritesIntoGitDir(t *testing.T) {
 					{Path: "CHANGELOG.md", Content: []byte("# Changelog\n\n## v0.2.0 (2026-10-29)\n")},
 					{Path: "scripts/install.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
 				},
-				ExpectedHead: expected,
 			})
 			if len(f.CommitBranchCalls) != 1 {
 				t.Fatalf("CommitBranchCalls = %+v, want one", f.CommitBranchCalls)

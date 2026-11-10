@@ -28,11 +28,11 @@ var ErrReleaseExists = errors.New("release already exists")
 // has no release at all.
 var ErrReleaseNotFound = errors.New("release not found")
 
-// ErrBranchMoved is returned when CommitBranch finds the branch somewhere
-// other than the caller expected: not on BranchCommit.ExpectedHead, or,
-// with no ExpectedHead, on a commit the new one does not descend from.
-// The branch is left where it is then, the same as a rejected "git push
-// --force-with-lease" or a rejected non-fast-forward push.
+// ErrBranchMoved reports that publishing a release commit was rejected
+// because the branch is somewhere other than the caller expected. The
+// command layer returns it when git refuses the push, a stale
+// "--force-with-lease" or a non-fast-forward, and the branch is left where
+// it is then. No Forge method returns it: CommitBranch moves no reference.
 var ErrBranchMoved = errors.New("branch moved")
 
 // ErrUnauthorized is returned when the forge rejects the request's
@@ -79,16 +79,15 @@ type CommitFile struct {
 	Executable bool
 }
 
-// BranchCommit is a commit prepared for Branch, built on Parent's tree.
-// Parent must already exist on the forge. ExpectedHead records the caller's
-// publication lease; CommitBranch creates objects only, and the command
-// layer publishes the returned SHA with that lease.
+// BranchCommit describes the commit to create for Branch, built on
+// Parent's tree. Parent must already exist on the forge. CommitBranch
+// creates objects only; the command layer publishes the returned SHA and
+// holds the lease that guards it.
 type BranchCommit struct {
-	Branch       string
-	Parent       string
-	Message      string
-	Files        []CommitFile
-	ExpectedHead string
+	Branch  string
+	Parent  string
+	Message string
+	Files   []CommitFile
 }
 
 // Signature is what the forge reports about one commit's signature.

@@ -1140,18 +1140,18 @@ func (p *releasePlan) write(
 		files = append(files, forge.CommitFile{Path: target, Content: []byte(contents[path]), Executable: executable})
 	}
 
-	commit := forge.BranchCommit{Branch: branch, Parent: parent, Message: commitMessage, Files: files}
-	if existing != nil {
-		commit.ExpectedHead = existing.HeadSHA
-	}
-	sha, err := f.CommitBranch(ctx, owner, repoName, commit)
+	sha, err := f.CommitBranch(ctx, owner, repoName, forge.BranchCommit{Branch: branch, Parent: parent, Message: commitMessage, Files: files})
 	if err != nil {
 		if existing != nil {
 			return fmt.Errorf("release-me: commit release branch %s for pull request #%d: %w", branch, existing.Number, err)
 		}
 		return fmt.Errorf("release-me: commit release branch %s: %w", branch, err)
 	}
-	if err := publishReleaseCommit(ctx, p.tmp, branch, sha, commit.ExpectedHead); err != nil {
+	lease := ""
+	if existing != nil {
+		lease = existing.HeadSHA
+	}
+	if err := publishReleaseCommit(ctx, p.tmp, branch, sha, lease); err != nil {
 		if existing != nil {
 			return fmt.Errorf("release-me: publish release branch %s for pull request #%d: %w", branch, existing.Number, err)
 		}
