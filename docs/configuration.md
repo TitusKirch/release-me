@@ -1034,9 +1034,9 @@ components:
 
 A first parent entry belongs to every component whose path it touches, through the files a
 merge commit's branch changed; a pull request touching several components lands in every one
-of their changelogs. An empty commit lands in every component, and a
-[Release-Component footer](overrides.md#release-component-footer) adds the components it
-names, while [`exclude-paths`](#exclude-paths) takes subpaths out of a component. The
+of their changelogs. An empty commit lands in every component whose `path` exists at that
+commit, and a [Release-Component footer](overrides.md#release-component-footer) adds the
+components it names, while [`exclude-paths`](#exclude-paths) takes subpaths out of a component. The
 component at path `.`, explicit or implicit, matches every entry outside its excluded paths
 and, beside other components, every entry outside their paths too.
 Two components with overlapping paths, apart from a [root component](#root-component) beside

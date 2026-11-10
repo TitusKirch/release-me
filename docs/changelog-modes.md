@@ -49,4 +49,10 @@ individual commits' alike.
   `chore`, say, still bumps the version when one of the commits it introduced is a `feat` or a
   `fix`.
 
+Every mode keeps only the commits that count for the component: those that touch its `path`,
+plus the [empty commits and footers](overrides.md#release-component-footer) that reach beyond
+it. A component's first release has no tag to start from, so its range reaches back through
+the history, and the same rules decide what lands in it: an empty commit from before the
+component's `path` existed stays out unless a footer names the component.
+
 `next` and `changelog --verbose` log the resolved mode as `source`.

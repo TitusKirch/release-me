@@ -59,7 +59,10 @@ func newAttribution(dir string, cfg config.Config, owner, repoName string, f for
 // alone, the one component of its repository, with neither, keeps every
 // entry without reading any commit's touched files or footers: no footer
 // can change what counts for it, and a footer naming an unknown component
-// goes without a warning there.
+// goes without a warning there. An empty commit without a footer counts
+// only once comp.Path exists: an untagged component's range reaches back
+// past the commit that created it, and a commit from before then is not
+// its own.
 func (a *attribution) filter(ctx context.Context, entries []history.Entry, comp config.ResolvedComponent) ([]history.Entry, error) {
 	if comp.Path == "." && len(comp.OtherPaths) == 0 && len(comp.ExcludePaths) == 0 {
 		return entries, nil
@@ -74,6 +77,15 @@ func (a *attribution) filter(ctx context.Context, entries []history.Entry, comp 
 		paths, err := history.Touches(ctx, a.dir, e.SHA)
 		if err != nil {
 			return nil, fmt.Errorf("commit %s: %w", e.SHA, err)
+		}
+		if len(paths) == 0 && len(named) == 0 {
+			exists, err := history.Exists(ctx, a.dir, e.SHA, comp.Path)
+			if err != nil {
+				return nil, fmt.Errorf("commit %s: %w", e.SHA, err)
+			}
+			if !exists {
+				continue
+			}
 		}
 		if history.Counts(paths, named, comp.Name, comp.Path, exclude) {
 			filtered = append(filtered, e)

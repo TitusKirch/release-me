@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -372,6 +373,117 @@ func TestFamilyReleasesCountAnEmptyCommitForEveryMember(t *testing.T) {
 				t.Fatalf("released %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestAComponentsFirstReleaseLeavesOutEmptyCommitsOlderThanItsPath covers
+// an untagged component, whose range reaches back past the commit that
+// created it: an empty commit from before then is not its own, in any
+// changelog source, unless a footer names it.
+func TestAComponentsFirstReleaseLeavesOutEmptyCommitsOlderThanItsPath(t *testing.T) {
+	cases := []struct {
+		name    string
+		before  string
+		after   string
+		want    []string
+		notWant []string
+	}{
+		{
+			name:    "an empty commit older than the path is left out",
+			before:  "feat(header): reveal the new theme from the toggle",
+			want:    []string{"add the wiki package"},
+			notWant: []string{"reveal the new theme"},
+		},
+		{
+			name:   "an older empty commit naming the component still counts",
+			before: "feat(header): reveal the new theme from the toggle\n\nRelease-Component: wiki",
+			want:   []string{"add the wiki package", "reveal the new theme"},
+		},
+		{
+			name:  "an empty commit once the path exists counts on a first release",
+			after: "fix(search): retag the broken index",
+			want:  []string{"add the wiki package", "retag the broken index"},
+		},
+	}
+	sources := []string{
+		config.ChangelogSourceFirstParent, config.ChangelogSourceSquash, config.ChangelogSourceAll, config.ChangelogSourceNested,
+	}
+	for _, tc := range cases {
+		for _, source := range sources {
+			t.Run(tc.name+"/"+source, func(t *testing.T) {
+				dir := newRepo(t)
+				writeConfig(t, dir, "changelog-source: "+source+
+					"\ncomponents:\n  duxt:\n    path: packages/duxt\n  wiki:\n    path: packages/wiki\n    initial-version: 0.1.0\n")
+				writeFiles(t, dir, "chore: scaffold duxt", map[string]string{"packages/duxt/README.md": "duxt\n"})
+				if tc.before != "" {
+					commitEntry(t, dir, tc.before)
+				}
+				writeFiles(t, dir, "feat(wiki): add the wiki package", map[string]string{"packages/wiki/index.ts": "export {}\n"})
+				if tc.after != "" {
+					commitEntry(t, dir, tc.after)
+				}
+
+				cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+				if err != nil {
+					t.Fatalf("config.Load() error = %v", err)
+				}
+				rel, released, err := computeRelease(t.Context(), dir, cfg, cfg.Resolve()[1], newFake(), discardLogger())
+				if err != nil {
+					t.Fatalf("computeRelease() error = %v", err)
+				}
+				if !released {
+					t.Fatal("released = false, want the wiki's first release")
+				}
+				var got []string
+				for _, e := range rel.entries {
+					got = append(got, e.Description)
+				}
+				text := strings.Join(got, "\n")
+				for _, want := range tc.want {
+					if !strings.Contains(text, want) {
+						t.Errorf("entries = %q, want one containing %q", got, want)
+					}
+				}
+				for _, notWant := range tc.notWant {
+					if strings.Contains(text, notWant) {
+						t.Errorf("entries = %q, want none containing %q", got, notWant)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestLinkedSharedFirstChangelogStaysWithinTheComponent is the shape of
+// the report in #115: a new package joins a linked family on a shared
+// release pull request with changelog-source all. An empty commit older
+// than the package stays in the tagged component's changelog and out of
+// the new one's.
+func TestLinkedSharedFirstChangelogStaysWithinTheComponent(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeConfig(t, dir, "versioning: linked\nrelease-pull-request: shared\nchangelog-source: all\ncomponents:\n"+
+		"  duxt:\n    path: packages/duxt\n    tag-prefix: duxt@v\n"+
+		"  wiki:\n    path: packages/wiki\n    tag-prefix: wiki@v\n    initial-version: 0.1.0\n")
+	writeFiles(t, dir, "chore: scaffold duxt", map[string]string{"packages/duxt/README.md": "duxt\n"})
+	runGit(t, dir, "tag", "duxt@v0.12.0")
+	commitEntry(t, dir, "feat(header): reveal the new theme from the toggle")
+	writeFiles(t, dir, "feat(wiki): add the wiki package", map[string]string{"packages/wiki/index.ts": "export {}\n"})
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	if err := doPR(t.Context(), dir, cfg, "", newFake(), discardLogger(), false, io.Discard); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	wiki := showBareFile(t, origin, "release-me/main", "packages/wiki/CHANGELOG.md")
+	if !strings.Contains(wiki, "add the wiki package") || strings.Contains(wiki, "reveal the new theme") {
+		t.Fatalf("wiki changelog = %q, want only its own commit", wiki)
+	}
+	duxt := showBareFile(t, origin, "release-me/main", "packages/duxt/CHANGELOG.md")
+	if !strings.Contains(duxt, "reveal the new theme") {
+		t.Fatalf("duxt changelog = %q, want the empty commit made while it existed", duxt)
 	}
 }
 
