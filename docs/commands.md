@@ -90,7 +90,8 @@ request's title and body name every component it releases: see
 
 `pr` creates no local commit. It creates the release branch's commit through the
 forge's API, on GitHub the Git Data API: a blob per changed file, a tree on top of the default
-branch's tip, a commit with that one parent, then the branch created or moved onto it.
+branch's tip and a commit with that one parent. `pr` then fetches that commit and pushes it to
+the branch.
 
 GitHub signs a commit it creates this way only for a GitHub App installation token, a token
 from `actions/create-github-app-token` or `secrets.GITHUB_TOKEN`. Then the release pull request
