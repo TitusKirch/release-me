@@ -545,6 +545,98 @@ func TestReleaseDraftsTheReleaseUnderDraftAndLeavesItForAHuman(t *testing.T) {
 	}
 }
 
+// TestReleaseMovesTheMajorTagOntoADraftedRelease pins the documented
+// limitation of "major-tag" beside a drafted release: the major tag moves
+// to the merge commit when the release is created, not when a human
+// publishes it. With "force-tag-creation" on, the default, the version tag
+// is on that same commit already, so the two agree. With it off the version
+// tag does not exist yet and the major tag is ahead of the newest published
+// version until the draft is published. Deferring the move instead would
+// never move the tag at all, since nothing runs after that publish; see
+// applyMajorTag and docs/configuration.md's major-tag key.
+func TestReleaseMovesTheMajorTagOntoADraftedRelease(t *testing.T) {
+	t.Parallel()
+	component := func(tagOnPublish, draft bool) release.Component {
+		return release.Component{
+			Name: "main", Branch: "release-me/main", TagPrefix: "v",
+			MajorTag: true, TagOnPublish: tagOnPublish, Draft: draft,
+		}
+	}
+	cases := []struct {
+		name                   string
+		comp                   release.Component
+		draftUntilAssetsAttach bool
+		existingMajorTag       bool
+		wantCreated            []string
+		wantMoved              []string
+		wantMajorTagMessage    string
+	}{
+		{
+			name:        "creates the major tag beside the version tag of a deliberate draft",
+			comp:        component(false, true),
+			wantCreated: []string{"v1.4.0", "v1"}, wantMajorTagMessage: "created major tag v1",
+		},
+		{
+			name: "moves the existing major tag onto a deliberate draft",
+			comp: component(false, true), existingMajorTag: true,
+			wantCreated: []string{"v1.4.0"}, wantMoved: []string{"v1"}, wantMajorTagMessage: "moved major tag v1",
+		},
+		{
+			name: "moves the existing major tag onto a draft from draft-until-assets-attach",
+			comp: component(false, false), draftUntilAssetsAttach: true, existingMajorTag: true,
+			wantCreated: []string{"v1.4.0"}, wantMoved: []string{"v1"}, wantMajorTagMessage: "moved major tag v1",
+		},
+		{
+			name: "moves the major tag of a drafted release whose own tag waits for the publish",
+			comp: component(true, true), existingMajorTag: true,
+			wantMoved: []string{"v1"}, wantMajorTagMessage: "moved major tag v1",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := mergedFake("chore(main): release v1.4.0", "release: pending")
+			if tc.existingMajorTag {
+				f.ExistingTags = map[string]bool{"v1": true}
+			}
+
+			results, err := runOwn(f, []release.Component{tc.comp}, tc.draftUntilAssetsAttach, false)
+			if err != nil {
+				t.Fatalf("release error = %v", err)
+			}
+			if len(results) != 1 {
+				t.Fatalf("results = %+v, want exactly one", results)
+			}
+			if got := results[0].MajorTagMessage; got != tc.wantMajorTagMessage {
+				t.Fatalf("major tag message = %q, want %q", got, tc.wantMajorTagMessage)
+			}
+			if got := results[0].MajorTag; got != "v1" {
+				t.Fatalf("major tag = %q, want v1", got)
+			}
+			var created []string
+			for _, c := range f.CreatedTags {
+				created = append(created, c.Tag)
+			}
+			if !reflect.DeepEqual(created, tc.wantCreated) {
+				t.Fatalf("created tags = %q, want %q", created, tc.wantCreated)
+			}
+			var moved []string
+			for _, m := range f.MovedTags {
+				moved = append(moved, m.Tag)
+				if m.SHA != "4f2a9c1" {
+					t.Fatalf("major tag moved onto %q, want the merge commit", m.SHA)
+				}
+			}
+			if !reflect.DeepEqual(moved, tc.wantMoved) {
+				t.Fatalf("moved tags = %q, want %q", moved, tc.wantMoved)
+			}
+			if len(f.CreatedReleases) != 1 || !f.CreatedReleases[0].Draft {
+				t.Fatalf("created releases = %+v, want exactly one draft", f.CreatedReleases)
+			}
+		})
+	}
+}
+
 func TestReleaseNamesTheReleaseWithOrWithoutTheV(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

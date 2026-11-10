@@ -568,6 +568,19 @@ func MajorTagName(tagPrefix, releasedVersion string) (tag string, applies bool) 
 // tagPrefix, onto sha, when majorTagEnabled and releasedVersion is not a
 // pre-release. dryRun reads whether the tag exists, to report accurately
 // what would happen, but writes nothing.
+//
+// It runs for a drafted release too, which is deliberate and a known
+// limitation in one combination. With force-tag-creation on, the default,
+// the version tag is already on the merge commit by the time the major tag
+// moves there, draft or not, so the two agree. With force-tag-creation off
+// and the release drafted, the version tag does not exist yet, so the
+// major tag points at a version that is not published. Deferring the move
+// instead would be worse: nothing in release-me runs after a human
+// publishes a draft, the resume paths only ever see a release that is
+// still a draft, so a deferred major tag would never be created at all and
+// every consumer pinned to it would silently stay on the previous release
+// forever. Moving it early is visible and the next release corrects it; see
+// docs/configuration.md's major-tag key.
 func applyMajorTag(
 	ctx context.Context, f forge.Forge, owner, repoName, componentName, tagPrefix, releasedVersion, sha string,
 	majorTagEnabled, dryRun bool,

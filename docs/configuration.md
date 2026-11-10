@@ -558,6 +558,15 @@ all errors.
 Moves the major tag on every stable release, default `false`. See [release](commands.md#release)
 for what `true` changes. A component overrides it through its own `major-tag` key.
 
+Known limitation: the major tag moves when the release is created, not when a human publishes
+it. With [`force-tag-creation`](#force-tag-creation) on, the default, the version tag sits on
+that same commit already, draft or not, so the two agree. With it off and the release drafted
+by [`draft`](#draft) or [`draft-until-assets-attach`](#draft-until-assets-attach), the version
+tag does not exist yet, so the major tag points at a version that is not published until
+someone publishes that draft. Deferring the move is not an option: nothing in release-me runs
+after that publish, so a deferred major tag would never be created at all. Keep
+`force-tag-creation: true` where the major tag matters, which is the default.
+
 ## `versioning`
 
 `independent` (default), `locked` or `linked`. See [versioning modes](versioning-modes.md).
@@ -864,7 +873,8 @@ on purpose is left out of the resume, and only a human publishing it moves it on
 overrides it through its own `draft` key.
 
 With [`skip-github-release`](#skip-github-release) on, this key has no effect: there is no
-release to draft.
+release to draft. With [`major-tag`](#major-tag) on, the major tag moves when the draft is
+created, not when it is published; see `major-tag`.
 
 ## `comment-mention`
 
