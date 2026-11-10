@@ -867,12 +867,17 @@ remove any external tagging step that release-please needed for `skip-github-rel
 
 Creates each GitHub release as a draft and leaves it one, default `false`, for a human to
 review and publish. The tag, the label swap, the `released-tag` marker and the action outputs
-still happen as for a published release, so a later step can attach assets to the draft. It
-differs from [`draft-until-assets-attach`](#draft-until-assets-attach) in one way: a draft
-left on purpose is never resumed, so a later run does not print its `released-tag` marker
-again while it waits for a human. That holds with both keys on too: the component that drafts
-on purpose is left out of the resume, and only a human publishing it moves it on. A component
-overrides it through its own `draft` key.
+still happen on the same run, exactly as for a published release, so a publish step already
+sees this tag before any human has acted. It differs from
+[`draft-until-assets-attach`](#draft-until-assets-attach) in one way: a draft left on purpose
+is never resumed, so a later run does not print its `released-tag` marker again while it
+waits. That holds with both keys on too: the component that drafts on purpose is left out of
+the resume. Neither key makes a publish step wait for a human on its own: the
+[`draft-until-assets-attach`](action.md#draft-until-assets-attach) workflow this repository
+runs publishes every draft its `tags` output carries, this one included, with no way to tell
+a deliberate draft from one only waiting on assets. Filter the component out of that step, or
+run no automatic publish step for it, where the release genuinely needs a human to publish it
+first. A component overrides `draft` through its own `draft` key.
 
 With [`skip-github-release`](#skip-github-release) on, this key has no effect: there is no
 release to draft. With [`major-tag`](#major-tag) on, the major tag moves when the draft is

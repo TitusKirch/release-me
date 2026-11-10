@@ -579,7 +579,10 @@ func MajorTagName(tagPrefix, releasedVersion string) (tag string, applies bool) 
 // publishes a draft, the resume paths only ever see a release that is
 // still a draft, so a deferred major tag would never be created at all and
 // every consumer pinned to it would silently stay on the previous release
-// forever. Moving it early is visible and the next release corrects it; see
+// forever. Moving it early is visible, but it is not corrected on its own
+// under a standing draft: true, since nothing ever resumes a deliberate
+// draft: every release drafts again, so the major tag stays ahead of the
+// last existing version tag for as long as draft stays on. See
 // docs/configuration.md's major-tag key.
 func applyMajorTag(
 	ctx context.Context, f forge.Forge, owner, repoName, componentName, tagPrefix, releasedVersion, sha string,

@@ -90,11 +90,15 @@ A component name with a `-` in it needs the index form,
 ## Draft for human review
 
 `draft: true` in `release-me.yaml`, or on a component, creates its GitHub release as a
-draft for a human to review and publish. It still reports the release in the outputs above,
-and does not resume it on later runs. Keep automatic publish steps off for that component
-if publishing needs human approval. With `draft-until-assets-attach: true` too, that component
-is still left out of the resume: the workflow below publishes every other component's draft,
-and this one waits for a human. See [configuration](configuration.md#draft).
+draft for a human to review and publish. The run that creates it reports the tag the same
+way a published release's is reported, in the outputs above and in `released-tag`; only a
+later run's resume is skipped, so that marker is not printed again while the draft waits.
+That first run's tag still reaches the publish step below: `publish-release-assets.sh` acts
+on every tag `tags` carries, with no filter for one drafted on purpose, so it attaches
+assets and publishes this component's release exactly as it would any other draft. Setting
+`draft` adds no human gate to that workflow. Keep automatic publish steps off for that
+component, or filter its tag out of the ones handed to the publish step, where publishing
+needs human approval. See [configuration](configuration.md#draft).
 
 ## Draft until assets attach
 
