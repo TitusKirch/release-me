@@ -226,6 +226,73 @@ func TestLockedFamilyReleasesAnUnchangedComponentAnyway(t *testing.T) {
 	}
 }
 
+// TestLockedFamilyBuildsAPreReleaseFromTheWholeFamilysTags covers a locked
+// family's release pull request carrying a pre-release label: every
+// component shares the one pre-release version, and its counter counts up
+// from the highest pre-release tag of any component in the family, not from
+// each component's own.
+func TestLockedFamilyBuildsAPreReleaseFromTheWholeFamilysTags(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeConfig(t, dir, "versioning: locked\ncomponents:\n  a:\n    path: a\n  b:\n    path: b\n")
+	writeFiles(t, dir, "chore: scaffold the family", map[string]string{"a/README.md": "a\n", "b/README.md": "b\n"})
+	runGit(t, dir, "tag", "a/v1.2.0")
+	runGit(t, dir, "tag", "b/v1.2.0")
+	writeFiles(t, dir, "feat: add a's export endpoint", map[string]string{"a/export.go": "package a\n"})
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+
+	f := newFake()
+	var stdout bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	created := f.CreatedPullRequests[0]
+	if created.Title != "chore: release v1.3.0 (a, b)" {
+		t.Fatalf("created title = %q, want the stable family version", created.Title)
+	}
+
+	rerun := func(step, body string) forgetest.UpdatePullRequestCall {
+		t.Helper()
+		f.ListResponses = []forgetest.ListResponse{
+			{Head: "release-me/main", State: "open", PullRequests: []forge.PullRequest{{
+				Number: 1, Title: created.Title, Body: body,
+				Labels: []string{"release: pending", "release: rc"}, HeadSHA: bareBranchSHA(t, origin),
+			}}},
+		}
+		var buf bytes.Buffer
+		if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &buf); err != nil {
+			t.Fatalf("doPR() %s error = %v", step, err)
+		}
+		if len(f.UpdatedPullRequests) == 0 {
+			t.Fatalf("%s: no update recorded", step)
+		}
+		return f.UpdatedPullRequests[len(f.UpdatedPullRequests)-1]
+	}
+
+	first := rerun("first rc", created.Body)
+	if first.Title != "chore: release v1.3.0-rc.1 (a, b)" {
+		t.Fatalf("first rc title = %q, want the family's first release candidate", first.Title)
+	}
+	for _, path := range []string{"a/CHANGELOG.md", "b/CHANGELOG.md"} {
+		if got := showBareFile(t, origin, "release-me/main", path); !strings.Contains(got, "v1.3.0-rc.1") {
+			t.Fatalf("%s = %q, want the heading at the shared pre-release version", path, got)
+		}
+	}
+
+	// Only a's own release candidate tag exists; b never carried one. The
+	// family's counter still moves on to rc.2 for both.
+	runGit(t, dir, "tag", "a/v1.3.0-rc.1")
+	writeFiles(t, dir, "fix: patch a's export endpoint", map[string]string{"a/CHANGES.txt": "a\n"})
+
+	second := rerun("second rc", first.Body)
+	if second.Title != "chore: release v1.3.0-rc.2 (a, b)" {
+		t.Fatalf("second rc title = %q, want the counter to follow the family's highest pre-release tag", second.Title)
+	}
+}
+
 // TestLockedFamilyAppliesAVersionOverride confirms a release-me-version
 // override on the one shared locked release pull request forces the
 // family's version for every component, skipping the computed bump, and

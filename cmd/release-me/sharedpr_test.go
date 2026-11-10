@@ -264,6 +264,80 @@ func TestSharedReleasePullRequestAppliesAVersionOverridePerComponent(t *testing.
 	}
 }
 
+// TestLinkedSharedReleasePullRequestAppliesAVersionOverrideToTheWholeFamily
+// covers a linked family's shared release pull request carrying one
+// release-me-version block: a linked family shares one version line, so the
+// block needs no component and applies to every component the pull request
+// releases, checked once against the family's highest released version.
+func TestLinkedSharedReleasePullRequestAppliesAVersionOverrideToTheWholeFamily(t *testing.T) {
+	cases := []struct {
+		name      string
+		override  string
+		wantTitle string
+		wantPath  string
+	}{
+		{
+			name:     "one version forces every component of the family",
+			override: "9.0.0", wantTitle: "chore: release a v9.0.0, c v9.0.0", wantPath: "9.0.0",
+		},
+		{
+			name:     "a version not greater than the family's highest tag is ignored",
+			override: "0.5.0", wantTitle: "chore: release a v0.8.1, c v0.8.1", wantPath: "0.8.1",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, origin := newPRRepo(t)
+			writeConfig(t, dir, "versioning: linked\nrelease-pull-request: shared\n"+
+				strings.TrimPrefix(linkedFamilyConfig, "versioning: linked\n"))
+			writeFiles(t, dir, "chore: scaffold the family", map[string]string{
+				"a/README.md": "a\n", "b/README.md": "b\n", "c/README.md": "c\n",
+			})
+			runGit(t, dir, "tag", "a/v0.8.0")
+			runGit(t, dir, "tag", "b/v0.8.0")
+			runGit(t, dir, "tag", "c/v0.8.0")
+			writeFiles(t, dir, "fix: patch a", map[string]string{"a/CHANGES.txt": "a\n"})
+			writeFiles(t, dir, "fix: patch c", map[string]string{"c/CHANGES.txt": "c\n"})
+
+			cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+			if err != nil {
+				t.Fatalf("config.Load() error = %v", err)
+			}
+			f := newFake()
+			var stdout bytes.Buffer
+			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+				t.Fatalf("doPR() first run error = %v", err)
+			}
+			created := f.CreatedPullRequests[0]
+			if created.Title != "chore: release a v0.8.1, c v0.8.1" {
+				t.Fatalf("created title = %q, want the family's computed version", created.Title)
+			}
+
+			f.ListResponses = []forgetest.ListResponse{
+				{Head: "release-me/main", State: "open", PullRequests: []forge.PullRequest{{
+					Number: 1, Title: created.Title, Body: releasepr.SetVersionOverride(created.Body, tc.override),
+					Labels: []string{"release: pending"}, HeadSHA: bareBranchSHA(t, origin),
+				}}},
+			}
+
+			if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+				t.Fatalf("doPR() second run error = %v", err)
+			}
+			if len(f.UpdatedPullRequests) != 1 {
+				t.Fatalf("UpdatedPullRequests = %+v, want one", f.UpdatedPullRequests)
+			}
+			if got := f.UpdatedPullRequests[0].Title; got != tc.wantTitle {
+				t.Fatalf("title = %q, want %q", got, tc.wantTitle)
+			}
+			for _, path := range []string{"a/CHANGELOG.md", "c/CHANGELOG.md"} {
+				if got := showBareFile(t, origin, "release-me/main", path); !strings.Contains(got, tc.wantPath) {
+					t.Fatalf("%s = %q, want the heading at version %s", path, got, tc.wantPath)
+				}
+			}
+		})
+	}
+}
+
 func TestSharedReleasePullRequestTurnsEveryComponentIntoAPreRelease(t *testing.T) {
 	dir, origin, cfg := newSharedRepo(t)
 	f := newFake()
