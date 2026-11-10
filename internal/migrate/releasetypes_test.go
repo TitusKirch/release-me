@@ -477,33 +477,34 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 			wantFiles: []config.File{{Path: "web/pubspec.yaml", Updater: "dart"}},
 		},
 		{
-			name:     "expo bumps package.json and app.json, and warns about versionCode",
+			name:     "expo keys app.json by the Expo SDK its package.json declares",
 			settings: `"release-type": "expo"`,
 			repo: map[string]string{
-				"web/package.json": packageJSON,
+				"web/package.json": "{\n  \"name\": \"@acme/web\",\n  \"version\": \"2.0.0\",\n" +
+					"  \"dependencies\": {\n    \"expo\": \"~51.0.0\",\n    \"react\": \"18.2.0\"\n  }\n}\n",
 				"web/app.json": "{\n  \"expo\": {\n    \"version\": \"2.0.0\",\n    \"ios\": {\n      \"buildNumber\": \"2.0.0\"\n" +
 					"    },\n    \"android\": {\n      \"versionCode\": 510020000\n    }\n  }\n}\n",
 			},
 			wantFiles: []config.File{
 				{Path: "web/package.json", Updater: "json", Key: "version"},
-				{Path: "web/app.json", Updater: "json", Key: "expo.version"},
-				{Path: "web/app.json", Updater: "json", Key: "expo.ios.buildNumber"},
-			},
-			wantWarnings: []string{
-				"package web: release-type expo: app.json's expo.android.versionCode is computed from the Expo SDK " +
-					"and the version, release-me does not bump it",
+				{Path: "web/app.json", Updater: "expo", Key: "~51.0.0"},
 			},
 		},
 		{
-			name:     "expo ignores a versionCode outside its Android settings",
+			name:     "expo falls back to an SDK major of zero and warns when no expo dependency is declared",
 			settings: `"release-type": "expo"`,
 			repo: map[string]string{
 				"web/package.json": packageJSON,
-				"web/app.json":     "{\n  \"versionCode\": 7,\n  \"expo\": {\n    \"version\": \"2.0.0\",\n    \"extra\": {\n      \"versionCode\": 8\n    }\n  }\n}\n",
+				"web/app.json":     "{\n  \"expo\": {\n    \"version\": \"2.0.0\"\n  }\n}\n",
 			},
 			wantFiles: []config.File{
 				{Path: "web/package.json", Updater: "json", Key: "version"},
-				{Path: "web/app.json", Updater: "json", Key: "expo.version"},
+				{Path: "web/app.json", Updater: "expo", Key: "0"},
+			},
+			wantWarnings: []string{
+				"package web: release-type expo: package.json declares no expo dependency to read the Expo SDK " +
+					"version off, app.json's expo.android.versionCode is computed with a major of 0, as release-please " +
+					"did, set the key under files to the SDK version",
 			},
 		},
 		{
@@ -513,11 +514,38 @@ func TestFromReleasePleaseCarriesOverTheFilesAReleaseTypeBumps(t *testing.T) {
 			wantFiles: []config.File{{Path: "web/sfdx-project.json", Updater: "sfdx"}},
 		},
 		{
-			name:     "terraform-module warns that its files are searched for",
+			name:     "terraform-module bumps versions.tf and metadata.yaml, and warns about the submodules",
+			settings: `"release-type": "terraform-module"`,
+			repo: map[string]string{
+				"web/versions.tf": "terraform {\n  required_version = \">= 1.3\"\n\n  provider_meta \"google\" {\n" +
+					"    module_name = \"blueprints/terraform/terraform-google-notes/v2.0.0\"\n  }\n}\n",
+				"web/metadata.yaml": "apiVersion: blueprints.cloud.google.com/v1alpha1\nkind: BlueprintMetadata\nversion: 2.0.0\n",
+			},
+			wantFiles: []config.File{
+				{Path: "web/versions.tf", Updater: "terraform-module"},
+				{Path: "web/metadata.yaml", Updater: "yaml", Key: "version"},
+			},
+			wantWarnings: []string{
+				"package web: release-type terraform-module: release-please searched the package for the versions.tf of " +
+					"every submodule and rewrote the version constraint of every README, only the module's own files are " +
+					"carried over, add any other under files",
+			},
+		},
+		{
+			name:     "terraform-module warns when the module has no version file to carry over",
 			settings: `"release-type": "terraform-module"`,
 			wantWarnings: []string{
-				"package web: release-type terraform-module: release-please searched the package for the files it bumps, " +
-					"release-me lists them: mark each version line with \"release-me: version\" and add it under files",
+				"package web: release-type terraform-module: no versions.tf, versions.tf.tmpl or metadata.yaml " +
+					"holding a version found, add the module's version files under files",
+			},
+		},
+		{
+			name:     "krm-blueprint warns that its manifests are searched for",
+			settings: `"release-type": "krm-blueprint"`,
+			wantWarnings: []string{
+				"package web: release-type krm-blueprint: release-please searched the package's YAML files for the " +
+					"cnrm.cloud.google.com/blueprint annotation, release-me lists them: add each under files with " +
+					"updater krm-blueprint",
 			},
 		},
 	}
