@@ -727,6 +727,7 @@ func TestFromReleasePleaseCarriesTheGitHubReleaseSettingsOver(t *testing.T) {
 	t.Parallel()
 	forceTag := func(c config.ResolvedComponent) bool { return c.ForceTagCreation }
 	skip := func(c config.ResolvedComponent) bool { return c.SkipGitHubRelease }
+	draft := func(c config.ResolvedComponent) bool { return c.Draft }
 	cases := []struct {
 		name       string
 		configJSON string
@@ -778,6 +779,32 @@ func TestFromReleasePleaseCarriesTheGitHubReleaseSettingsOver(t *testing.T) {
 			name:       "leaves out skip-github-release at release-me's default",
 			configJSON: `{"skip-github-release": false, "packages": {".": {"release-type": "go"}}}`,
 			get:        skip, want: []bool{false},
+		},
+		{
+			name:       "writes draft once for a root package",
+			configJSON: `{"draft": true, "packages": {".": {"release-type": "go"}}}`,
+			wantYAML:   "\ndraft: true\n",
+			get:        draft, want: []bool{true},
+		},
+		{
+			name: "writes draft on the one package that carries it",
+			configJSON: `{"packages": {
+			  "api": {"component": "api", "release-type": "go"},
+			  "web": {"component": "web", "release-type": "go", "draft": true}}}`,
+			wantYAML: "    path: web\n    tag-prefix: web-v\n    draft: true\n",
+			get:      draft, want: []bool{false, true},
+		},
+		{
+			name: "writes draft once at the top level when every package carries it",
+			configJSON: `{"draft": true, "packages": {
+			  "api": {"component": "api", "release-type": "go"}, "web": {"component": "web", "release-type": "go"}}}`,
+			wantYAML: "\ndraft: true\ncomponents:\n",
+			get:      draft, want: []bool{true, true},
+		},
+		{
+			name:       "leaves out draft at release-me's default",
+			configJSON: `{"draft": false, "packages": {".": {"release-type": "go"}}}`,
+			get:        draft, want: []bool{false},
 		},
 	}
 	for _, tc := range cases {
@@ -866,7 +893,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 	  "sequential-calls": true,
 	  "plugins": ["group-priority", {"type": "linked-versions", "groupName": "half", "components": ["a"]}],
 	  "packages": {
-	    "a": {"component": "a", "release-type": "java", "draft": true, "extra-files": [
+	    "a": {"component": "a", "release-type": "java", "versioning": "prerelease", "extra-files": [
 	      "src/version.py",
 	      {"type": "json", "path": "/manifest.json", "jsonpath": "$.app.version"},
 	      {"type": "xml", "path": "pom.xml", "xpath": "//version"}
@@ -890,7 +917,7 @@ func TestFromReleasePleaseReportsWhatItCannotCarryOver(t *testing.T) {
 
 	for _, want := range []string{
 		"sequential-calls: no release-me equivalent, left out",
-		"package a: draft: no release-me equivalent, left out",
+		"package a: versioning: no release-me equivalent, left out",
 		"package a: release-type java: the files it bumps are not carried over, add them under files",
 		"package a: extra-files: a/src/version.py does not exist, left out of files",
 		`package a: extra-files: pom.xml: type "xml" at "//version" has no typed updater, add it under files`,

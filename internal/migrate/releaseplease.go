@@ -77,9 +77,10 @@ var packageKeys = append([]string{
 // default for it: a value equal to the default is left out of
 // release-me.yaml. An absent source key also adopts this target default.
 // For force-tag-creation that deliberately differs from release-please:
-// this migration does not carry draft over, so both defaults create the
-// tag during immediate publication. A setting with different absence
-// semantics needs a separate source default.
+// release-please's draft bears on when it creates the tag, release-me's
+// own draft never does, so both defaults still create the tag during
+// immediate publication regardless of draft. A setting with different
+// absence semantics needs a separate source default.
 type releaseFlag struct {
 	key string
 	def bool
@@ -91,6 +92,7 @@ var releaseFlags = []releaseFlag{
 	{key: "force-tag-creation", def: true},
 	{key: "skip-github-release", def: false},
 	{key: "include-v-in-release-name", def: true},
+	{key: "draft", def: false},
 }
 
 // releaseFlagKeys returns the key of every entry in releaseFlags.

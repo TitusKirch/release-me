@@ -100,3 +100,38 @@ func TestDoReleaseWithoutForceTagCreationLeavesTheTagToThePublish(t *testing.T) 
 		}
 	}
 }
+
+func TestDoReleaseWithDraftLeavesTheReleaseADraftAndNeverResumesIt(t *testing.T) {
+	dir, _ := newPRRepo(t)
+	commitEntry(t, dir, "chore: initial commit")
+	f := mergedReleaseFake()
+	cfg := config.Default()
+	cfg.Draft = true
+	var stdout bytes.Buffer
+
+	if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doRelease() error = %v", err)
+	}
+	if len(f.CreatedReleases) != 1 || !f.CreatedReleases[0].Draft {
+		t.Fatalf("CreatedReleases = %+v, want one draft", f.CreatedReleases)
+	}
+	for _, want := range []string{"tagged and drafted v0.1.0", "released-tag: v0.1.0"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, want it to contain %q", stdout.String(), want)
+		}
+	}
+
+	// The next run finds the pull request tagged and its release still a
+	// draft: left for a human on purpose, so nothing is resumed.
+	f.ListResponses[0].PullRequests[0].Labels = f.PRLabels[9]
+	stdout.Reset()
+	if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("second doRelease() error = %v", err)
+	}
+	if got := stdout.String(); got != "nothing to release\n" {
+		t.Fatalf("second stdout = %q, want nothing to release", got)
+	}
+	if len(f.CreatedReleases) != 1 {
+		t.Fatalf("CreatedReleases = %+v, want still one", f.CreatedReleases)
+	}
+}

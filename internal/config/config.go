@@ -8,7 +8,7 @@
 // lists, labels, prerelease-types, author, major-tag, versioning, signoff,
 // release-pull-request-title, release-pull-request-shared-title,
 // release-pull-request-draft, release-pull-request-header,
-// release-pull-request-footer, draft-until-assets-attach,
+// release-pull-request-footer, draft-until-assets-attach, draft,
 // force-tag-creation, include-v-in-release-name, skip-github-release,
 // comment-mention, delete-release-branch, workspaces, always-link-local,
 // exclude-paths and components.
@@ -445,6 +445,12 @@ type Config struct {
 	// whose own workflow creates the release from the tag. A component
 	// overrides it through its own "skip-github-release" key.
 	SkipGitHubRelease bool
+	// Draft is the top-level "draft" key, default false: when true,
+	// release creates the GitHub release as a draft and leaves it one, for
+	// a human to publish. Unlike DraftUntilAssetsAttach it never resumes
+	// a draft on a later run. A component overrides it through its own
+	// "draft" key.
+	Draft bool
 	// CommentMention is the top-level "comment-mention" key: the mention
 	// prefix a write-access commenter's "release-as" or "release-notes"
 	// command on the release pull request must start with, default
@@ -486,9 +492,9 @@ type Config struct {
 // and optional overrides of the top-level initial-version,
 // bump-minor-pre-major, bump-patch-for-minor-pre-major, release-as,
 // hidden-types, files, major-tag, changelog-source, changelog-type,
-// skip-changelog, force-tag-creation, include-v-in-release-name and
-// skip-github-release, plus its own tag-prefix, changelog path and
-// exclude-paths. A nil
+// skip-changelog, force-tag-creation, include-v-in-release-name,
+// skip-github-release and draft, plus its own tag-prefix, changelog path
+// and exclude-paths. A nil
 // field was left out of release-me.yaml and falls back to the top-level
 // value, the same left-out-versus-zero-value distinction Load applies to
 // the top level itself.
@@ -510,6 +516,7 @@ type Component struct {
 	// "include-v-in-release-name" key.
 	IncludeVInReleaseName *bool
 	SkipGitHubRelease     *bool
+	Draft                 *bool
 	ChangelogSections     *[]ChangelogSection
 	// TagPrefix is the component's "tag-prefix" key, nil when it was left
 	// out and the component keeps the derived "<name>/v".
@@ -574,6 +581,9 @@ type ResolvedComponent struct {
 	// SkipGitHubRelease is true when release tags this component without
 	// creating a GitHub release for the tag.
 	SkipGitHubRelease bool
+	// Draft is true when release creates this component's GitHub release
+	// as a draft and leaves it one.
+	Draft bool
 	// ExcludePaths are the paths inside Path whose changes never count for
 	// the component, see history.Counts.
 	ExcludePaths []string
@@ -609,6 +619,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			ForceTagCreation:          cfg.ForceTagCreation,
 			IncludeVInReleaseName:     cfg.IncludeVInReleaseName,
 			SkipGitHubRelease:         cfg.SkipGitHubRelease,
+			Draft:                     cfg.Draft,
 			ExcludePaths:              cfg.ExcludePaths,
 			ChangelogSections:         cfg.ChangelogSections,
 		}}
@@ -647,6 +658,7 @@ func (cfg Config) Resolve() []ResolvedComponent {
 			ForceTagCreation:          cfg.ForceTagCreation,
 			IncludeVInReleaseName:     cfg.IncludeVInReleaseName,
 			SkipGitHubRelease:         cfg.SkipGitHubRelease,
+			Draft:                     cfg.Draft,
 			ExcludePaths:              c.ExcludePaths,
 			ChangelogSections:         cfg.ChangelogSections,
 		}
@@ -698,6 +710,9 @@ func (cfg Config) Resolve() []ResolvedComponent {
 		}
 		if c.SkipGitHubRelease != nil {
 			rc.SkipGitHubRelease = *c.SkipGitHubRelease
+		}
+		if c.Draft != nil {
+			rc.Draft = *c.Draft
 		}
 		out = append(out, rc)
 	}
@@ -851,6 +866,7 @@ type raw struct {
 	ForceTagCreation              *bool                  `yaml:"force-tag-creation"`
 	IncludeVInReleaseName         *bool                  `yaml:"include-v-in-release-name"`
 	SkipGitHubRelease             *bool                  `yaml:"skip-github-release"`
+	Draft                         *bool                  `yaml:"draft"`
 	CommentMention                *string                `yaml:"comment-mention"`
 	ReleasePullRequestTitle       *string                `yaml:"release-pull-request-title"`
 	ReleasePullRequestSharedTitle *string                `yaml:"release-pull-request-shared-title"`
@@ -886,6 +902,7 @@ type rawComponent struct {
 	ForceTagCreation          *bool                  `yaml:"force-tag-creation"`
 	IncludeVInReleaseName     *bool                  `yaml:"include-v-in-release-name"`
 	SkipGitHubRelease         *bool                  `yaml:"skip-github-release"`
+	Draft                     *bool                  `yaml:"draft"`
 	ChangelogSections         *[]rawChangelogSection `yaml:"changelog-sections"`
 	TagPrefix                 *string                `yaml:"tag-prefix"`
 	Changelog                 *string                `yaml:"changelog"`
@@ -1247,6 +1264,9 @@ func Load(path string) (cfg Config, err error) {
 	if r.SkipGitHubRelease != nil {
 		cfg.SkipGitHubRelease = *r.SkipGitHubRelease
 	}
+	if r.Draft != nil {
+		cfg.Draft = *r.Draft
+	}
 	if r.CommentMention != nil {
 		if *r.CommentMention == "" {
 			return Config{}, fmt.Errorf("config: parse %s: comment-mention is empty", path)
@@ -1519,6 +1539,7 @@ func decodeComponents(path string, node *yaml.Node) ([]Component, error) {
 			ForceTagCreation:      rc.ForceTagCreation,
 			IncludeVInReleaseName: rc.IncludeVInReleaseName,
 			SkipGitHubRelease:     rc.SkipGitHubRelease,
+			Draft:                 rc.Draft,
 		}
 		if rc.Files != nil {
 			files, err := decodeFiles(path, *rc.Files)

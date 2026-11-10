@@ -180,6 +180,7 @@ files:
 | `force-tag-creation` | Creates the tag before the release; `false` leaves it to the release's publish. | `true` | No |
 | `include-v-in-release-name` | Keeps the `v` before the version in the release name. | `true` | No |
 | `skip-github-release` | Tags a merged release pull request without creating a GitHub release. | `false` | No |
+| `draft` | Creates each GitHub release as a draft and leaves it for a human to publish. | `false` | No |
 | `comment-mention` | Mention prefix for `release-as`/`release-notes` comment commands. | `@release-me` | No |
 | `workspaces` | Package managers whose local dependencies release a dependent with its dependency. | none | No |
 | `delete-release-branch` | Deletes a release branch once `release` has tagged and released it. | `true` | No |
