@@ -98,6 +98,9 @@ wants the body without it.
 `release-pull-request-shared-title`; one it left out lacked a placeholder release-me reads the
 title back with, and the row offers the default title or a pattern carrying them.
 
+Its `pull-request-header` and `pull-request-footer` carry over as
+`release-pull-request-header` and `release-pull-request-footer`.
+
 A **root package** beside other packages, package `.`, translates to a root component with a
 warning: it owns only the files outside the other components' paths, where release-please's
 root package counted every commit, so a change inside a package no longer releases the root.

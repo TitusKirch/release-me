@@ -258,8 +258,8 @@ func doPRComponent(
 	if err != nil {
 		return err
 	}
-	body := releasepr.Body(versionStr, tag, bodyGuide(cfg), notes, versionOverride, section) +
-		releasepr.TitlePatternMarker(cfg.TitlePatterns()[0], releasepr.TitlePerComponent) +
+	body := cfg.Frame().Wrap(releasepr.Body(versionStr, tag, bodyGuide(cfg), notes, versionOverride, section)+
+		releasepr.TitlePatternMarker(cfg.TitlePatterns()[0], releasepr.TitlePerComponent)) +
 		releasepr.DateMarker(date, cfg.ChangelogStyle.DateFormat)
 
 	switch {
@@ -482,8 +482,8 @@ func doPRLocked(
 	if err != nil {
 		return err
 	}
-	body := releasepr.Body(versionStr, strings.Join(tags, ", "), bodyGuide(cfg), notes, versionOverride, section) +
-		releasepr.TitlePatternMarker(cfg.SharedTitlePatterns()[0], cfg.SharedTitleKind()) +
+	body := cfg.Frame().Wrap(releasepr.Body(versionStr, strings.Join(tags, ", "), bodyGuide(cfg), notes, versionOverride, section)+
+		releasepr.TitlePatternMarker(cfg.SharedTitlePatterns()[0], cfg.SharedTitleKind())) +
 		releasepr.DateMarker(date, cfg.ChangelogStyle.DateFormat)
 
 	return publishSharedPR(ctx, cfg, f, owner, repoName, base, branch, "locked family", names, existing, plan, date, title, body, dryRun, stdout)

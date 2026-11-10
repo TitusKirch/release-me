@@ -278,6 +278,9 @@ counted every commit. It also carries over:
 - `draft-pull-request` as
   [`release-pull-request-draft`](configuration.md#release-pull-request-draft).
 - `signoff` as [`signoff`](configuration.md#signoff).
+- `pull-request-header` and `pull-request-footer` as
+  [`release-pull-request-header`](configuration.md#release-pull-request-header) and
+  [`release-pull-request-footer`](configuration.md#release-pull-request-footer).
 
 `changelog-source` is set to `all`, because release-please reads every commit since the last
 release, not the first parent history.
