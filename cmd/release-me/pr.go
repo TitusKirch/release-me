@@ -1192,12 +1192,18 @@ func publishReleaseCommit(ctx context.Context, dir, branch, sha, expected string
 		args = append(args, "--force-with-lease=refs/heads/"+branch+":"+expected)
 	}
 	args = append(args, "origin", sha+":refs/heads/"+branch)
-	out, err := gitOutput(ctx, dir, args...)
-	if err != nil {
-		if leaseLost(out) {
+	cmd = exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	var stdout bytes.Buffer
+	stderr.Reset()
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if leaseLost(stdout.String()) {
 			return fmt.Errorf("publish branch %s: %w", branch, forge.ErrBranchMoved)
 		}
-		return fmt.Errorf("publish branch %s: %w", branch, err)
+		return fmt.Errorf("publish branch %s: %w: %s", branch, err,
+			strings.ReplaceAll(strings.TrimSpace(stderr.String()), pushURL, "origin"))
 	}
 	return nil
 }

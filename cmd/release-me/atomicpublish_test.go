@@ -166,3 +166,31 @@ func TestPreparedCommitFetchErrorsNeverExposeTheRemote(t *testing.T) {
 		})
 	}
 }
+
+func TestPreparedCommitPushErrorsNeverExposeTheRemote(t *testing.T) {
+	for _, name := range []string{"private-token", "user:private-token@remote"} {
+		t.Run(name, func(t *testing.T) {
+			dir, _ := newPRRepo(t)
+			remote := filepath.Join(t.TempDir(), name)
+			if err := os.MkdirAll(remote, 0o755); err != nil {
+				t.Fatalf("create %s: %v", remote, err)
+			}
+			runGit(t, remote, "init", "-q", "--bare", "-b", mainBranch)
+			commitEntry(t, dir, "feat: add export")
+			runGit(t, dir, "push", "-q", remote, "HEAD:refs/heads/"+mainBranch)
+			commitEntry(t, dir, "fix: handle empty exports")
+			sha := gitOut(t, dir, "rev-parse", "HEAD")
+			runGit(t, dir, "push", "-q", remote, "HEAD:refs/heads/release-me-prepared")
+			runGit(t, dir, "remote", "set-url", "--push", "origin", remote)
+			hookOnPush(t, remote, "echo 'commits must have verified signatures' >&2\nexit 1")
+
+			err := publishReleaseCommit(t.Context(), dir, mainBranch, sha, "")
+			if err == nil || strings.Contains(err.Error(), "private-token") {
+				t.Fatalf("push error = %v", err)
+			}
+			if !strings.Contains(err.Error(), "commits must have verified signatures") {
+				t.Fatalf("push error = %v, want git's own reason in it", err)
+			}
+		})
+	}
+}
