@@ -231,9 +231,9 @@ counted every commit. It also carries over:
 - the version files of the package's `release-type`, `node` being release-please's default,
   each where it exists. A file release-please bumps only where it holds a version is left out
   silently otherwise; a missing main version file is warned about:
-  - `node`: `package.json`; `expo`: the same plus `app.json`'s `expo.version` and
-    `expo.ios.buildNumber`, with a warning for `expo.android.versionCode`, which release-please
-    computes from the Expo SDK version;
+  - `node`: `package.json`; `expo`: the same plus `app.json` through `expo`, keyed by the Expo
+    SDK version its `package.json` declares the `expo` dependency as, with a warning falling
+    back to a major of 0 where it declares none, as release-please did;
   - `rust`: `Cargo.toml`; `maven`: `pom.xml`, its project version or else its parent's, a
     multi-module `pom.xml` warned about, since release-please bumped every `pom.xml` below the
     package; `simple`: its `version-file`, default `version.txt`, through `plain`;
@@ -246,8 +246,11 @@ counted every commit. It also carries over:
   - `bazel`: its `version-file`, default `MODULE.bazel`; `php`: `composer.json`, with a
     warning for a `VERSION` file;
   - `dart`: `pubspec.yaml`; `sfdx`: `sfdx-project.json`; `helm`: `Chart.yaml`;
-  - `terraform-module` and `krm-blueprint` searched the package for their files, which a
-    warning asks to mark with `release-me: version` and list instead;
+  - `terraform-module`: `versions.tf`, `versions.tf.tmpl` and `metadata.yaml`, with a warning
+    that release-please also searched the package for every submodule's `versions.tf` and
+    rewrote every README's version constraint;
+  - `krm-blueprint` searched the package's YAML files for the `cnrm.cloud.google.com/blueprint`
+    annotation, which a warning asks to list under `files` with the `krm-blueprint` updater;
 - the lockfile release-please bumps beside it where it exists and holds the package:
   `package-lock.json` and `npm-shrinkwrap.json` for `node`, `Cargo.lock` for `rust`, and
   `Gemfile.lock` for `ruby`, keyed by the crate or gem name;
