@@ -201,6 +201,29 @@ func TestReleaseTypeUpdatersBumpTheVersionOfTheirFile(t *testing.T) {
 			from:    "version: 1.4.0",
 			to:      "version: 1.5.0-rc.1",
 		},
+		{
+			name:    "terraform-module bumps the provider_meta module name, not a version constraint",
+			updater: updater.TerraformModule,
+			content: versionsTF,
+			from:    `    module_name = "blueprints/terraform/terraform-google-notes/v1.4.0"`,
+			to:      `    module_name = "blueprints/terraform/terraform-google-notes/v1.5.0-rc.1"`,
+		},
+		{
+			name:    "krm-blueprint bumps the blueprint annotation, not a pinned function image",
+			updater: updater.KrmBlueprint,
+			content: krmBlueprint,
+			from:    "    cnrm.cloud.google.com/blueprint: cnrm/notes-db/v1.4.0",
+			to:      "    cnrm.cloud.google.com/blueprint: cnrm/notes-db/v1.5.0-rc.1",
+		},
+		{
+			name:    "krm-blueprint replaces a pre-release suffix on the old version rather than keeping it",
+			updater: updater.KrmBlueprint,
+			content: replaceLine(krmBlueprint,
+				"    cnrm.cloud.google.com/blueprint: cnrm/notes-db/v1.4.0",
+				"    cnrm.cloud.google.com/blueprint: cnrm/notes-db/v1.4.0-rc.3"),
+			from: "    cnrm.cloud.google.com/blueprint: cnrm/notes-db/v1.4.0-rc.3",
+			to:   "    cnrm.cloud.google.com/blueprint: cnrm/notes-db/v1.5.0-rc.1",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -240,6 +263,21 @@ func TestReleaseTypeUpdatersRejectAFileWithoutTheirVersion(t *testing.T) {
 		{"bazel rejects a MODULE.bazel without a module() call", updater.Bazel, "bazel_dep(name = \"platforms\", version = \"0.0.10\")\n"},
 		{"bazel rejects a module() call without a version", updater.Bazel, "module(name = \"rules_release\")\n\nbazel_dep(name = \"platforms\", version = \"0.0.10\")\n"},
 		{"dart rejects a pubspec.yaml without a version", updater.Dart, "name: release_notes\n"},
+		{
+			"terraform-module rejects a versions.tf holding constraints only",
+			updater.TerraformModule,
+			"terraform {\n  required_version = \">= 1.3\"\n\n  required_providers {\n    google = {\n      source  = \"hashicorp/google\"\n      version = \"~> 5.0\"\n    }\n  }\n}\n",
+		},
+		{
+			"krm-blueprint rejects a manifest without the blueprint annotation",
+			updater.KrmBlueprint,
+			"apiVersion: sql.cnrm.cloud.google.com/v1beta1\nkind: SQLInstance\nmetadata:\n  name: notes-db\nspec:\n  region: europe-west4\n",
+		},
+		{
+			"krm-blueprint rejects a pinned image that is no blueprint version",
+			updater.KrmBlueprint,
+			"metadata:\n  annotations:\n    config.kubernetes.io/function: |\n      image: gcr.io/kpt-fn/set-annotations:v0.1.4\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -248,6 +286,62 @@ func TestReleaseTypeUpdatersRejectAFileWithoutTheirVersion(t *testing.T) {
 				t.Fatal("Update() error = nil, want an error")
 			}
 		})
+	}
+}
+
+const versionsTF = `terraform {
+  required_version = ">= 1.3"
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 5.0, < 7.0"
+    }
+  }
+
+  provider_meta "google" {
+    module_name = "blueprints/terraform/terraform-google-notes/v1.4.0"
+  }
+}
+`
+
+const krmBlueprint = `apiVersion: sql.cnrm.cloud.google.com/v1beta1
+kind: SQLInstance
+metadata:
+  name: notes-db
+  annotations:
+    cnrm.cloud.google.com/blueprint: cnrm/notes-db/v1.4.0
+    config.kubernetes.io/function: |
+      image: gcr.io/kpt-fn/set-annotations:v0.1.4
+spec:
+  region: europe-west4
+`
+
+func TestUpdateTerraformModuleBumpsEveryVersionOfTheFile(t *testing.T) {
+	t.Parallel()
+	content := "terraform {\n  provider_meta \"google\" {\n    module_name = \"blueprints/terraform/terraform-google-notes/v1.4.0\"\n  }\n}\n\n" +
+		"# Submodule pinned to the same release:\n# source = \"github.com/ostendorf-cloud/notes//modules/db?ref=v1.4.0\"\n"
+	got, err := updater.UpdateTerraformModule(content, "1.5.0")
+	if err != nil {
+		t.Fatalf("UpdateTerraformModule() error = %v", err)
+	}
+	want := strings.ReplaceAll(content, "v1.4.0", "v1.5.0")
+	if got != want {
+		t.Fatalf("UpdateTerraformModule() =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestUpdateKrmBlueprintBumpsEveryAnnotatedResource(t *testing.T) {
+	t.Parallel()
+	content := "metadata:\n  annotations:\n    cnrm.cloud.google.com/blueprint: cnrm/notes-db/v1.4.0\n---\n" +
+		"metadata:\n  annotations:\n    cnrm.cloud.google.com/blueprint: cnrm/notes-cache/v1.4.0\n"
+	got, err := updater.UpdateKrmBlueprint(content, "1.5.0")
+	if err != nil {
+		t.Fatalf("UpdateKrmBlueprint() error = %v", err)
+	}
+	want := strings.ReplaceAll(content, "v1.4.0", "v1.5.0")
+	if got != want {
+		t.Fatalf("UpdateKrmBlueprint() =\n%s\nwant\n%s", got, want)
 	}
 }
 

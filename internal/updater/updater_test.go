@@ -191,6 +191,9 @@ func TestUpdatersRegistersEveryUpdaterWithTheRightKeyRequirement(t *testing.T) {
 		{updater.Bazel, false},
 		{updater.Dart, false},
 		{updater.Sfdx, false},
+		{updater.TerraformModule, false},
+		{updater.Expo, true},
+		{updater.KrmBlueprint, false},
 	}
 	for _, tc := range cases {
 		entry, ok := updater.Updaters[tc.name]
