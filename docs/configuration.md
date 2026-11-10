@@ -76,7 +76,9 @@ over the strategy, the same as over the default bump. `bump-minor-pre-major` and
 always-bump strategy bumps the part it names below `1.0.0` too, as in release-please. `next`
 names the strategy in its reason, `1.3.0 (fix, always-bump-minor)`. Any other value is a
 configuration error. A component overrides it through its own `versioning-strategy` key; a
-`locked` or `linked` family computes its one shared version with the top-level value.
+`locked` or `linked` family computes its one shared version with the top-level value. A
+dependent that releases only because a [workspace](#workspaces) dependency does ignores its own
+strategy and takes a plain patch instead, since it has no changes of its own to bump by.
 
 The key is release-please's `versioning`, renamed because release-me's own
 [`versioning`](#versioning) already names how a family's versions relate. release-please's
@@ -850,8 +852,10 @@ A component that releases moves every other component's dependency on it, declar
 `dependencies`, `devDependencies`, `peerDependencies` or `optionalDependencies` by the package
 name, to its new version, and that dependent releases with it in the same release pull request:
 a patch bump on its own last tag in `independent`, the family's version in `linked`, and in
-`locked` every component releases anyway. A dependent of a dependent releases too. Each
-dependent's changelog gets a `- **deps:** update <package> to <version>` line under Bug Fixes.
+`locked` every component releases anyway. A dependent of a dependent releases too. In
+`independent`, the dependent's own `versioning-strategy` is ignored for that patch, since it
+has no changes of its own to bump by. Each dependent's changelog gets a
+`- **deps:** update <package> to <version>` line under Bug Fixes.
 A range keeps its operator and protocol: `^1.2.0` becomes `^1.3.0`, `workspace:~1.2.0`
 becomes `workspace:~1.3.0`, while one naming no single version, such as `workspace:*`, `*`,
 `file:../core` or `>=1.0.0 <2`, stays as written and still releases the dependent. A
