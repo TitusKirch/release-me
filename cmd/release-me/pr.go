@@ -1194,12 +1194,26 @@ func publishReleaseCommit(ctx context.Context, dir, branch, sha, expected string
 	args = append(args, "origin", sha+":refs/heads/"+branch)
 	out, err := gitOutput(ctx, dir, args...)
 	if err != nil {
-		if strings.Contains(out, "[rejected]") {
+		if leaseLost(out) {
 			return fmt.Errorf("publish branch %s: %w", branch, forge.ErrBranchMoved)
 		}
 		return fmt.Errorf("publish branch %s: %w", branch, err)
 	}
 	return nil
+}
+
+// leaseLost reports whether the porcelain status lines of a failed push
+// say the lease was lost, which git words in two ways. Its own check
+// against the ref advertisement prints "[rejected] (stale info)", for a
+// branch that already moved when the push started; receive-pack's
+// compare-and-swap prints "[remote rejected] (incorrect old value
+// provided)", for one that moves while the push runs, which is the
+// concurrent case the lease exists for. Every other "[remote rejected]"
+// stays a plain error carrying git's own reason, a ruleset declining an
+// unsigned commit through the pre-receive hook above all.
+func leaseLost(porcelain string) bool {
+	return strings.Contains(porcelain, "[rejected]") ||
+		strings.Contains(porcelain, "(incorrect old value provided)")
 }
 
 // warnUnsigned reads the signature the forge verified on sha, the commit

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,6 +69,85 @@ func TestReleasePublicationKeepsAnInterleavedWriter(t *testing.T) {
 				}
 			} else if err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+// moveRefHook is a pre-receive hook body that moves the release branch to
+// another commit, which is what receive-pack sees when a second writer's
+// push lands between the ref advertisement this push leased against and
+// its own ref transaction. The quarantine variables are unset because
+// receive-pack refuses a ref update from a hook that still carries them.
+const moveRefHook = "env -u GIT_QUARANTINE_PATH -u GIT_OBJECT_DIRECTORY " +
+	"-u GIT_ALTERNATE_OBJECT_DIRECTORIES git update-ref refs/heads/" + mainBranch + " {{other}}"
+
+// hookOnPush installs body as the pre-receive hook of the bare repository
+// at origin, so a test can make a push fail the way a real forge does.
+func hookOnPush(t *testing.T, origin, body string) {
+	t.Helper()
+	path := filepath.Join(origin, "hooks", "pre-receive")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func TestPreparedCommitPublicationTellsALeaseLossFromARefusedPush(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		hook   string
+		stale  bool
+		moved  bool
+		reason string
+	}{
+		{
+			name:  "a branch that moved before the push starts",
+			stale: true,
+			moved: true,
+		},
+		{
+			name:  "a writer landing while the push runs",
+			hook:  moveRefHook,
+			moved: true,
+		},
+		{
+			name:   "a ruleset refusing the commit",
+			hook:   "echo 'commits must have verified signatures' >&2\nexit 1",
+			reason: "commits must have verified signatures",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, origin := newPRRepo(t)
+			commitEntry(t, dir, "feat: add export")
+			other := gitOut(t, dir, "rev-parse", "HEAD")
+			commitEntry(t, dir, "fix: handle empty exports")
+			runGit(t, dir, "push", "-q", origin, "HEAD:refs/heads/"+mainBranch)
+			expected := bareBranchSHA(t, origin)
+			commitEntry(t, dir, "fix: report an empty export set")
+			sha := gitOut(t, dir, "rev-parse", "HEAD")
+			runGit(t, dir, "push", "-q", origin, "HEAD:refs/heads/release-me-prepared")
+			if tc.stale {
+				expected = other
+			}
+			if tc.hook != "" {
+				hookOnPush(t, origin, strings.ReplaceAll(tc.hook, "{{other}}", other))
+			}
+
+			err := publishReleaseCommit(t.Context(), dir, mainBranch, sha, expected)
+			if got := bareBranchSHA(t, origin); got == sha {
+				t.Fatalf("tip = %s, want the rejected commit unpublished", got)
+			}
+			if tc.moved {
+				if !errors.Is(err, forge.ErrBranchMoved) {
+					t.Fatalf("error = %v, want ErrBranchMoved", err)
+				}
+				return
+			}
+			if err == nil || errors.Is(err, forge.ErrBranchMoved) {
+				t.Fatalf("error = %v, want a plain failure", err)
+			}
+			if !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("error = %v, want it to carry %q", err, tc.reason)
 			}
 		})
 	}
