@@ -98,7 +98,11 @@ func workspaceOptions(cfg config.Config) workspace.Options {
 // own to release but depends on one that has: a patch bump on its last
 // tag, or its initial version without one, with no entries of its own;
 // workspaceUpdates adds the dependency entries once every version is
-// final.
+// final. The component's own "versioning-strategy" does not apply here: a
+// dependent carried along by a workspace relationship has no changes of
+// its own, so it takes a plain patch rather than the strategy's bump.
+// Without this, a "service-pack" strategy would hand it back its own last
+// version instead of moving it.
 func dependencyRelease(ctx context.Context, dir string, comp config.ResolvedComponent) (release, error) {
 	tag, last, hasTag, err := history.LastTag(ctx, dir, comp.TagPrefix)
 	if err != nil {
@@ -108,7 +112,9 @@ func dependencyRelease(ctx context.Context, dir string, comp config.ResolvedComp
 	if hasTag {
 		since = tag
 	}
-	result, _, _ := version.Next(last, hasTag, []version.Change{{Type: "fix"}}, comp.Rules())
+	rules := comp.Rules()
+	rules.Strategy = version.StrategyDefault
+	result, _, _ := version.Next(last, hasTag, []version.Change{{Type: "fix"}}, rules)
 	result.Reason = "workspace dependency"
 	return release{version: result, options: changelogOptions(comp), fromTag: since}, nil
 }

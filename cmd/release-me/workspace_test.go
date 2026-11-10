@@ -333,6 +333,69 @@ func TestNodeWorkspaceLeftOutReleasesNoDependent(t *testing.T) {
 	}
 }
 
+func TestNodeWorkspaceReleasesADependentWithAPatchUnderServicePack(t *testing.T) {
+	dir, origin, cfg := newNodeWorkspaceRepo(t, "release-pull-request: shared\nworkspaces: [node]\nversioning-strategy: service-pack\n")
+
+	f := newFake()
+	var stdout bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	if len(f.CreatedPullRequests) != 1 {
+		t.Fatalf("CreatedPullRequests = %+v, want one shared pull request", f.CreatedPullRequests)
+	}
+	created := f.CreatedPullRequests[0]
+	want := "chore: release core v1.2.0-sp.1, ui v0.8.1, web v0.4.1"
+	if created.Title != want {
+		t.Fatalf("title = %q, want %q: core takes its service pack, its dependents a patch", created.Title, want)
+	}
+	for path, want := range map[string]string{
+		"packages/ui/package.json":  `"version": "0.8.1"`,
+		"packages/web/package.json": `"version": "0.4.1"`,
+	} {
+		if got := showBareFile(t, origin, "release-me/main", path); !strings.Contains(got, want) {
+			t.Errorf("%s = %q, want it to contain %q", path, got, want)
+		}
+	}
+
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: "release-me/main", State: "closed", PullRequests: []forge.PullRequest{
+			{Number: 1, Title: created.Title, Body: created.Body, Labels: []string{"release: pending"}, Merged: true},
+		}},
+	}
+	f.MergeCommits = map[int]string{1: "c0ffee42"}
+	f.PRLabels = map[int][]string{1: {"release: pending"}}
+	if err := doRelease(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doRelease() error = %v", err)
+	}
+	var tags []string
+	for _, tag := range f.CreatedTags {
+		tags = append(tags, tag.Tag)
+	}
+	if !reflect.DeepEqual(tags, []string{"core/v1.2.0-sp.1", "ui/v0.8.1", "web/v0.4.1"}) {
+		t.Fatalf("CreatedTags = %v, want no dependent tagged at a version that already exists", tags)
+	}
+}
+
+func TestNodeWorkspaceReleasesADependentWithAPatchUnderAlwaysBumpMajor(t *testing.T) {
+	dir, _, cfg := newNodeWorkspaceRepo(t, "release-pull-request: shared\nworkspaces: [node]\nversioning-strategy: always-bump-major\n")
+
+	f := newFake()
+	var stdout bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() error = %v", err)
+	}
+
+	if len(f.CreatedPullRequests) != 1 {
+		t.Fatalf("CreatedPullRequests = %+v, want one shared pull request", f.CreatedPullRequests)
+	}
+	want := "chore: release core v2.0.0, ui v0.8.1, web v0.4.1"
+	if got := f.CreatedPullRequests[0].Title; got != want {
+		t.Fatalf("title = %q, want %q: the strategy bumps core alone, its dependents take a patch", got, want)
+	}
+}
+
 func TestCargoWorkspaceReleasesDependentsThroughInheritedAliases(t *testing.T) {
 	for _, decl := range []string{"[dependencies]\nengine = { workspace = true }\n", "[dependencies.engine]\nworkspace = true\n", "[dependencies]\nengine.workspace = true\n"} {
 		t.Run(decl, func(t *testing.T) {
