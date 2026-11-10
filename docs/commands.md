@@ -112,18 +112,20 @@ run, branch content, title and body updated accordingly.
 ## release
 
 Tags and releases every merged pull request on a component's release branch, or the shared
-`release-me/main`, that still carries the `pending` label: a tag on the merge commit, a GitHub
-release with the pull request's notes and changelog, prerelease true for a pre-release version.
-Draft follows `draft-until-assets-attach`, default `false`: off, the release publishes
-immediately; on, it starts a draft, exempt from GitHub's immutable releases feature, until a
-caller, such as a workflow step that still needs to attach binary assets, publishes it. The
-label swap removes `pending`, and the matching pre-release type label when the version carries
-one, replacing both with `tagged`. The implicit `main` component tags `vX.Y.Z` and names the
-release after the tag, today's shape; a configured component tags `<name>/vX.Y.Z`, or its
-`tag-prefix` followed by the version, and names the release `<name> vX.Y.Z`. A tag that already
-exists, left over from an earlier, interrupted run, is not an error: the release and the label
-swap still happen, so the pull request does not stay pending forever, and the run reports it as
-already tagged.
+`release-me/main`, that still carries the `pending` label: a tag on the merge commit, a
+GitHub release with the pull request's notes and changelog, prerelease true for a
+pre-release version. Draft follows `draft-until-assets-attach`, default `false`: off, the
+release publishes immediately; on, it starts a draft, exempt from GitHub's immutable
+releases feature, until a caller, such as a workflow step that still needs to attach
+binary assets, publishes it. The label swap removes `pending`, and the matching
+pre-release type label when the version carries one, replacing both with `tagged`. The
+implicit `main` component tags `vX.Y.Z` and names the release after the tag, today's
+shape; a configured component tags `<name>/vX.Y.Z`, or its `tag-prefix` followed by the
+version, and names the release `<name> vX.Y.Z`, both without the `v` under
+[`include-v-in-release-name: false`](configuration.md#include-v-in-release-name). A tag
+that already exists, left over from an earlier, interrupted run, is not an error: the
+release and the label swap still happen, so the pull request does not stay pending
+forever, and the run reports it as already tagged.
 
 With `draft-until-assets-attach: true`, `release` also looks at every merged pull request
 already carrying the `tagged` label: one whose release is still a draft had its asset attach or
@@ -207,6 +209,8 @@ counted every commit. It also carries over:
 - `force-tag-creation`, at the top level when every package carries the same value, on the
   component otherwise. When absent, release-me's default `true` is kept, rather than
   release-please's `false`; without drafts both create the tag during the release run;
+- `include-v-in-release-name`, at the top level when every package carries the same value, on
+  the component otherwise;
 - `skip-github-release`, at the top level when every package carries the same value, on the
   component otherwise; release-me still creates the tag, unlike release-please, so remove
   any external tagging step the old workflow needed;

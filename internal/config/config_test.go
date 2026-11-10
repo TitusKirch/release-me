@@ -110,6 +110,7 @@ func TestLoadReadsConfiguredKeys(t *testing.T) {
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 				ForceTagCreation:         true,
+				IncludeVInReleaseName:    true,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
 			},
@@ -166,10 +167,11 @@ files:
 				MajorTag:                 true,
 				Versioning:               config.DefaultVersioning,
 				ReleasePullRequest:       config.ReleasePullRequestShared,
+				ReleasePullRequestLayout: config.LayoutDetails,
 				DraftUntilAssetsAttach:   true,
 				CommentMention:           config.DefaultCommentMention,
 				ForceTagCreation:         true,
-				ReleasePullRequestLayout: config.LayoutDetails,
+				IncludeVInReleaseName:    true,
 				DeleteReleaseBranch:      false,
 				AlwaysLinkLocal:          true,
 				Files: []config.File{
@@ -200,6 +202,7 @@ files:
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 				ForceTagCreation:         true,
+				IncludeVInReleaseName:    true,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
 			},
@@ -225,6 +228,7 @@ files:
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 				ForceTagCreation:         true,
+				IncludeVInReleaseName:    true,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
 			},
@@ -250,6 +254,7 @@ files:
 				ReleasePullRequestGuide:  true,
 				CommentMention:           config.DefaultCommentMention,
 				ForceTagCreation:         true,
+				IncludeVInReleaseName:    true,
 				DeleteReleaseBranch:      true,
 				AlwaysLinkLocal:          true,
 			},
@@ -578,6 +583,7 @@ func TestResolveReturnsTheImplicitMainComponentWithoutAComponentsKey(t *testing.
 		ChangelogPath: "CHANGELOG.md", Multi: false,
 		InitialVersion: config.DefaultInitialVersion, HiddenTypes: config.DefaultHiddenTypes,
 		ChangelogSource: config.DefaultChangelogSource, ForceTagCreation: true,
+		IncludeVInReleaseName: true,
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resolve() = %+v, want %+v", got, want)
@@ -616,6 +622,7 @@ components:
 			InitialVersion: "0.5.0", BumpMinorPreMajor: true, BumpPatchForMinorPreMajor: true,
 			HiddenTypes:     []string{"chore", "docs"},
 			ChangelogSource: config.DefaultChangelogSource, ForceTagCreation: true,
+			IncludeVInReleaseName: true,
 		},
 		{
 			Name: "frontend", Path: "frontend", TagPrefix: "frontend/v", Branch: "release-me/frontend",
@@ -623,6 +630,7 @@ components:
 			InitialVersion: "0.2.0", BumpMinorPreMajor: false, BumpPatchForMinorPreMajor: false, ReleaseAs: "v1.0.0", HiddenTypes: []string{"chore"},
 			Files:           []config.File{{Path: "frontend/package.json", Updater: "marker"}},
 			ChangelogSource: config.DefaultChangelogSource, ForceTagCreation: true,
+			IncludeVInReleaseName: true,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -657,8 +665,8 @@ components:
 	}
 }
 
-// releaseKeysConfig carries two components, the second one overriding
-// every GitHub release key the top level sets.
+// releaseKeysConfig carries two components, neither overriding a
+// top-level setting.
 const releaseKeysConfig = `components:
   api:
     path: services/api
@@ -700,6 +708,45 @@ func TestResolveAppliesTheGitHubReleaseKeysFromTheTopLevelAndPerComponentOverrid
 			name:    "a component turns skip-github-release on for itself alone",
 			content: releaseKeysConfig + "    skip-github-release: true\n",
 			get:     skip, want: []bool{false, true},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := config.Load(writeFile(t, tc.content))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			resolved := cfg.Resolve()
+			got := make([]bool, 0, len(resolved))
+			for _, c := range resolved {
+				got = append(got, tc.get(c))
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("resolved per component = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveAppliesIncludeVInReleaseNameFromTheTopLevelAndPerComponentOverride(t *testing.T) {
+	t.Parallel()
+	includeV := func(c config.ResolvedComponent) bool { return c.IncludeVInReleaseName }
+	cases := []struct {
+		name    string
+		content string
+		get     func(config.ResolvedComponent) bool
+		want    []bool
+	}{
+		{name: "include-v-in-release-name is on by default", get: includeV, want: []bool{true}},
+		{
+			name: "include-v-in-release-name turns off for the implicit main component", content: "include-v-in-release-name: false\n",
+			get: includeV, want: []bool{false},
+		},
+		{
+			name:    "a component keeps the v the top level drops",
+			content: "include-v-in-release-name: false\n" + releaseKeysConfig + "    include-v-in-release-name: true\n",
+			get:     includeV, want: []bool{false, true},
 		},
 	}
 	for _, tc := range cases {

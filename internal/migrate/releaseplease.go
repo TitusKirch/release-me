@@ -90,6 +90,7 @@ type releaseFlag struct {
 var releaseFlags = []releaseFlag{
 	{key: "force-tag-creation", def: true},
 	{key: "skip-github-release", def: false},
+	{key: "include-v-in-release-name", def: true},
 }
 
 // releaseFlagKeys returns the key of every entry in releaseFlags.
