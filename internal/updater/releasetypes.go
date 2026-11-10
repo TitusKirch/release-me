@@ -38,6 +38,20 @@ func replaceFirstLineOutside(content string, pattern *regexp.Regexp, version str
 	return "", false
 }
 
+// replaceAllGroup replaces every match of pattern's first group in content
+// with version, for a release type whose version is not a field of its own
+// but part of a longer string, and which may carry it more than once.
+// Splicing from the last match keeps the earlier matches' offsets valid. It
+// returns how many matches were replaced.
+func replaceAllGroup(content string, pattern *regexp.Regexp, version string) (string, int) {
+	matches := pattern.FindAllStringSubmatchIndex(content, -1)
+	for i := len(matches) - 1; i >= 0; i-- {
+		m := matches[i]
+		content = content[:m[2]] + version + content[m[3]:]
+	}
+	return content, len(matches)
+}
+
 // quotedValue matches a single or double quoted string, the value most
 // release types' version files assign.
 const quotedValue = `("[^"]*"|'[^']*')`
@@ -479,4 +493,76 @@ func UpdateDart(content, version string) (string, error) {
 		return strings.Join(lines, "\n"), nil
 	}
 	return "", fmt.Errorf("updater: dart: no top-level version field found")
+}
+
+// terraformModuleVersion matches a "v"-prefixed version literal such as
+// "v1.2.3", the shape a Terraform module records its own version in. The
+// "v" sits behind a word boundary, so it is never read out of the middle of
+// a longer word such as "rev1.2.3". Group 1 is the literal without the "v",
+// which stays where it is.
+var terraformModuleVersion = regexp.MustCompile(`\bv(` + versionLiteral.String() + `)`)
+
+// UpdateTerraformModule replaces every "v"-prefixed version of a Terraform
+// module's versions.tf or versions.tf.tmpl, as release-please's
+// terraform-module release type does.
+//
+// A module's own version is not a field there: it is the last segment of
+// the module_name its provider_meta block reports to the provider, such as
+// "blueprints/terraform/terraform-google-notes/v1.4.0". No key names it and
+// no comment marks it, which is why every "v"-prefixed version literal in
+// the file is replaced rather than one named field. A version constraint
+// carries no "v" - ">= 1.3.0" and "~> 5.0" alike - so the required_version
+// and the required_providers of the same file are left alone, and a
+// constraint is never mistaken for the module's version.
+//
+// release-please bumps two further files of such a module that this updater
+// is not for: a metadata.yaml, whose top-level "version" field the yaml
+// updater takes with key "version", and a README, whose
+// "version = \"~> 1.4\"" usage example release-me does not rewrite.
+//
+// An error is returned when the file carries no "v"-prefixed version.
+func UpdateTerraformModule(content, version string) (string, error) {
+	out, n := replaceAllGroup(content, terraformModuleVersion, version)
+	if n == 0 {
+		return "", fmt.Errorf("updater: terraform-module: no v-prefixed version found")
+	}
+	return out, nil
+}
+
+// krmBlueprintVersion matches the version ending a KRM blueprint's
+// "cnrm/<blueprint>/v1.2.3" attribution value. The blueprint segment stops
+// at whitespace and at either quote, so one value's match never runs into
+// the next. Group 1 is the version literal, the "cnrm/" prefix and the "v"
+// kept.
+var krmBlueprintVersion = regexp.MustCompile(`cnrm/[^\s"']*/v(` + versionLiteral.String() + `)`)
+
+// UpdateKrmBlueprint replaces the version of a Kubernetes Resource Model
+// blueprint's YAML, as release-please's krm-blueprint release type does.
+//
+// The version is not a key of its own: it is the last segment of the value
+// of the "cnrm.cloud.google.com/blueprint" annotation, a
+// "cnrm/<blueprint>/v1.4.0" string, so the updater anchors on that "cnrm/"
+// prefix instead of on a key. That anchor is what keeps the other pinned
+// versions a blueprint carries out of it, a kpt function image such as
+// "gcr.io/kpt-fn/set-annotations:v0.1.4" under a
+// "config.kubernetes.io/function" annotation above all. Every such value in
+// the file is replaced, since one blueprint may annotate more than one
+// resource. The file is edited in place rather than through a YAML round
+// trip, which would drop its comments.
+//
+// A pre-release or build suffix on the old version is replaced along with
+// it, so the new version is never left carrying the old one's suffix.
+// release-please's own expression matches the three numbers only and leaves
+// such a suffix behind.
+//
+// An error is returned when the file carries no such value, which is also
+// how a YAML that is no blueprint is rejected: release-please searches a
+// package's YAML files for the annotation itself, release-me is given the
+// file to bump.
+func UpdateKrmBlueprint(content, version string) (string, error) {
+	out, n := replaceAllGroup(content, krmBlueprintVersion, version)
+	if n == 0 {
+		return "", fmt.Errorf("updater: krm-blueprint: no cnrm blueprint version found")
+	}
+	return out, nil
 }

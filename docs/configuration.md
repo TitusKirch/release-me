@@ -441,7 +441,8 @@ fails `pr`, naming the path and the key.
   ```
 
 - `json`, `yaml` and `toml` replace the value at `key`, a dotted path of object keys, mapping
-  keys or table-and-key, such as `tool.poetry.version`.
+  keys or table-and-key, such as `tool.poetry.version`. A `composer.json`, which release-please's
+  `php` release type bumps, takes `json` with key `version`.
 
 - `npm-lock` bumps a `package-lock.json` or `npm-shrinkwrap.json`: its top-level `version` and,
   in lockfile version 2 or 3, the root package's entry `packages[""].version`. Dependencies and
@@ -487,9 +488,37 @@ fails `pr`, naming the path and the key.
   whitespace around the version, a trailing newline or none, is kept. An empty file, or one
   holding anything besides the version, is an error. No `key`.
 
+- `expo` bumps a React Native Expo project's `app.json`: `expo.version`, which must be there,
+  `expo.ios.buildNumber` and `expo.android.versionCode`, the last two only where the file
+  carries them. The version code is an integer Android requires to grow with every upload, so
+  it is computed rather than copied, the way release-please computes it:
+
+  ```text
+  sdk-major * 10000000 + major * 10000 + minor * 100 + patch
+  ```
+
+  A pre-release suffix does not reach it, so `1.5.0-rc.1` and `1.5.0` give the same code. The
+  `key` is the Expo SDK version, which only the version code needs: release-please reads it
+  from the `expo` dependency of the project's `package.json`, which an updater given one file
+  cannot do. The dependency's own value is accepted, so `54`, `54.0.0` and `~54.0.0` all mean
+  SDK 54. The project's `package.json` version takes a `json` entry of its own:
+
+  ```yaml
+  files:
+    - path: package.json
+      updater: json
+      key: version
+    - path: app.json
+      updater: expo
+      key: "54"
+  ```
+
+  Under SDK 54, version `1.5.0` gives the version code `540010500`.
+
 - One updater per release-please release type whose version file none of the above fits, each
-  named after it and taking no `key`. Each bumps the first match only, and a file without one
-  is an error:
+  named after it and taking no `key`. Each bumps the first match only, except the last two,
+  whose version is part of a longer string the file may carry more than once. A file without a
+  match is an error:
   - `python`: the first `__version__ = "..."` or `version = ...` line, the shape of an
     `__init__.py`, a `version.py`, `setup.py`'s `version="..."` keyword and `setup.cfg`'s bare
     `version = 1.2.3` alike. A bare value must start with a digit, so `version=get_version()`
@@ -508,6 +537,17 @@ fails `pr`, naming the path and the key.
   - `sfdx`: the `versionNumber` of an `sfdx-project.json`'s default package directory, written
     as the version followed by `.NEXT`. Other package directories and dependencies are left
     alone.
+  - `terraform-module`: every `v`-prefixed version of a Terraform module's `versions.tf` or
+    `versions.tf.tmpl`, such as the `blueprints/terraform/terraform-google-notes/v1.4.0` its
+    `provider_meta` block reports as the module name. A constraint carries no `v`, so
+    `required_version = ">= 1.3"` and `version = "~> 5.0"` in the same file are left alone. A
+    module's `metadata.yaml` takes `yaml` with key `version`; the `version = "~> 1.4"` usage
+    example of its README is not rewritten.
+  - `krm-blueprint`: every `cnrm/<blueprint>/v1.4.0` value of a Kubernetes Resource Model
+    manifest, the form of its `cnrm.cloud.google.com/blueprint` annotation. The `cnrm/` anchor
+    is what keeps a pinned kpt function image such as
+    `gcr.io/kpt-fn/set-annotations:v0.1.4` out of it. A manifest carrying no such value is an
+    error, which is how a YAML that is no blueprint is rejected.
 
 Every file entry is validated when release-me.yaml loads: an unknown `updater`, a `key`
 missing where the updater requires one, and a `key` given to an updater that takes none are

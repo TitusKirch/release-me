@@ -700,27 +700,36 @@ func translatePackage(p rpPackage, readFile ReadFile, warn func(string, ...any))
 		if _, err := readFile(stdpath.Join(p.path, "package-lock.json")); err == nil {
 			warn("package %s: package-lock.json: release-please bumped it, release-me does not", p.path)
 		}
-		versionFile("app.json", updater.JSON, "expo.version", false)
-		versionFile("app.json", updater.JSON, "expo.ios.buildNumber", true)
-		if data, err := readFile(stdpath.Join(p.path, "app.json")); err == nil {
-			var app struct {
-				Expo struct {
-					Android struct {
-						VersionCode json.RawMessage `json:"versionCode"`
-					} `json:"android"`
-				} `json:"expo"`
-			}
-			if json.Unmarshal(data, &app) == nil && len(app.Expo.Android.VersionCode) != 0 {
-				warn("package %s: release-type expo: app.json's expo.android.versionCode is computed from the Expo SDK "+
-					"and the version, release-me does not bump it", p.path)
-			}
+		// The expo updater computes app.json's expo.android.versionCode
+		// from the Expo SDK's major version, which release-please reads off
+		// the expo dependency of the same package.json and defaults to 0.
+		sdk := expoSDKVersion(readFile, stdpath.Join(p.path, "package.json"))
+		if sdk == "" {
+			sdk = "0"
+			warn("package %s: release-type expo: package.json declares no expo dependency to read the Expo SDK "+
+				"version off, app.json's expo.android.versionCode is computed with a major of 0, as release-please "+
+				"did, set the key under files to the SDK version", p.path)
 		}
+		versionFile("app.json", updater.Expo, sdk, false)
 	case "sfdx":
 		versionFile("sfdx-project.json", updater.Sfdx, "", false)
-	case "terraform-module", "krm-blueprint":
-		warn("package %s: release-type %s: release-please searched the package for the files it bumps, "+
-			"release-me lists them: mark each version line with \"release-me: version\" and add it under files",
-			p.path, releaseType)
+	case "terraform-module":
+		before := len(c.files)
+		versionFile("versions.tf", updater.TerraformModule, "", true)
+		versionFile("versions.tf.tmpl", updater.TerraformModule, "", true)
+		versionFile("metadata.yaml", updater.YAML, "version", true)
+		if len(c.files) == before {
+			warn("package %s: release-type terraform-module: no versions.tf, versions.tf.tmpl or metadata.yaml "+
+				"holding a version found, add the module's version files under files", p.path)
+			break
+		}
+		warn("package %s: release-type terraform-module: release-please searched the package for the versions.tf of "+
+			"every submodule and rewrote the version constraint of every README, only the module's own files are "+
+			"carried over, add any other under files", p.path)
+	case "krm-blueprint":
+		warn("package %s: release-type krm-blueprint: release-please searched the package's YAML files for the "+
+			"cnrm.cloud.google.com/blueprint annotation, release-me lists them: add each under files with "+
+			"updater krm-blueprint", p.path)
 	case "helm":
 		versionFile("Chart.yaml", updater.Helm, "", false)
 	case "go":
@@ -1291,6 +1300,37 @@ func packageJSONName(readFile ReadFile, path string) string {
 		return ""
 	}
 	return pkg.Name
+}
+
+// expoSDKVersion reads the version a package.json declares the "expo"
+// dependency as, which is where release-please's expo strategy reads the
+// Expo SDK version an app.json's expo.android.versionCode is computed from.
+// The dependency sections are read in release-please's own order, the first
+// one declaring expo winning. It is "" when the file is missing, is no JSON
+// object or declares no expo dependency, which release-please treated as
+// SDK version 0.0.0.
+func expoSDKVersion(readFile ReadFile, path string) string {
+	data, err := readFile(path)
+	if err != nil {
+		return ""
+	}
+	var pkg struct {
+		Dependencies         map[string]string `json:"dependencies"`
+		DevDependencies      map[string]string `json:"devDependencies"`
+		PeerDependencies     map[string]string `json:"peerDependencies"`
+		OptionalDependencies map[string]string `json:"optionalDependencies"`
+	}
+	if json.Unmarshal(data, &pkg) != nil {
+		return ""
+	}
+	for _, deps := range []map[string]string{
+		pkg.Dependencies, pkg.DevDependencies, pkg.PeerDependencies, pkg.OptionalDependencies,
+	} {
+		if v := deps["expo"]; v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // cargoPackageName reads the name of the crate a Cargo.toml's [package]

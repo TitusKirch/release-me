@@ -30,14 +30,17 @@ const (
 
 	Plain = "plain"
 
-	Python = "python"
-	Ruby   = "ruby"
-	Elixir = "elixir"
-	OCaml  = "ocaml"
-	R      = "r"
-	Bazel  = "bazel"
-	Dart   = "dart"
-	Sfdx   = "sfdx"
+	Python          = "python"
+	Ruby            = "ruby"
+	Elixir          = "elixir"
+	OCaml           = "ocaml"
+	R               = "r"
+	Bazel           = "bazel"
+	Dart            = "dart"
+	Sfdx            = "sfdx"
+	TerraformModule = "terraform-module"
+	Expo            = "expo"
+	KrmBlueprint    = "krm-blueprint"
 )
 
 // Func is the shape every registered updater implements: given a file's
@@ -72,14 +75,17 @@ var Updaters = map[string]Entry{
 
 	Plain: {Update: ignoreKey(UpdatePlain)},
 
-	Python: {Update: ignoreKey(UpdatePython)},
-	Ruby:   {Update: ignoreKey(UpdateRuby)},
-	Elixir: {Update: ignoreKey(UpdateElixir)},
-	OCaml:  {Update: ignoreKey(UpdateOCaml)},
-	R:      {Update: ignoreKey(UpdateR)},
-	Bazel:  {Update: ignoreKey(UpdateBazel)},
-	Dart:   {Update: ignoreKey(UpdateDart)},
-	Sfdx:   {Update: ignoreKey(UpdateSfdx)},
+	Python:          {Update: ignoreKey(UpdatePython)},
+	Ruby:            {Update: ignoreKey(UpdateRuby)},
+	Elixir:          {Update: ignoreKey(UpdateElixir)},
+	OCaml:           {Update: ignoreKey(UpdateOCaml)},
+	R:               {Update: ignoreKey(UpdateR)},
+	Bazel:           {Update: ignoreKey(UpdateBazel)},
+	Dart:            {Update: ignoreKey(UpdateDart)},
+	Sfdx:            {Update: ignoreKey(UpdateSfdx)},
+	TerraformModule: {Update: ignoreKey(UpdateTerraformModule)},
+	Expo:            {Update: UpdateExpo, NeedsKey: true},
+	KrmBlueprint:    {Update: ignoreKey(UpdateKrmBlueprint)},
 }
 
 // ignoreKey adapts an updater that takes no key to the Func shape every
@@ -200,8 +206,22 @@ func UpdateJSON(content, key, version string) (string, error) {
 // segments, so a segment may be empty, as the key of a package-lock.json's
 // root package is. It reports whether the path was found.
 func updateJSONPath(content string, segments []string, version string) (string, bool) {
-	lines := strings.Split(content, "\n")
 	last := valueLinePattern(`\s*"` + regexp.QuoteMeta(segments[len(segments)-1]) + `"\s*:\s*`)
+	return updateJSONValue(content, segments, last, func(string) string { return `"` + version + `"` })
+}
+
+// updateJSONValue is updateJSONPath with the leaf's line matched by last
+// and its new value rendered by render, which is given the old value as the
+// line carried it, quotes included. Splitting those out is what lets the
+// expo updater write a bare number where an app.json holds the Android
+// version code as one, which valueLinePattern's bare alternative would
+// otherwise read together with the member's trailing comma.
+//
+// last has valueLinePattern's three groups: everything up to and including
+// the ":", the value, and everything after it. It must match the same key
+// as segments' last element, since that is the segment the walk descends to.
+func updateJSONValue(content string, segments []string, last *regexp.Regexp, render func(old string) string) (string, bool) {
+	lines := strings.Split(content, "\n")
 
 	// depth starts below zero so the file's own enclosing "{" brings the
 	// top level to depth 0, not 1.
@@ -221,7 +241,7 @@ func updateJSONPath(content string, segments []string, version string) (string, 
 			}
 		case matched == len(segments)-1 && depth == matched:
 			if m := last.FindStringSubmatch(line); m != nil {
-				lines[i] = m[1] + `"` + version + `"` + m[3]
+				lines[i] = m[1] + render(m[2]) + m[3]
 				return strings.Join(lines, "\n"), true
 			}
 		}

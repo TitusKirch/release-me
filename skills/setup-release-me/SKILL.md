@@ -96,7 +96,11 @@ Everything else is derived:
   `setup.py`, `setup.cfg` or an `__init__.py` holding `__version__`, `ruby` for a
   `version.rb`, `elixir` for `mix.exs`, `ocaml` for an `.opam` file or `dune-project`, `r` for
   `DESCRIPTION`, `bazel` for `MODULE.bazel`, `dart` for `pubspec.yaml`, `sfdx` for
-  `sfdx-project.json`. A lockfile next to it is listed too: `package-lock.json` or
+  `sfdx-project.json`, `terraform-module` for a `versions.tf`, `krm-blueprint` for a manifest
+  carrying a `cnrm.cloud.google.com/blueprint` annotation. An Expo `app.json` takes `expo` with
+  the Expo SDK version as key, beside its `package.json` with `json` and key `version`. A
+  `composer.json` takes `json` with key `version`. A lockfile next to it is listed too:
+  `package-lock.json` or
   `npm-shrinkwrap.json` with `npm-lock`, `Cargo.lock` with `cargo-lock` and the crate name as
   key, `Gemfile.lock` with `gemfile-lock` and the gem name as key.
 
