@@ -91,8 +91,10 @@ means for any repository:
   entries since the previous one, and there is no release until a change since it bumps the
   version. Semver orders `1.2.3-sp.1` below `1.2.3`, so release-me treats it as the pre-release
   it is to semver: the GitHub release is a pre-release, the major tag stays, and the next
-  stable tag still counts from `1.2.3`. A pre-release label on its release pull request
-  replaces `sp` with that type, `1.2.3-rc.1`. It applies with `versioning: independent` only;
+  stable tag still counts from `1.2.3`. A [pre-release label](commands.md#pre-releases) on its
+  release pull request is refused: `sp.N` is already the pre-release identifier of that
+  version, a second one cannot be placed on top of it, and `pr` names both and changes nothing
+  until the label is removed. It applies with `versioning: independent` only;
   `linked` and `locked` refuse it, since a family shares one version line.
 - `dependency-manifest` raises the bump to the largest dependency update among the changes,
   whatever their type, so `chore(deps): bump react from 18.3.1 to 19.0.0` releases a major
@@ -558,6 +560,15 @@ all errors.
 Moves the major tag on every stable release, default `false`. See [release](commands.md#release)
 for what `true` changes. A component overrides it through its own `major-tag` key.
 
+Known limitation: the major tag moves when the release is created, not when a human publishes
+it. With [`force-tag-creation`](#force-tag-creation) on, the default, the version tag sits on
+that same commit already, draft or not, so the two agree. With it off and the release drafted
+by [`draft`](#draft) or [`draft-until-assets-attach`](#draft-until-assets-attach), the version
+tag does not exist yet, so the major tag points at a version that is not published until
+someone publishes that draft. Deferring the move is not an option: nothing in release-me runs
+after that publish, so a deferred major tag would never be created at all. Keep
+`force-tag-creation: true` where the major tag matters, which is the default.
+
 ## `versioning`
 
 `independent` (default), `locked` or `linked`. See [versioning modes](versioning-modes.md).
@@ -812,6 +823,10 @@ exist: a later step must not expect it, a rerun cannot tell a draft it tagged be
 name, so the resume of `draft-until-assets-attach` and the guard against a second draft work
 the same. A component overrides it through its own `force-tag-creation` key.
 
+`force-tag-creation: false` together with [`skip-github-release`](#skip-github-release) is
+refused when release-me.yaml loads, at the top level and for every component it resolves to:
+the tag is left to a release that is never created, so nothing would ever create it.
+
 Keep `force-tag-creation: true` when using this repository's
 `scripts/publish-release-assets.sh` with `draft-until-assets-attach`: the script checks out
 the tag and GoReleaser resolves it before publishing, so both need an existing git ref.
@@ -840,8 +855,10 @@ reads the action's `tags` output. Everything else still happens: the tag, the
 [major tag](#major-tag), the label swap from `pending` to `tagged`, the `released-tag` marker
 and every action output, so a later step knows which tag to release. With
 [`draft-until-assets-attach`](#draft-until-assets-attach) on, a component that skips its
-release has no draft to attach assets to or to resume. A component overrides it through its
-own `skip-github-release` key.
+release has no draft to attach assets to or to resume, and [`draft`](#draft) has no effect at
+all. [`force-tag-creation: false`](#force-tag-creation) beside this key is refused when
+release-me.yaml loads: it leaves the tag to a release that is never created. A component
+overrides it through its own `skip-github-release` key.
 
 Unlike release-please, release-me creates the tag even with this key on. After migrating,
 remove any external tagging step that release-please needed for `skip-github-release`.
@@ -850,13 +867,21 @@ remove any external tagging step that release-please needed for `skip-github-rel
 
 Creates each GitHub release as a draft and leaves it one, default `false`, for a human to
 review and publish. The tag, the label swap, the `released-tag` marker and the action outputs
-still happen as for a published release, so a later step can attach assets to the draft. It
-differs from [`draft-until-assets-attach`](#draft-until-assets-attach) in one way: a draft
-left on purpose is never resumed, so a later run does not print its `released-tag` marker
-again while it waits for a human. With both on, the release drafts and resumes the way
-`draft-until-assets-attach` does. The asset workflow then publishes it automatically in the
-same run, so `draft` adds no human approval gate to that workflow. A component overrides it
-through its own `draft` key.
+still happen on the same run, exactly as for a published release, so a publish step already
+sees this tag before any human has acted. It differs from
+[`draft-until-assets-attach`](#draft-until-assets-attach) in one way: a draft left on purpose
+is never resumed, so a later run does not print its `released-tag` marker again while it
+waits. That holds with both keys on too: the component that drafts on purpose is left out of
+the resume. Neither key makes a publish step wait for a human on its own: the
+[`draft-until-assets-attach`](action.md#draft-until-assets-attach) workflow this repository
+runs publishes every draft its `tags` output carries, this one included, with no way to tell
+a deliberate draft from one only waiting on assets. Filter the component out of that step, or
+run no automatic publish step for it, where the release genuinely needs a human to publish it
+first. A component overrides `draft` through its own `draft` key.
+
+With [`skip-github-release`](#skip-github-release) on, this key has no effect: there is no
+release to draft. With [`major-tag`](#major-tag) on, the major tag moves when the draft is
+created, not when it is published; see `major-tag`.
 
 ## `comment-mention`
 

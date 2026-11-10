@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -105,6 +106,63 @@ func TestLinkedFamilyFollowsTheIssueTable(t *testing.T) {
 	}
 }
 
+// TestServicePackRefusesAPreReleaseLabelOnItsReleasePullRequest covers the
+// one pre-release a service pack cannot take: its version already carries
+// the "sp.N" identifier, and a label asking for a second one replaced it
+// wholesale, so the service pack shipped as a plain pre-release of the last
+// stable version. The counter never advanced either, since it scans the
+// tags of the base version and that base was itself a pre-release, so every
+// run asked for the same tag again. The run reports both keys instead and
+// changes nothing.
+func TestServicePackRefusesAPreReleaseLabelOnItsReleasePullRequest(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeConfig(t, dir, "versioning-strategy: service-pack\n")
+	commitEntry(t, dir, "chore: scaffold the service")
+	runGit(t, dir, "tag", "v5.0.0")
+	commitEntry(t, dir, "fix: close the connection pool on shutdown")
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+
+	f := newFake()
+	var out bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	created := f.CreatedPullRequests[0]
+	if created.Title != "chore(main): release v5.0.0-sp.1" {
+		t.Fatalf("created title = %q, want the first service pack of v5.0.0", created.Title)
+	}
+	branchSHA := bareBranchSHA(t, origin)
+
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+			{
+				Number: 1, Title: created.Title, Body: created.Body,
+				Labels: []string{"release: pending", "release: rc"}, HeadSHA: branchSHA,
+			},
+		}},
+	}
+
+	err = doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, io.Discard)
+	if err == nil {
+		t.Fatal("doPR() error = nil, want the pre-release label refused on a service pack")
+	}
+	for _, want := range []string{"service-pack", "5.0.0-sp.1", "rc", "remove the pre-release label"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("doPR() error = %q, want it to name %q", err, want)
+		}
+	}
+	if len(f.UpdatedPullRequests) != 0 {
+		t.Fatalf("UpdatedPullRequests = %+v, want none: the refused run changes nothing", f.UpdatedPullRequests)
+	}
+	if got := bareBranchSHA(t, origin); got != branchSHA {
+		t.Fatalf("release branch moved to %q, want it left at %q", got, branchSHA)
+	}
+}
+
 // TestLockedFamilyReleasesAnUnchangedComponentAnyway exercises locked's
 // defining difference from linked: every component is bumped and released
 // together, changed or not, through the one shared release pull request.
@@ -165,6 +223,73 @@ func TestLockedFamilyReleasesAnUnchangedComponentAnyway(t *testing.T) {
 		if !found {
 			t.Fatalf("CreatedTags = %+v, want %q among them: locked releases every component, changed or not", f.CreatedTags, tag)
 		}
+	}
+}
+
+// TestLockedFamilyBuildsAPreReleaseFromTheWholeFamilysTags covers a locked
+// family's release pull request carrying a pre-release label: every
+// component shares the one pre-release version, and its counter counts up
+// from the highest pre-release tag of any component in the family, not from
+// each component's own.
+func TestLockedFamilyBuildsAPreReleaseFromTheWholeFamilysTags(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeConfig(t, dir, "versioning: locked\ncomponents:\n  a:\n    path: a\n  b:\n    path: b\n")
+	writeFiles(t, dir, "chore: scaffold the family", map[string]string{"a/README.md": "a\n", "b/README.md": "b\n"})
+	runGit(t, dir, "tag", "a/v1.2.0")
+	runGit(t, dir, "tag", "b/v1.2.0")
+	writeFiles(t, dir, "feat: add a's export endpoint", map[string]string{"a/export.go": "package a\n"})
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+
+	f := newFake()
+	var stdout bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &stdout); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	created := f.CreatedPullRequests[0]
+	if created.Title != "chore: release v1.3.0 (a, b)" {
+		t.Fatalf("created title = %q, want the stable family version", created.Title)
+	}
+
+	rerun := func(step, body string) forgetest.UpdatePullRequestCall {
+		t.Helper()
+		f.ListResponses = []forgetest.ListResponse{
+			{Head: "release-me/main", State: "open", PullRequests: []forge.PullRequest{{
+				Number: 1, Title: created.Title, Body: body,
+				Labels: []string{"release: pending", "release: rc"}, HeadSHA: bareBranchSHA(t, origin),
+			}}},
+		}
+		var buf bytes.Buffer
+		if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &buf); err != nil {
+			t.Fatalf("doPR() %s error = %v", step, err)
+		}
+		if len(f.UpdatedPullRequests) == 0 {
+			t.Fatalf("%s: no update recorded", step)
+		}
+		return f.UpdatedPullRequests[len(f.UpdatedPullRequests)-1]
+	}
+
+	first := rerun("first rc", created.Body)
+	if first.Title != "chore: release v1.3.0-rc.1 (a, b)" {
+		t.Fatalf("first rc title = %q, want the family's first release candidate", first.Title)
+	}
+	for _, path := range []string{"a/CHANGELOG.md", "b/CHANGELOG.md"} {
+		if got := showBareFile(t, origin, "release-me/main", path); !strings.Contains(got, "v1.3.0-rc.1") {
+			t.Fatalf("%s = %q, want the heading at the shared pre-release version", path, got)
+		}
+	}
+
+	// Only a's own release candidate tag exists; b never carried one. The
+	// family's counter still moves on to rc.2 for both.
+	runGit(t, dir, "tag", "a/v1.3.0-rc.1")
+	writeFiles(t, dir, "fix: patch a's export endpoint", map[string]string{"a/CHANGES.txt": "a\n"})
+
+	second := rerun("second rc", first.Body)
+	if second.Title != "chore: release v1.3.0-rc.2 (a, b)" {
+		t.Fatalf("second rc title = %q, want the counter to follow the family's highest pre-release tag", second.Title)
 	}
 }
 

@@ -81,10 +81,25 @@ func preReleaseVersion(
 // the previous pre-release tag for that base version, and that tag, when
 // one exists, rel's own entries, already collected since the last stable
 // tag, and rel's own fromTag otherwise.
+//
+// A component on versioning-strategy service-pack is refused: its version
+// already carries a pre-release identifier of its own, "X.Y.Z-sp.N", and a
+// second one cannot be placed on top of it. The counter scans the tags of
+// the base version, so a base that is itself a pre-release matches none and
+// never counts up, and the type replaces "sp.N" wholesale, so the service
+// pack the release is would be released as a plain pre-release of the last
+// stable version instead, at the same tag on every run.
 func preReleaseEntries(
 	ctx context.Context, f forge.Forge, dir string, cfg config.Config, comp config.ResolvedComponent, familyTagPrefixes []string,
 	owner, repoName string, rel release, preType string, logger *slog.Logger,
 ) (versionStr string, entries []changelog.Entry, fromTag string, err error) {
+	if comp.VersioningStrategy == version.StrategyServicePack {
+		return "", nil, "", fmt.Errorf(
+			"versioning-strategy service-pack already releases the pre-release version %s, "+
+				"a %s pre-release cannot be released on top of it: remove the pre-release label from the release pull request",
+			rel.version.Version, preType,
+		)
+	}
 	base, ok := version.ParseTag("v" + rel.version.Version)
 	if !ok {
 		return "", nil, "", fmt.Errorf("next version %q does not parse", rel.version.Version)

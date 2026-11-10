@@ -295,7 +295,10 @@ func resumeShared(
 	var results []Result
 	sha := ""
 	for _, p := range plan {
-		if p.comp.SkipGitHubRelease {
+		// A component with its own "draft" key drafts on purpose: that
+		// draft waits for a human, so it is no interrupted run and never
+		// resumes, whatever draft-until-assets-attach is set to.
+		if p.comp.SkipGitHubRelease || p.comp.Draft {
 			continue
 		}
 		tag := p.comp.TagPrefix + p.versionStr
@@ -565,6 +568,22 @@ func MajorTagName(tagPrefix, releasedVersion string) (tag string, applies bool) 
 // tagPrefix, onto sha, when majorTagEnabled and releasedVersion is not a
 // pre-release. dryRun reads whether the tag exists, to report accurately
 // what would happen, but writes nothing.
+//
+// It runs for a drafted release too, which is deliberate and a known
+// limitation in one combination. With force-tag-creation on, the default,
+// the version tag is already on the merge commit by the time the major tag
+// moves there, draft or not, so the two agree. With force-tag-creation off
+// and the release drafted, the version tag does not exist yet, so the
+// major tag points at a version that is not published. Deferring the move
+// instead would be worse: nothing in release-me runs after a human
+// publishes a draft, the resume paths only ever see a release that is
+// still a draft, so a deferred major tag would never be created at all and
+// every consumer pinned to it would silently stay on the previous release
+// forever. Moving it early is visible, but it is not corrected on its own
+// under a standing draft: true, since nothing ever resumes a deliberate
+// draft: every release drafts again, so the major tag stays ahead of the
+// last existing version tag for as long as draft stays on. See
+// docs/configuration.md's major-tag key.
 func applyMajorTag(
 	ctx context.Context, f forge.Forge, owner, repoName, componentName, tagPrefix, releasedVersion, sha string,
 	majorTagEnabled, dryRun bool,
@@ -651,7 +670,10 @@ func Run(
 		if dryRun || !draftUntilAssetsAttach || !HasAll(pr.Labels, labels.Tagged) {
 			continue
 		}
-		if comp.SkipGitHubRelease {
+		// A component with its own "draft" key drafts on purpose: that
+		// draft waits for a human, so it is no interrupted run and never
+		// resumes, whatever draft-until-assets-attach is set to.
+		if comp.SkipGitHubRelease || comp.Draft {
 			continue
 		}
 		result, resumed, err := resumeOne(ctx, f, owner, repoName, comp, pr)

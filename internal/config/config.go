@@ -1368,7 +1368,33 @@ func Load(path string) (cfg Config, err error) {
 			}
 		}
 	}
+	if err := validateTagCreation(path, cfg); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+// validateTagCreation rejects force-tag-creation turned off together with
+// skip-github-release turned on, at the top level and for every resolved
+// component: force-tag-creation off leaves the tag to the GitHub release's
+// publish step, and skip-github-release creates no release for it to be
+// left to, so nothing ever creates the tag. The release is lost while the
+// merged release pull request is relabelled as tagged anyway, and no later
+// run recovers it: the next one recomputes the same version against the
+// same still-current last tag.
+func validateTagCreation(path string, cfg Config) error {
+	const why = "force-tag-creation false leaves the tag to the GitHub release's publish, " +
+		"and skip-github-release true creates no release, so nothing would ever create the tag: " +
+		"turn force-tag-creation on, or skip-github-release off"
+	if !cfg.ForceTagCreation && cfg.SkipGitHubRelease {
+		return fmt.Errorf("config: parse %s: %s", path, why)
+	}
+	for _, comp := range cfg.Resolve() {
+		if !comp.ForceTagCreation && comp.SkipGitHubRelease {
+			return fmt.Errorf("config: parse %s: component %s: %s", path, comp.Name, why)
+		}
+	}
+	return nil
 }
 
 // validateWorkspaces rejects a "workspaces" entry naming no known package
