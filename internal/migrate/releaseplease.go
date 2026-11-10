@@ -101,12 +101,13 @@ func releaseFlagKeys() []string {
 	return keys
 }
 
-// topLevelKeys are the release-please settings that only exist at the top
-// level and that this translation reads or deliberately leaves out.
+// topLevelKeys are the release-please settings this translation reads at
+// the top level or deliberately leaves out there. Some also allow per-package
+// settings that release-me cannot represent, reported separately below.
 var topLevelKeys = []string{
 	"packages", "plugins", "label", "release-label", "extra-label", "separate-pull-requests", "$schema",
-	"bootstrap-sha", "last-release-sha", "pull-request-title-pattern", "group-pull-request-title-pattern",
-	"always-link-local", "signoff",
+	"bootstrap-sha", "last-release-sha", "draft-pull-request", "pull-request-title-pattern",
+	"group-pull-request-title-pattern", "always-link-local", "signoff",
 }
 
 // unsupportedReasons explains a release-please key the translation leaves
@@ -188,6 +189,10 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 			settings[k] = v
 		}
 		for _, kv := range own {
+			if kv.key == "draft-pull-request" {
+				warn("package %s: draft-pull-request: release-me's release-pull-request-draft is repository-wide, set it at the top level if every release pull request should be a draft", entry.key)
+				continue
+			}
 			if !slices.Contains(packageKeys, kv.key) {
 				warn("package %s: %s: %s", entry.key, kv.key, unsupported(kv.key))
 				continue
@@ -345,6 +350,11 @@ func FromReleasePlease(configJSON, manifestJSON []byte, readFile ReadFile) (Resu
 				warn("signoff: %q %v, left out", opts.signoff, err)
 				opts.signoff = ""
 			}
+		}
+	}
+	if raw, ok := topValues["draft-pull-request"]; ok {
+		if err := json.Unmarshal(raw, &opts.draft); err != nil {
+			return Result{}, fmt.Errorf("migrate: draft-pull-request: %w", err)
 		}
 	}
 
@@ -1297,6 +1307,7 @@ type topLevel struct {
 	// separateLinks writes always-link-local: false.
 	separateLinks bool
 	signoff       string
+	draft         bool
 }
 
 // render writes release-me.yaml. A single root package tagged "vX.Y.Z" is
@@ -1334,6 +1345,9 @@ func render(components []component, top topLevel) ([]byte, error) {
 	}
 	if top.signoff != "" {
 		add(doc, "signoff", scalar(top.signoff))
+	}
+	if top.draft {
+		add(doc, "release-pull-request-draft", boolean(true))
 	}
 	labels := &yaml.Node{Kind: yaml.MappingNode}
 	add(labels, "pending", labelNode(top.pending))
