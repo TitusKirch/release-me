@@ -20,10 +20,12 @@ import (
 // names it, one listed hidden never does.
 func changelogOptions(comp config.ResolvedComponent) changelog.Options {
 	opts := changelog.Options{
-		HiddenTypes:  comp.HiddenTypes,
-		SentenceCase: comp.ChangelogStyle.SentenceCase,
-		Authors:      comp.ChangelogStyle.Authors,
-		DateFormat:   comp.ChangelogStyle.DateFormat,
+		HiddenTypes:     comp.HiddenTypes,
+		SentenceCase:    comp.ChangelogStyle.SentenceCase,
+		Authors:         comp.ChangelogStyle.Authors,
+		DateFormat:      comp.ChangelogStyle.DateFormat,
+		CommitLinks:     comp.ChangelogStyle.CommitLinks,
+		IssueReferences: comp.ChangelogStyle.IssueReferences,
 	}
 	if comp.ChangelogSections == nil {
 		return opts

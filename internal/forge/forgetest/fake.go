@@ -388,6 +388,18 @@ func (f *Fake) CompareURL(owner, repo, base, head string) string {
 	return "https://github.com/" + owner + "/" + repo + "/compare/" + base + "..." + head
 }
 
+// CommitURL implements forge.Forge, in the shape GitHub's commit page has:
+// "https://github.com/<owner>/<repo>/commit/<sha>".
+func (f *Fake) CommitURL(owner, repo, sha string) string {
+	return "https://github.com/" + owner + "/" + repo + "/commit/" + sha
+}
+
+// IssueURL implements forge.Forge, in the shape GitHub's issue page has:
+// "https://github.com/<owner>/<repo>/issues/<number>".
+func (f *Fake) IssueURL(owner, repo string, number int) string {
+	return "https://github.com/" + owner + "/" + repo + "/issues/" + strconv.Itoa(number)
+}
+
 // GenerateReleaseNotes implements forge.Forge: ReleaseNotes for tag,
 // or ReleaseNotesErr when it is set. A tag without configured notes gets
 // GitHub's shape for a release with no pull request in it.

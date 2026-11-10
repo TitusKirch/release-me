@@ -153,6 +153,17 @@ func withAuthorPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
 	return f
 }
 
+// withLinkedPullRequests returns newFake with responses configured for every
+// pull request in prs, keyed by number.
+func withLinkedPullRequests(prs ...forge.PullRequest) *forgetest.Fake {
+	f := newFake()
+	f.Responses = map[int]forgetest.Response{}
+	for _, pr := range prs {
+		f.Responses[pr.Number] = forgetest.Response{PullRequest: pr}
+	}
+	return f
+}
+
 func TestDoPRRendersTheConfiguredChangelogStyle(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -234,5 +245,38 @@ func TestDoPRRendersTheConfiguredChangelogSections(t *testing.T) {
 	}
 	if !strings.Contains(body, want) {
 		t.Fatalf("pull request body = %q, want it to carry %q", body, want)
+	}
+}
+
+func TestDoPRLinksCommitsAndTheIssuesAnEntryCloses(t *testing.T) {
+	f := withLinkedPullRequests(forge.PullRequest{
+		Number: 12, Title: "fix: handle the empty case", Body: "The parser no longer panics.\n\nCloses #7",
+		URL: "https://github.com/owner/repo/pull/12",
+	})
+	var mergeSHA, directSHA string
+	got, body := prChangelog(t, f, "changelog-commit-links: true\nchangelog-issue-references: true\n",
+		func(t *testing.T, dir string) {
+			t.Helper()
+			mergePullRequest(t, dir, 12, "fix/empty", map[string]string{"parse.go": "package parse\n"})
+			mergeSHA = headSHA(t, dir)
+			runGit(t, dir, "commit", "--allow-empty", "-q", "-m", "feat: add the widget\n\nFixes #9")
+			directSHA = headSHA(t, dir)
+		})
+
+	want := "### Features\n\n" +
+		"- add the widget ([" + directSHA[:7] + "](https://github.com/owner/repo/commit/" + directSHA + ")), " +
+		"refs [#9](https://github.com/owner/repo/issues/9)\n\n" +
+		"### Bug Fixes\n\n" +
+		"- handle the empty case ([#12](https://github.com/owner/repo/pull/12)) " +
+		"([" + mergeSHA[:7] + "](https://github.com/owner/repo/commit/" + mergeSHA + ")), " +
+		"refs [#7](https://github.com/owner/repo/issues/7)"
+	if got != want {
+		t.Fatalf("CHANGELOG.md section = %q, want %q", got, want)
+	}
+	if !strings.Contains(body, want) {
+		t.Fatalf("pull request body = %q, want it to carry %q", body, want)
+	}
+	if strings.Contains(strings.ToLower(body), "closes #") || strings.Contains(strings.ToLower(body), "fixes #") {
+		t.Fatalf("pull request body = %q, want no closing keyword that would close an issue on merge", body)
 	}
 }

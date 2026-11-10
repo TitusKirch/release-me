@@ -347,6 +347,19 @@ func (f *Forge) CompareURL(owner, repo, base, head string) string {
 	return fmt.Sprintf("%s/%s/%s/compare/%s...%s", webURL(f.client.BaseURL()), owner, repo, base, head)
 }
 
+// CommitURL implements forge.Forge: "<web URL>/<owner>/<repo>/commit/<sha>",
+// on the same web host CompareURL links.
+func (f *Forge) CommitURL(owner, repo, sha string) string {
+	return fmt.Sprintf("%s/%s/%s/commit/%s", webURL(f.client.BaseURL()), owner, repo, sha)
+}
+
+// IssueURL implements forge.Forge: "<web URL>/<owner>/<repo>/issues/<number>",
+// on the same web host CompareURL links. GitHub redirects it to the pull
+// request when number is one.
+func (f *Forge) IssueURL(owner, repo string, number int) string {
+	return fmt.Sprintf("%s/%s/%s/issues/%d", webURL(f.client.BaseURL()), owner, repo, number)
+}
+
 // GenerateReleaseNotes implements forge.Forge through GitHub's
 // "generate release notes" endpoint, the notes GitHub's own release form
 // fills in: it reads, never writes, though it is a POST.
