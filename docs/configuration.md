@@ -91,8 +91,10 @@ means for any repository:
   entries since the previous one, and there is no release until a change since it bumps the
   version. Semver orders `1.2.3-sp.1` below `1.2.3`, so release-me treats it as the pre-release
   it is to semver: the GitHub release is a pre-release, the major tag stays, and the next
-  stable tag still counts from `1.2.3`. A pre-release label on its release pull request
-  replaces `sp` with that type, `1.2.3-rc.1`. It applies with `versioning: independent` only;
+  stable tag still counts from `1.2.3`. A [pre-release label](commands.md#pre-releases) on its
+  release pull request is refused: `sp.N` is already the pre-release identifier of that
+  version, a second one cannot be placed on top of it, and `pr` names both and changes nothing
+  until the label is removed. It applies with `versioning: independent` only;
   `linked` and `locked` refuse it, since a family shares one version line.
 - `dependency-manifest` raises the bump to the largest dependency update among the changes,
   whatever their type, so `chore(deps): bump react from 18.3.1 to 19.0.0` releases a major

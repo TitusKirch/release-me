@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -102,6 +103,63 @@ func TestLinkedFamilyFollowsTheIssueTable(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestServicePackRefusesAPreReleaseLabelOnItsReleasePullRequest covers the
+// one pre-release a service pack cannot take: its version already carries
+// the "sp.N" identifier, and a label asking for a second one replaced it
+// wholesale, so the service pack shipped as a plain pre-release of the last
+// stable version. The counter never advanced either, since it scans the
+// tags of the base version and that base was itself a pre-release, so every
+// run asked for the same tag again. The run reports both keys instead and
+// changes nothing.
+func TestServicePackRefusesAPreReleaseLabelOnItsReleasePullRequest(t *testing.T) {
+	dir, origin := newPRRepo(t)
+	writeConfig(t, dir, "versioning-strategy: service-pack\n")
+	commitEntry(t, dir, "chore: scaffold the service")
+	runGit(t, dir, "tag", "v5.0.0")
+	commitEntry(t, dir, "fix: close the connection pool on shutdown")
+
+	cfg, err := config.Load(filepath.Join(dir, "release-me.yaml"))
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+
+	f := newFake()
+	var out bytes.Buffer
+	if err := doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, &out); err != nil {
+		t.Fatalf("doPR() create error = %v", err)
+	}
+	created := f.CreatedPullRequests[0]
+	if created.Title != "chore(main): release v5.0.0-sp.1" {
+		t.Fatalf("created title = %q, want the first service pack of v5.0.0", created.Title)
+	}
+	branchSHA := bareBranchSHA(t, origin)
+
+	f.ListResponses = []forgetest.ListResponse{
+		{Head: mainBranch, State: "open", PullRequests: []forge.PullRequest{
+			{
+				Number: 1, Title: created.Title, Body: created.Body,
+				Labels: []string{"release: pending", "release: rc"}, HeadSHA: branchSHA,
+			},
+		}},
+	}
+
+	err = doPR(t.Context(), dir, cfg, "", f, discardLogger(), false, io.Discard)
+	if err == nil {
+		t.Fatal("doPR() error = nil, want the pre-release label refused on a service pack")
+	}
+	for _, want := range []string{"service-pack", "5.0.0-sp.1", "rc", "remove the pre-release label"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("doPR() error = %q, want it to name %q", err, want)
+		}
+	}
+	if len(f.UpdatedPullRequests) != 0 {
+		t.Fatalf("UpdatedPullRequests = %+v, want none: the refused run changes nothing", f.UpdatedPullRequests)
+	}
+	if got := bareBranchSHA(t, origin); got != branchSHA {
+		t.Fatalf("release branch moved to %q, want it left at %q", got, branchSHA)
 	}
 }
 
