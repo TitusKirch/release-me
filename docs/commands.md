@@ -143,8 +143,8 @@ the `released-tag` marker as usual, but creates no GitHub release, for a workflo
 it from the tag itself. See [configuration](configuration.md#skip-github-release).
 
 With `draft: true`, the release starts a draft too, reported as `tagged and drafted <tag>`, but
-it is left for a human to publish: a later run never resumes it, the way it resumes one under
-`draft-until-assets-attach`. See [configuration](configuration.md#draft).
+it is left for a human to publish: a later run never resumes it, whatever
+`draft-until-assets-attach` is set to. See [configuration](configuration.md#draft).
 
 With `major-tag: true`, every stable release additionally creates or force-moves the major
 tag, `vX` for the implicit `main` component or its tag prefix followed by `X` for a configured

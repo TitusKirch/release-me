@@ -859,10 +859,12 @@ review and publish. The tag, the label swap, the `released-tag` marker and the a
 still happen as for a published release, so a later step can attach assets to the draft. It
 differs from [`draft-until-assets-attach`](#draft-until-assets-attach) in one way: a draft
 left on purpose is never resumed, so a later run does not print its `released-tag` marker
-again while it waits for a human. With both on, the release drafts and resumes the way
-`draft-until-assets-attach` does. The asset workflow then publishes it automatically in the
-same run, so `draft` adds no human approval gate to that workflow. A component overrides it
-through its own `draft` key.
+again while it waits for a human. That holds with both keys on too: the component that drafts
+on purpose is left out of the resume, and only a human publishing it moves it on. A component
+overrides it through its own `draft` key.
+
+With [`skip-github-release`](#skip-github-release) on, this key has no effect: there is no
+release to draft.
 
 ## `comment-mention`
 

@@ -92,9 +92,9 @@ A component name with a `-` in it needs the index form,
 `draft: true` in `release-me.yaml`, or on a component, creates its GitHub release as a
 draft for a human to review and publish. It still reports the release in the outputs above,
 and does not resume it on later runs. Keep automatic publish steps off for that component
-if publishing needs human approval. With `draft-until-assets-attach: true` too, the workflow
-below resumes and publishes the draft automatically; setting `draft` does not add a human
-gate to that workflow. See [configuration](configuration.md#draft).
+if publishing needs human approval. With `draft-until-assets-attach: true` too, that component
+is still left out of the resume: the workflow below publishes every other component's draft,
+and this one waits for a human. See [configuration](configuration.md#draft).
 
 ## Draft until assets attach
 

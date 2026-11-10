@@ -464,10 +464,34 @@ func TestReleaseDraftsTheReleaseUnderDraftAndLeavesItForAHuman(t *testing.T) {
 			comps: []release.Component{draftMain},
 		},
 		{
-			name: "resumes the draft when draft-until-assets-attach is on too", run: runOwn,
+			// "draft" never resumes, whatever draft-until-assets-attach is
+			// set to: the draft waits for a human, so resuming it would
+			// hand the publish step a release nobody approved.
+			name: "resumes no draft left on purpose with draft-until-assets-attach on too", run: runOwn,
 			fake:  withDraft(mergedFake("chore(main): release v0.2.0", "release: tagged"), "v0.2.0"),
 			comps: []release.Component{draftMain}, draftUntilAssetsAttach: true,
-			wantMessages: []string{"resuming unpublished release v0.2.0"}, wantDraftChecks: 1,
+		},
+		{
+			name: "resumes only the shared component that did not draft on purpose", run: runShared,
+			fake: func() *forgetest.Fake {
+				f := mergedFake("chore: release api v1.3.0, web v0.4.1", "release: tagged")
+				f.ReleaseDrafts = map[string]bool{"api/v1.3.0": true, "web/v0.4.1": true}
+				f.ExistingTags = map[string]bool{"api/v1.3.0": true, "web/v0.4.1": true}
+				return f
+			}(),
+			comps: apiDraft, draftUntilAssetsAttach: true,
+			wantMessages: []string{"resuming unpublished release web/v0.4.1"}, wantDraftChecks: 1,
+		},
+		{
+			name: "resumes only the locked component that did not draft on purpose", run: runLocked,
+			fake: func() *forgetest.Fake {
+				f := mergedFake("chore: release v0.3.0 (api, web)", "release: tagged")
+				f.ReleaseDrafts = map[string]bool{"api/v0.3.0": true, "web/v0.3.0": true}
+				f.ExistingTags = map[string]bool{"api/v0.3.0": true, "web/v0.3.0": true}
+				return f
+			}(),
+			comps: apiDraft, draftUntilAssetsAttach: true,
+			wantMessages: []string{"resuming unpublished release web/v0.3.0"}, wantDraftChecks: 1,
 		},
 		{
 			name: "drafts only the locked component that asks for it", run: runLocked,

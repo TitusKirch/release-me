@@ -295,7 +295,10 @@ func resumeShared(
 	var results []Result
 	sha := ""
 	for _, p := range plan {
-		if p.comp.SkipGitHubRelease {
+		// A component with its own "draft" key drafts on purpose: that
+		// draft waits for a human, so it is no interrupted run and never
+		// resumes, whatever draft-until-assets-attach is set to.
+		if p.comp.SkipGitHubRelease || p.comp.Draft {
 			continue
 		}
 		tag := p.comp.TagPrefix + p.versionStr
@@ -651,7 +654,10 @@ func Run(
 		if dryRun || !draftUntilAssetsAttach || !HasAll(pr.Labels, labels.Tagged) {
 			continue
 		}
-		if comp.SkipGitHubRelease {
+		// A component with its own "draft" key drafts on purpose: that
+		// draft waits for a human, so it is no interrupted run and never
+		// resumes, whatever draft-until-assets-attach is set to.
+		if comp.SkipGitHubRelease || comp.Draft {
 			continue
 		}
 		result, resumed, err := resumeOne(ctx, f, owner, repoName, comp, pr)
